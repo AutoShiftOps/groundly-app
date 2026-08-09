@@ -1,0 +1,13 @@
+Segment,Framework,Tier,Default Toggle,Purpose
+Macro & Industry Environment,PESTEL Analysis,Free,Yes (default),Understand political/economic/social/tech/legal/environmental context
+Macro & Industry Environment,Porter's Five Forces,Paid,No,Industry attractiveness & competitive pressure
+Internal-External Synthesis,SWOT Analysis,Free,Yes (default),Strengths/Weaknesses/Opportunities/Threats snapshot
+Internal-External Synthesis,VRIO Framework,Paid,No,Test defensibility of competitive advantage
+Market Sizing,TAM / SAM / SOM,Free (TAM only) / Paid (SAM+SOM),Yes (TAM default),Quantify market opportunity
+Market Sizing,Competitive Benchmarking,Paid,No,Feature/pricing comparison vs rivals
+Portfolio & Growth Strategy,BCG Matrix,Paid,No,Product/business unit portfolio classification
+Portfolio & Growth Strategy,Ansoff Matrix,Paid,No,Growth path options
+Operating Model,Value Chain Analysis,Paid,No,Map value-creating activities
+Operating Model,Business Model Canvas,Free,Yes (default),One-page business model snapshot
+Execution & Monitoring,Balanced Scorecard,Paid,No,KPI tracking across 4 perspectives
+Decision Layer,AI Decision Recommendation,Paid,No,Synthesized go/no-go signal across all frameworks

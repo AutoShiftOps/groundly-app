@@ -1,0 +1,28 @@
+# Node
+node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.local
+npm-debug.log*
+
+# Python
+__pycache__/
+*.pyc
+venv/
+backend/.env
+*.egg-info/
+
+# AWS / IaC
+.aws-sam/
+cdk.out/
+*.tfstate
+*.tfstate.backup
+.terraform/
+
+# General
+.DS_Store
+*.log
+.vscode/
+.idea/
+dist/
+build/

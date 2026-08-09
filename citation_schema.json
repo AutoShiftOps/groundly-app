@@ -1,0 +1,10 @@
+{
+  "source_id": "string (uuid)",
+  "chunk_text": "string",
+  "source_url": "string",
+  "source_title": "string",
+  "source_date": "ISO 8601 date",
+  "framework_tag": "string (e.g. tam, swot, pestel)",
+  "confidence_score": "float 0-1",
+  "retrieved_at": "ISO 8601 datetime"
+}
