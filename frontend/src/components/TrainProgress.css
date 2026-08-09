@@ -1,0 +1,66 @@
+.train-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+}
+
+.track {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.carriage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px;
+  border-radius: 12px;
+  flex: 1;
+  background: #1a1a2e;
+  color: #ccc;
+  transition: background 0.4s ease, color 0.4s ease;
+}
+
+.carriage.done {
+  background: #1f9d55;
+  color: white;
+}
+
+.carriage.active {
+  background: #f2b705;
+  color: black;
+  box-shadow: 0 0 16px #f2b705;
+}
+
+.carriage .icon {
+  font-size: 20px;
+}
+
+.carriage .label {
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+.status-line {
+  text-align: center;
+  color: #888;
+  font-size: 13px;
+}
+
+.tip-card {
+  text-align: center;
+  font-size: 14px;
+  color: #555;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 10px;
+  border-radius: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .carriage.active {
+    animation: none !important;
+    box-shadow: none;
+  }
+}

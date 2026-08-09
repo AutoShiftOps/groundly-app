@@ -1,13 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from mangum import Mangum
 from routers import analysis
 
 app = FastAPI(title="Groundly API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # restrict to your Vercel domain in production
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -18,4 +17,5 @@ app.include_router(analysis.router, prefix="/api")
 def health():
     return {"status": "ok"}
 
-handler = Mangum(app)  # AWS Lambda entrypoint
+# Run locally: uvicorn main:app --reload
+# Render runs this via: uvicorn main:app --host 0.0.0.0 --port $PORT

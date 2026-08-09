@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: groundly-api
+    env: python
+    plan: starter
+    buildCommand: "pip install -r backend/requirements.txt"
+    startCommand: "cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false   # paste your Supabase connection string here in the Render dashboard
+      - key: ALLOWED_ORIGIN
+        value: https://groundly-app.vercel.app
+
+# Note: database is hosted on Supabase (not Render Postgres), because Render's
+# free Postgres tier hard-deletes data after 30 days + 14-day grace period.
+# Supabase free tier only pauses (does not delete) after 7 days of inactivity,
+# and includes pgvector by default. See docs/local-testing.md for setup steps.

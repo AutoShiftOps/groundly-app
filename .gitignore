@@ -6,7 +6,7 @@ frontend/.env.local
 npm-debug.log*
 
 # Python
-__pycache__/
+*/__pycache__
 *.pyc
 venv/
 backend/.env
@@ -26,3 +26,8 @@ cdk.out/
 .idea/
 dist/
 build/
+
+# env files
+.env
+.env.local
+.env.*.local
