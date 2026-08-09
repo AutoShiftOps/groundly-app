@@ -1,12 +1,8 @@
 // frontend/src/components/ReportView.jsx
-//
-// Renders the real /api/analyze response shape:
-// { stage, frameworks_requested, frameworks_allowed,
-//   results: { <framework>: { text, citations: [{index, source_url, source_title, confidence_score, similarity}] } },
-//   verification: { <framework>: { verified: bool, unsupported_claims: [] } } }
-//
-// Sidebar nav mirrors report-ux-mock.jpg but only shows frameworks actually
-// present in `report.results` — no fabricated locked/unbuilt framework rows.
+// Fix: emoji written as literal characters instead of \uXXXX escapes.
+// Logic/data-binding unchanged from previous version - still matches the
+// real /api/analyze response shape (results.{fw}.text/.citations,
+// verification.{fw}.verified/.unsupported_claims).
 
 import React, { useState } from "react";
 import "../styles/theme.css";
@@ -19,12 +15,7 @@ const FRAMEWORK_LABELS = {
 };
 
 function StatusDot({ verified }) {
-  return (
-    <span
-      className={`status-dot ${verified ? "done" : "locked"}`}
-      title={verified ? "Verified" : "Unverified"}
-    />
-  );
+  return <span className={`status-dot ${verified ? "done" : "locked"}`} title={verified ? "Verified" : "Unverified"} />;
 }
 
 function CitationList({ citations }) {
@@ -50,19 +41,10 @@ function CitationList({ citations }) {
             href={c.source_url}
             target="_blank"
             rel="noopener noreferrer"
-            style={{
-              fontSize: 13,
-              color: "var(--accent-blue)",
-              textDecoration: "none",
-              display: "flex",
-              justifyContent: "space-between",
-              gap: 8,
-            }}
+            style={{ fontSize: 13, color: "var(--accent-blue)", textDecoration: "none", display: "flex", justifyContent: "space-between", gap: 8 }}
           >
             <span>[{c.index}] {c.source_title}</span>
-            <span style={{ color: "var(--text-muted)" }}>
-              {Math.round(c.similarity * 100)}% match
-            </span>
+            <span style={{ color: "var(--text-muted)" }}>{Math.round(c.similarity * 100)}% match</span>
           </a>
         ))}
       </div>
@@ -85,17 +67,19 @@ function FrameworkSection({ frameworkKey, result, verification }) {
             borderColor: verified ? "var(--accent-green)" : "var(--accent-amber)",
           }}
         >
-          {verified ? "\u2705 Verified" : "\u26A0 Unverified"}
+          {verified ? "✅ Verified" : "⚠️ Unverified"}
         </span>
       </div>
 
-      <p style={{
-        color: isInsufficient ? "var(--text-muted)" : "var(--text-primary)",
-        fontStyle: isInsufficient ? "italic" : "normal",
-        fontSize: 14,
-        lineHeight: 1.6,
-        margin: 0,
-      }}>
+      <p
+        style={{
+          color: isInsufficient ? "var(--text-muted)" : "var(--text-primary)",
+          fontStyle: isInsufficient ? "italic" : "normal",
+          fontSize: 14,
+          lineHeight: 1.6,
+          margin: 0,
+        }}
+      >
         {result.text}
       </p>
 
@@ -154,18 +138,13 @@ export default function ReportView({ report, onReset }) {
           <div>
             <h1 style={{ fontSize: 26, margin: "0 0 6px" }}>Your Report</h1>
             <p style={{ color: "var(--text-secondary)", fontSize: 14, margin: 0 }}>
-              {frameworks.length} framework{frameworks.length !== 1 ? "s" : ""} analyzed \u00b7 stage: {report.stage}
+              {frameworks.length} framework{frameworks.length !== 1 ? "s" : ""} analyzed · stage: {report.stage}
             </p>
           </div>
         </div>
 
         {frameworks.map((fw) => (
-          <FrameworkSection
-            key={fw}
-            frameworkKey={fw}
-            result={report.results[fw]}
-            verification={report.verification?.[fw]}
-          />
+          <FrameworkSection key={fw} frameworkKey={fw} result={report.results[fw]} verification={report.verification?.[fw]} />
         ))}
       </main>
     </div>

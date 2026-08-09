@@ -1,19 +1,17 @@
 // frontend/src/components/HomeView.jsx
-//
-// Idle-state screen: sidebar + idea input + "Launch Analysis" CTA.
-// Drop this into App.jsx in place of the current plain-light idle markup.
-// Props are the same state/handlers App.jsx already owns — no new logic added.
+// Fix: emoji written as literal characters instead of \uXXXX escapes,
+// which rendered as raw garbage text in JSX (same bug as TrainProgress).
 
 import React from "react";
 import "../styles/theme.css";
 
 const NAV_ITEMS = [
-  { key: "analyze", label: "Analyze", icon: "\u26A1", active: true },
-  { key: "projects", label: "Projects", icon: "\uD83D\uDCC1" },
-  { key: "insights", label: "Insights", icon: "\uD83D\uDCA1" },
-  { key: "market", label: "Market", icon: "\uD83D\uDCCA" },
-  { key: "reports", label: "Reports", icon: "\uD83D\uDCC4" },
-  { key: "settings", label: "Settings", icon: "\u2699\uFE0F" },
+  { key: "analyze", label: "Analyze", icon: "⚡", active: true },
+  { key: "projects", label: "Projects", icon: "📁" },
+  { key: "insights", label: "Insights", icon: "💡" },
+  { key: "market", label: "Market", icon: "📊" },
+  { key: "reports", label: "Reports", icon: "📄" },
+  { key: "settings", label: "Settings", icon: "⚙️" },
 ];
 
 export default function HomeView({ idea, setIdea, onLaunch, error }) {
@@ -25,10 +23,7 @@ export default function HomeView({ idea, setIdea, onLaunch, error }) {
           Groundly
         </div>
         {NAV_ITEMS.map((item) => (
-          <button
-            key={item.key}
-            className={`sidebar-item ${item.active ? "active" : ""}`}
-          >
+          <button key={item.key} className={`sidebar-item ${item.active ? "active" : ""}`}>
             <span>{item.icon}</span>
             {item.label}
           </button>
@@ -38,7 +33,7 @@ export default function HomeView({ idea, setIdea, onLaunch, error }) {
 
       <main className="main-content">
         <div className="pill" style={{ marginBottom: 16 }}>
-          <span>\u2728</span> AI Business Analyst
+          <span>✨</span> AI Business Analyst
         </div>
 
         <h1 style={{ fontSize: 40, fontWeight: 800, lineHeight: 1.15, margin: "0 0 12px" }}>
@@ -68,11 +63,7 @@ export default function HomeView({ idea, setIdea, onLaunch, error }) {
           />
 
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
-            <button
-              className="btn-primary"
-              onClick={onLaunch}
-              disabled={!idea.trim()}
-            >
+            <button className="btn-primary" onClick={onLaunch} disabled={!idea.trim()}>
               Launch Analysis
             </button>
           </div>
