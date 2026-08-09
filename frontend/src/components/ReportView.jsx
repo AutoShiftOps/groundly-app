@@ -1,245 +1,349 @@
 // frontend/src/components/ReportView.jsx
-import React, { useState } from "react";
-import { motion } from "framer-motion";
+//
+// Full rebuild targeting report-ux-mock.jpg, re-aligned to the exact color
+// palette used by HomeScreen.tsx / LoadingScreen.tsx (Figma export):
+// bg #050c1a / #080f1e, blue #4a8fff, teal #2dd4bf, purple #7c3aed, amber #f59e0b.
+// Uses lucide-react (already a confirmed dependency) instead of the custom
+// Icons.jsx set, so there's one consistent icon language across the whole app.
+//
+// Data-binding is 100% derived from the real /api/analyze response shape:
+//   { stage, results: { <fw>: { text, citations: [...] } },
+//     verification: { <fw>: { verified, unsupported_claims } } }
+// No fabricated numbers (no invented TAM/SAM/SOM dollar figures, no fake
+// "61 sources" - every number shown is computed from report.results /
+// report.verification).
 
-// Exact list of frameworks from the EcoPack mock, including locked ones
-const ALL_FRAMEWORKS = [
-  { key: "pestel", label: "PESTEL" },
-  { key: "porter", label: "Porter's Five Forces" },
-  { key: "swot", label: "SWOT" },
-  { key: "tam", label: "TAM SAM SOM" },
-  { key: "bmc", label: "BMC" },
-  { key: "bcg", label: "BCG Matrix" },
-  { key: "valuechain", label: "Value Chain" },
-  { key: "bsc", label: "Balanced Scorecard" },
+import { useState, useMemo } from "react";
+import {
+  TrendingUp, FolderOpen, Lightbulb, BarChart2, FileText, Settings,
+  ShieldCheck, ShieldAlert, CheckCircle2, AlertTriangle, Lock,
+  Share2, Download, Sparkles, MessageSquare, GitCompare, Layers, ChevronLeft,
+} from "lucide-react";
+
+const PALETTE = {
+  bgOuter: "radial-gradient(ellipse 80% 60% at 75% 5%, rgba(90,60,180,0.18) 0%, #050c1a 55%)",
+  bgSidebar: "#080f1e",
+  bgCard: "rgba(10,20,40,0.92)",
+  bgPanel: "#0b1428",
+  border: "rgba(99,140,255,0.13)",
+  textPrimary: "#ffffff",
+  textSecondary: "#7a8aaa",
+  textMuted: "#5a6a8a",
+  blue: "#4a8fff",
+  teal: "#2dd4bf",
+  purple: "#7c3aed",
+  purpleLight: "#a78bfa",
+  amber: "#f59e0b",
+  red: "#f87171",
+};
+
+const FRAMEWORK_LABELS = { pestel: "PESTEL", swot: "SWOT", tam: "TAM", bmc: "BMC" };
+const LOCKED_FRAMEWORKS = ["Porter's Five Forces", "BCG Matrix", "Value Chain", "Balanced Scorecard"];
+const SIDE_NAV = [
+  { icon: TrendingUp, label: "Analyze" },
+  { icon: FolderOpen, label: "Projects" },
+  { icon: Lightbulb, label: "Insights" },
+  { icon: BarChart2, label: "Market" },
+  { icon: FileText, label: "Reports" },
 ];
 
-function CircularProgress({ value }) {
-  const radius = 45;
-  const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (value / 100) * circumference;
+function useReportStats(report) {
+  return useMemo(() => {
+    const frameworks = Object.keys(report?.results || {});
+    const verifiedCount = frameworks.filter((fw) => report.verification?.[fw]?.verified).length;
+    const totalFrameworks = frameworks.length;
+
+    let totalCitations = 0, similaritySum = 0, similarityCount = 0;
+    const trend = [];
+
+    frameworks.forEach((fw) => {
+      const citations = report.results[fw]?.citations || [];
+      const seen = new Set();
+      citations.forEach((c) => {
+        if (!seen.has(c.source_url)) { seen.add(c.source_url); totalCitations += 1; }
+        similaritySum += c.similarity;
+        similarityCount += 1;
+        trend.push(Math.round(c.similarity * 100));
+      });
+    });
+
+    const avgSimilarity = similarityCount ? Math.round((similaritySum / similarityCount) * 100) : 0;
+    const confidencePct = totalFrameworks ? Math.round((verifiedCount / totalFrameworks) * 100) : 0;
+    const unverifiedCount = totalFrameworks - verifiedCount;
+
+    let verdict = "Insufficient Data", verdictSub = "Not enough grounded sources yet to form a verdict.", tone = "amber";
+    if (totalFrameworks > 0 && verifiedCount === totalFrameworks) {
+      verdict = "Proceed With Confidence";
+      verdictSub = "All frameworks are backed by verified, grounded sources.";
+      tone = "teal";
+    } else if (verifiedCount > 0) {
+      verdict = "Proceed With Caution";
+      verdictSub = `${unverifiedCount} of ${totalFrameworks} sections need stronger sourcing.`;
+      tone = "amber";
+    } else if (totalFrameworks > 0) {
+      verdict = "Gather More Sources";
+      verdictSub = "No sections passed grounding verification yet.";
+      tone = "red";
+    }
+
+    return { frameworks, verifiedCount, totalFrameworks, totalCitations, avgSimilarity, confidencePct, unverifiedCount, verdict, verdictSub, tone };
+  }, [report]);
+}
+
+function ToneColor(tone) {
+  return { teal: PALETTE.teal, amber: PALETTE.amber, red: PALETTE.red }[tone] || PALETTE.amber;
+}
+
+function ConfidenceRing({ pct, tone }) {
+  const color = ToneColor(tone);
   return (
-    <div style={{ position: 'relative', width: 120, height: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
-      <svg width="120" height="120" viewBox="0 0 120 120" style={{ transform: 'rotate(-90deg)' }}>
-        <circle cx="60" cy="60" r={radius} stroke="rgba(255,255,255,0.1)" strokeWidth="8" fill="none" />
-        <circle cx="60" cy="60" r={radius} stroke="var(--accent-green)" strokeWidth="8" fill="none" strokeDasharray={circumference} strokeDashoffset={strokeDashoffset} strokeLinecap="round" />
-      </svg>
-      <div style={{ position: 'absolute', textAlign: 'center' }}>
-        <div style={{ fontSize: 22, fontWeight: 800 }}>{value}%</div>
-        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Confidence</div>
+    <div className="relative flex items-center justify-center rounded-full shrink-0"
+      style={{ width: 78, height: 78, background: `conic-gradient(${color} calc(${pct} * 1%), rgba(255,255,255,0.06) 0)` }}>
+      <div className="absolute rounded-full" style={{ inset: 5, background: "#0b1428" }} />
+      <div className="relative z-10 flex flex-col items-center">
+        <span className="text-lg font-extrabold text-white">{pct}%</span>
+        <span className="text-[8px] uppercase tracking-wide" style={{ color: PALETTE.textMuted }}>Confidence</span>
       </div>
     </div>
   );
 }
 
-export default function ReportView({ report, idea, onReset }) {
-  // Find the first framework in the report to set as active
-  const [activeFramework, setActiveFramework] = useState(
-    ALL_FRAMEWORKS.find(fw => report?.results?.[fw.key])?.key || null
+function VerdictBanner({ stats }) {
+  const color = ToneColor(stats.tone);
+  const ToneIcon = stats.tone === "red" ? ShieldAlert : stats.tone === "amber" ? AlertTriangle : ShieldCheck;
+  return (
+    <div className="flex items-center justify-between gap-6 rounded-2xl p-6 mb-4"
+      style={{ background: `linear-gradient(135deg, ${color}14, ${PALETTE.bgCard})`, border: `1px solid ${color}55` }}>
+      <div className="flex items-start gap-4">
+        <div className="flex items-center justify-center rounded-full shrink-0"
+          style={{ width: 44, height: 44, background: `${color}22`, color }}>
+          <ToneIcon size={22} />
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: PALETTE.textMuted }}>Overall Strategic Verdict</div>
+          <div className="text-2xl font-extrabold text-white leading-tight">{stats.verdict}</div>
+          <div className="text-sm mt-1" style={{ color: PALETTE.textSecondary }}>{stats.verdictSub}</div>
+        </div>
+      </div>
+      <div className="flex items-center gap-5 shrink-0">
+        <ConfidenceRing pct={stats.confidencePct} tone={stats.tone} />
+        <div className="flex items-center gap-2 text-sm max-w-[130px]" style={{ color: PALETTE.textSecondary }}>
+          <Layers size={16} style={{ color: PALETTE.blue }} />
+          <span>Based on <strong className="text-white">{stats.totalCitations}</strong> grounded sources</span>
+        </div>
+      </div>
+    </div>
   );
+}
+
+function MetricCard({ label, value, sub, tone }) {
+  const color = tone ? ToneColor(tone) : PALETTE.border;
+  return (
+    <div className="rounded-2xl p-4" style={{ background: PALETTE.bgCard, border: `1px solid ${tone ? color + "55" : PALETTE.border}` }}>
+      <div className="text-xl font-extrabold text-white">{value}</div>
+      <div className="text-xs mt-1" style={{ color: PALETTE.textSecondary }}>{label}</div>
+      {sub && <div className="text-[10px] mt-1" style={{ color: PALETTE.textMuted }}>{sub}</div>}
+    </div>
+  );
+}
+
+function MetricRow({ stats }) {
+  return (
+    <div className="grid grid-cols-4 gap-3 mb-5">
+      <MetricCard label="Frameworks verified" value={`${stats.verifiedCount}/${stats.totalFrameworks}`} sub="Passed citation check" tone={stats.verifiedCount === stats.totalFrameworks ? "teal" : "amber"} />
+      <MetricCard label="Grounded sources" value={stats.totalCitations} sub="Unique citations used" />
+      <MetricCard label="Avg source match" value={`${stats.avgSimilarity}%`} sub="Semantic similarity" />
+      <MetricCard label="Unverified sections" value={stats.unverifiedCount} sub={stats.unverifiedCount > 0 ? "Needs more sources" : "All clear"} tone={stats.unverifiedCount > 0 ? "amber" : "teal"} />
+    </div>
+  );
+}
+
+function CitationList({ citations }) {
+  if (!citations || citations.length === 0) {
+    return <p className="text-sm" style={{ color: PALETTE.textMuted }}>No citations returned for this section.</p>;
+  }
+  const bySource = {};
+  citations.forEach((c) => {
+    const existing = bySource[c.source_url];
+    if (!existing || c.similarity > existing.similarity) bySource[c.source_url] = c;
+  });
+  const unique = Object.values(bySource).sort((a, b) => b.similarity - a.similarity);
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {unique.map((c) => (
+        <a key={c.source_url + c.index} href={c.source_url} target="_blank" rel="noopener noreferrer"
+          className="flex items-center justify-between gap-2 text-xs px-2 py-1.5 rounded-lg transition-colors hover:bg-white/5"
+          style={{ color: PALETTE.blue, textDecoration: "none" }}>
+          <span className="truncate">[{c.index}] {c.source_title}</span>
+          <span className="shrink-0" style={{ color: PALETTE.textMuted }}>{Math.round(c.similarity * 100)}%</span>
+        </a>
+      ))}
+    </div>
+  );
+}
+
+function FrameworkPanel({ frameworkKey, result, verification }) {
+  const isInsufficient = result.text?.trim() === "Insufficient grounded data available for this section.";
+  const verified = verification?.verified ?? false;
+
+  return (
+    <div className="rounded-2xl p-6" style={{ background: PALETTE.bgCard, border: `1px solid ${PALETTE.border}` }}>
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex items-start gap-3">
+          <div className="flex items-center justify-center rounded-lg shrink-0" style={{ width: 34, height: 34, background: PALETTE.bgPanel, border: `1px solid ${PALETTE.border}`, color: PALETTE.blue }}>
+            <Layers size={17} />
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-wider" style={{ color: PALETTE.textMuted }}>Framework</div>
+            <h2 className="text-xl font-extrabold text-white">{FRAMEWORK_LABELS[frameworkKey] || frameworkKey.toUpperCase()}</h2>
+          </div>
+        </div>
+        <span className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full"
+          style={{ color: verified ? PALETTE.teal : PALETTE.amber, border: `1px solid ${verified ? PALETTE.teal : PALETTE.amber}` }}>
+          {verified ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
+          {verified ? "Verified" : "Unverified"}
+        </span>
+      </div>
+
+      <p className="text-sm leading-relaxed" style={{ color: isInsufficient ? PALETTE.textMuted : "#e4e9f5", fontStyle: isInsufficient ? "italic" : "normal" }}>
+        {result.text}
+      </p>
+
+      {verification?.unsupported_claims?.length > 0 && (
+        <div className="flex items-center gap-2 mt-4 text-xs px-3 py-2 rounded-lg" style={{ color: PALETTE.amber, background: `${PALETTE.amber}14`, border: `1px solid ${PALETTE.amber}44` }}>
+          <AlertTriangle size={13} /> {verification.unsupported_claims.join(", ")}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function ReportView({ report, idea, onReset }) {
+  const stats = useReportStats(report);
+  const [activeFramework, setActiveFramework] = useState(stats.frameworks[0] || null);
 
   if (!report) return null;
 
-  // Determine if a framework is available in the report results
-  const currentResult = report.results?.[activeFramework];
-  const currentVerification = report.verification?.[activeFramework];
-  const verified = currentVerification?.verified ?? false;
-
-  // Data for the visual dashboard mock
-  const displayData = {
-    verdict: verified ? "PROCEED WITH FOCUSED LAUNCH" : "REVIEW REQUIRED",
-    confidence: verified ? 82 : 48,
-    metrics: [
-      { label: "Market Size", value: "$68.3B", desc: "High growth market with expansion ahead.", color: "var(--accent-blue)", sub: "8.6/10" },
-      { label: "Competitive Pressure", value: "Moderate", desc: "Fragmented players with low switching costs.", color: "var(--accent-purple)", sub: "6.2/10" },
-      { label: "Best Customer Segment", value: "Eco-conscious", desc: "Urban, 25-40, high sustainability intent.", color: "var(--accent-green)", sub: "8.4/10" },
-      { label: "Business Model Fit", value: "Strong", desc: "D2C + Subscription model shows high fit.", color: "var(--accent-cyan)", sub: "8.1/10" },
-      { label: "Risk Flags", value: "Medium", desc: "Raw material volatility and supplier risk.", color: "var(--accent-amber)", sub: "5.8/10" },
-    ]
-  };
+  const activeResult = activeFramework ? report.results[activeFramework] : null;
+  const activeVerification = activeFramework ? report.verification?.[activeFramework] : null;
+  const today = new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+  const title = idea ? (idea.length > 52 ? idea.slice(0, 52) + "…" : idea) : "Business Idea Analysis";
 
   return (
-    <div className="app-shell">
-      {/* Sidebar - Groundly framework list (Dynamic checks and locks) */}
-      <aside className="sidebar" style={{ borderRight: '1px solid rgba(255,255,255,0.05)' }}>
-        <div className="sidebar-brand"><span className="logo-mark">G</span> Groundly</div>
-        <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', padding: '12px 12px 4px', letterSpacing: 1 }}>Frameworks</div>
-        {ALL_FRAMEWORKS.map((fw) => {
-          const isActive = fw.key === activeFramework;
-          const isVerified = report.results?.[fw.key] !== undefined;
-          return (
-            <button
-              key={fw.key}
-              onClick={() => isVerified && setActiveFramework(fw.key)}
-              className={`sidebar-item ${isActive ? "active" : ""}`}
-              style={{ justifyContent: 'space-between', cursor: isVerified ? 'pointer' : 'not-allowed', marginBottom: 2, opacity: isVerified ? 1 : 0.6 }}
-            >
-              <span>{fw.label}</span>
-              {isVerified
-                ? <span style={{ color: 'var(--accent-green)' }}>✓</span>
-                : <span style={{ color: 'var(--text-muted)' }}>🔒</span>
-              }
-            </button>
-          );
-        })}
-        <div className="sidebar-footer">
-          <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ color: 'var(--accent-purple)' }}>💎</span> <span style={{ fontSize: 13 }}>Pro Plan</span>
+    <div className="flex min-h-screen w-full overflow-hidden" style={{ background: PALETTE.bgOuter, fontFamily: "'Inter', sans-serif" }}>
+      <aside className="flex flex-col w-[236px] min-h-screen py-5 px-3 shrink-0" style={{ background: PALETTE.bgSidebar, borderRight: `1px solid ${PALETTE.border}` }}>
+        <div className="flex items-center gap-2 px-2 mb-6">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: `linear-gradient(135deg, ${PALETTE.blue}, ${PALETTE.purple})` }}>
+            <svg width="16" height="16" viewBox="0 0 18 18" fill="none"><path d="M9 2L16 14H2L9 2Z" fill="white" fillOpacity="0.9" /></svg>
           </div>
-          <button className="btn-secondary" style={{ width: '100%' }} onClick={onReset}>Upgrade Plan</button>
+          <div>
+            <div className="text-sm font-bold text-white leading-tight">Groundly</div>
+            <div className="text-[9px] leading-tight" style={{ color: PALETTE.textMuted }}>AI Analysis Platform</div>
+          </div>
+        </div>
+
+        <div className="text-[10px] uppercase tracking-wider px-2 mb-1" style={{ color: PALETTE.textMuted }}>Frameworks</div>
+
+        <div className="flex flex-col gap-0.5">
+          {stats.frameworks.map((fw) => {
+            const verified = report.verification?.[fw]?.verified;
+            const active = activeFramework === fw;
+            return (
+              <button key={fw} onClick={() => setActiveFramework(fw)}
+                className="flex items-center justify-between gap-2 text-sm px-3 py-2.5 rounded-xl transition-colors"
+                style={{ background: active ? PALETTE.bgPanel : "transparent", color: active ? "#fff" : PALETTE.textSecondary,
+                  boxShadow: active ? `inset 0 0 0 1px ${PALETTE.border}` : "none" }}>
+                <span>{FRAMEWORK_LABELS[fw] || fw.toUpperCase()}</span>
+                {verified ? <CheckCircle2 size={14} style={{ color: PALETTE.teal }} /> : <span className="w-1.5 h-1.5 rounded-full" style={{ background: PALETTE.textMuted }} />}
+              </button>
+            );
+          })}
+
+          {LOCKED_FRAMEWORKS.map((label) => (
+            <button key={label} disabled className="flex items-center justify-between gap-2 text-sm px-3 py-2.5 rounded-xl opacity-40 cursor-not-allowed" style={{ color: PALETTE.textSecondary }}>
+              <span>{label}</span>
+              <Lock size={12} />
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-auto flex flex-col gap-2">
+          <div className="rounded-xl p-3.5" style={{ background: PALETTE.bgCard, border: `1px solid ${PALETTE.border}` }}>
+            <div className="flex items-center gap-1.5 text-xs font-bold mb-1.5" style={{ color: PALETTE.purpleLight }}>
+              <Sparkles size={13} /> Pro Plan
+            </div>
+            <p className="text-[11px] mb-2.5" style={{ color: PALETTE.textSecondary }}>Unlock advanced frameworks and export unlimited reports.</p>
+            <button disabled className="w-full text-xs font-semibold py-2 rounded-lg opacity-60" style={{ background: PALETTE.bgPanel, color: "#fff", border: `1px solid ${PALETTE.border}` }}>
+              Upgrade Plan
+            </button>
+          </div>
+          <button onClick={onReset} className="w-full text-xs font-semibold py-2.5 rounded-lg transition-colors hover:bg-white/5"
+            style={{ background: PALETTE.bgCard, color: "#fff", border: `1px solid ${PALETTE.border}` }}>
+            Start New Analysis
+          </button>
         </div>
       </aside>
 
-      {/* Main Dashboard Content */}
-      <main className="main-content" style={{ padding: '40px 48px', width: '100%', maxWidth: 1400, margin: '0 auto' }}>
-        {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
-          <div>
-            <h2 style={{ fontSize: 22, margin: '0 0 4px', fontWeight: 700 }}>{idea || "Your"} Startup Analysis</h2>
-            <div style={{ display: 'flex', gap: 12, fontSize: 13, color: 'var(--text-secondary)' }}>
-              <span>📅 {new Date().toLocaleDateString()}</span> <span>• v2.3 (Latest)</span>
+      <main className="flex-1 min-h-screen overflow-y-auto px-8 py-7">
+        <div className="flex items-start justify-between mb-5 gap-4">
+          <div className="flex items-start gap-3">
+            <div className="flex items-center justify-center rounded-xl shrink-0" style={{ width: 38, height: 38, background: PALETTE.bgCard, border: `1px solid ${PALETTE.border}`, color: PALETTE.teal }}>
+              <Layers size={18} />
+            </div>
+            <div>
+              <h1 className="text-xl font-extrabold text-white leading-tight">{title}</h1>
+              <div className="text-xs mt-1" style={{ color: PALETTE.textMuted }}>{today} · v1.0 (Latest)</div>
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 12 }}>
-            <button className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>👥 Share</button>
-            <button className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>⬇ Export PDF</button>
+          <div className="flex gap-2 shrink-0">
+            <button disabled title="Coming soon" className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-xl opacity-60"
+              style={{ background: PALETTE.bgCard, color: "#fff", border: `1px solid ${PALETTE.border}` }}>
+              <Share2 size={14} /> Share
+            </button>
+            <button disabled title="Coming soon" className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-xl opacity-70 text-white"
+              style={{ background: `linear-gradient(90deg, ${PALETTE.blue}, ${PALETTE.purple})` }}>
+              <Download size={14} /> Export PDF
+            </button>
           </div>
         </div>
 
-        {/* Bulletproof 2-Column Flex Layout */}
-        <div style={{ display: 'flex', gap: 32, alignItems: 'flex-start' }}>
+        <VerdictBanner stats={stats} />
+        <MetricRow stats={stats} />
 
-          {/* LEFT COLUMN */}
-          <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 320px" }}>
+          <div>{activeResult && <FrameworkPanel frameworkKey={activeFramework} result={activeResult} verification={activeVerification} />}</div>
 
-            {/* Verdict Banner */}
-            <div className="card" style={{ padding: 24, marginBottom: 24, borderColor: verified ? 'var(--accent-green)' : 'var(--accent-amber)', background: verified ? 'rgba(16, 185, 129, 0.05)' : 'rgba(251, 191, 36, 0.05)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-                <div style={{ background: verified ? 'var(--accent-green)' : 'var(--accent-amber)', borderRadius: '50%', width: 48, height: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>{verified ? '🛡️' : '⚖️'}</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ color: verified ? 'var(--accent-green)' : 'var(--accent-amber)', fontWeight: 700, letterSpacing: 0.5 }}>OVERALL STRATEGIC VERDICT</div>
-                  <div style={{ fontSize: 24, fontWeight: 800, marginTop: 4 }}>{displayData.verdict}</div>
-                  <div style={{ color: 'var(--text-secondary)', fontSize: 14, marginTop: 6 }}>
-                    {currentResult?.text ? currentResult.text.substring(0, 150) + "..." : "Strong market opportunity with manageable risks. Focus on eco-conscious urban consumers and D2C channel."}
-                  </div>
-                </div>
-                <div style={{ borderLeft: '1px solid var(--border-subtle)', paddingLeft: 24 }}><CircularProgress value={displayData.confidence} /></div>
-              </div>
-            </div>
-
-            {/* 5 Metrics Grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 24 }}>
-              {displayData.metrics.map((m, i) => (
-                <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
-                  className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110, background: 'rgba(16, 20, 40, 0.6)' }}>
-                  <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{m.label}</div>
-                  <div style={{ fontSize: 16, fontWeight: 700, color: m.color }}>{m.value}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', marginTop: 4, lineHeight: 1.3 }}>
-                    <span>{m.desc}</span>
-                    <span style={{ color: 'var(--text-secondary)' }}>{m.sub}</span>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-
-            {/* TAM SAM SOM Section */}
-            <div className="card" style={{ padding: 20, background: 'rgba(16, 20, 40, 0.6)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ color: 'var(--accent-cyan)' }}>🧬</span>
-                  <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>TAM SAM SOM</h3>
-                </div>
-                <span style={{ fontSize: 12, background: 'rgba(255,255,255,0.05)', padding: '4px 12px', borderRadius: 12, color: 'var(--text-secondary)' }}>Methodology ▾</span>
-              </div>
-
-              <div style={{ display: 'flex', gap: 32, alignItems: 'center' }}>
-                {/* 3D Pie Chart */}
-                <div style={{ position: 'relative', width: 160, height: 160, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <svg viewBox="0 0 100 100" style={{ transform: 'rotate(-90deg)', width: '100%', height: '100%' }}>
-                    <circle cx="50" cy="50" r="40" fill="none" stroke="var(--accent-blue)" strokeWidth="25" strokeDasharray="60 192" strokeDashoffset="0" />
-                    <circle cx="50" cy="50" r="25" fill="none" stroke="var(--accent-green)" strokeWidth="20" strokeDasharray="40 118" strokeDashoffset="-60" />
-                    <circle cx="50" cy="50" r="12" fill="none" stroke="var(--accent-amber)" strokeWidth="15" strokeDasharray="20 55" strokeDashoffset="-100" />
-                  </svg>
-                  <div style={{ position: 'absolute', fontSize: 10, color: 'var(--text-muted)', textAlign: 'center' }}>
-                    <div style={{ fontWeight: 800, color: 'white' }}>$1.9B</div>
-                    <div>SOM</div>
-                  </div>
-                </div>
-
-                {/* Table Data */}
-                <div style={{ flex: 1 }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                    <thead>
-                      <tr style={{ color: 'var(--text-muted)', borderBottom: '1px solid var(--border-subtle)' }}>
-                        <th style={{ textAlign: 'left', paddingBottom: 8 }}>Metric</th>
-                        <th style={{ textAlign: 'left', paddingBottom: 8 }}>Value (USD)</th>
-                        <th style={{ textAlign: 'left', paddingBottom: 8 }}>% of Parent</th>
-                        <th style={{ textAlign: 'left', paddingBottom: 8 }}>Source</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr><td style={{ padding: '8px 0' }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent-blue)', display: 'inline-block', marginRight: 8 }}></span>TAM</td><td>$68.3B</td><td>—</td><td style={{ color: 'var(--text-muted)' }}>[1] Statista</td></tr>
-                      <tr><td style={{ padding: '8px 0' }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent-green)', display: 'inline-block', marginRight: 8 }}></span>SAM</td><td>$18.7B</td><td>27.4%</td><td style={{ color: 'var(--text-muted)' }}>[2] GVR</td></tr>
-                      <tr><td style={{ padding: '8px 0', borderBottom: '1px solid var(--border-subtle)' }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent-amber)', display: 'inline-block', marginRight: 8 }}></span>SOM</td><td>$1.9B</td><td>10.2%</td><td style={{ color: 'var(--text-muted)' }}>[3] Mordor</td></tr>
-                    </tbody>
-                  </table>
-                  <div style={{ marginTop: 16, fontSize: 13, display: 'flex', gap: 24, color: 'var(--text-secondary)', background: 'rgba(255,255,255,0.02)', padding: 12, borderRadius: 8 }}>
-                    <div><span style={{ color: 'var(--accent-green)', marginRight: 6 }}>💡</span> Key Takeaway</div>
-                    <div>EcoPack can realistically capture ~$1.9B (10.2% of SAM) within 3 years by focusing on urban millennials.</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* RIGHT COLUMN - Fixed Width */}
-          <div style={{ width: 380, flexShrink: 0 }}>
-
-            {/* Sources & Citations */}
-            <div className="card" style={{ padding: 20, marginBottom: 20, background: 'rgba(16, 20, 40, 0.6)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16, fontSize: 14, fontWeight: 600 }}>
+          <div className="flex flex-col gap-3.5">
+            <div className="rounded-2xl p-4" style={{ background: PALETTE.bgCard, border: `1px solid ${PALETTE.border}` }}>
+              <div className="flex items-center justify-between text-sm font-bold text-white mb-3">
                 <span>Sources & Citations</span>
-                <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--text-secondary)', cursor: 'pointer' }}>View all ({currentResult?.citations?.length || 0}) ➜</span>
+                <span className="text-[11px] font-medium" style={{ color: PALETTE.blue }}>View all ({stats.totalCitations})</span>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {currentResult?.citations?.slice(0, 3).map((c, i) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '8px 0', borderBottom: '1px solid var(--border-subtle)' }}>
-                    <div>
-                      <div style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{i + 1}. {c.source_title}</div>
-                      <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>{c.source_url}</div>
-                    </div>
-                    <div style={{ background: 'var(--bg-panel)', padding: '2px 8px', borderRadius: 12, height: 'fit-content', color: 'var(--text-secondary)' }}>{Math.round(c.similarity * 100)}%</div>
-                  </div>
-                ))}
-              </div>
+              <CitationList citations={activeResult?.citations} />
             </div>
 
-            {/* Ask AI */}
-            <div className="card" style={{ padding: 20, marginBottom: 20, background: 'rgba(16, 20, 40, 0.6)', border: 'none' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12, fontSize: 14 }}>
-                <span style={{ fontWeight: 600 }}>✧ Ask AI</span>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Suggested</span>
+            <div className="rounded-2xl p-4" style={{ background: PALETTE.bgCard, border: `1px solid ${PALETTE.border}` }}>
+              <div className="flex items-center justify-between text-sm font-bold text-white mb-3">
+                <span className="flex items-center gap-1.5"><Sparkles size={14} style={{ color: PALETTE.purpleLight }} /> Ask AI</span>
+                <span className="text-[10px]" style={{ color: PALETTE.textMuted }}>Coming soon</span>
               </div>
-              <div style={{ fontSize: 13, color: 'var(--text-secondary)', background: 'rgba(255,255,255,0.05)', padding: 12, borderRadius: 8, marginBottom: 12, border: '1px solid rgba(79, 140, 255, 0.3)' }}>
-                What are the biggest risks to supply chain in 2026?
+              <div className="flex items-center gap-2 text-xs px-3 py-2.5 rounded-lg mb-2" style={{ background: PALETTE.bgPanel, border: `1px solid ${PALETTE.border}`, color: PALETTE.textSecondary }}>
+                <MessageSquare size={13} /> What are the biggest risks in this analysis?
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'var(--bg-base)', borderRadius: 8, border: '1px solid var(--border-subtle)' }}>
-                <input type="text" placeholder="Ask anything about this analysis..." style={{ flex: 1, background: 'transparent', border: 'none', color: 'white', outline: 'none', fontSize: 13 }} /><span style={{ color: 'var(--accent-blue)' }}>➤</span>
-              </div>
+              <input disabled placeholder="Ask anything about this analysis..." className="w-full text-xs px-3 py-2.5 rounded-lg"
+                style={{ background: PALETTE.bgPanel, border: `1px solid ${PALETTE.border}`, color: PALETTE.textMuted }} />
             </div>
 
-            {/* Compare Version */}
-            <div className="card" style={{ padding: 20, background: 'rgba(16, 20, 40, 0.6)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 14, fontWeight: 600 }}>
-                <span>Compare Version</span>
-                <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--text-secondary)' }}>Compare this analysis with previous versions</span>
+            <div className="rounded-2xl p-4" style={{ background: PALETTE.bgCard, border: `1px solid ${PALETTE.border}` }}>
+              <div className="flex items-center justify-between text-sm font-bold text-white">
+                <span className="flex items-center gap-1.5"><GitCompare size={14} style={{ color: PALETTE.blue }} /> Compare Version</span>
+                <span className="text-[10px]" style={{ color: PALETTE.textMuted }}>Coming soon</span>
               </div>
-              <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', height: 60, border: '1px dashed var(--border-subtle)', borderRadius: 8 }}>⌄ Coming soon</div>
+              <p className="text-[11px] mt-2" style={{ color: PALETTE.textMuted }}>Compare this analysis with previous versions.</p>
             </div>
           </div>
         </div>
-
-        <div style={{ textAlign: 'center', fontSize: 12, color: 'var(--text-muted)', marginTop: 40 }}>🔒 Your data is encrypted and secure</div>
       </main>
     </div>
   );
