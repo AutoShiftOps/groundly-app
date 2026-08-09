@@ -1,0 +1,28 @@
+Business Model Canvas Source: Residential EV Charging Subscription Startup
+
+Customer Segments:
+Primary segment is single-family and townhome-owning EV drivers in states with supportive incentive programs, valuing convenience and predictable monthly cost over upfront hardware ownership. Secondary segment is renters and multi-unit dwelling residents (roughly 35% of US households) who are structurally underserved by installation-focused competitors and need portable or landlord-coordinated charging solutions. Tertiary segment includes small fleet operators (delivery, rideshare) needing multi-vehicle charging management, representing a future expansion opportunity beyond the initial residential focus.
+
+Value Propositions:
+Lower upfront cost than outright charger purchase, replacing a $500-$2,000 hardware expense with a predictable monthly subscription. Smart, software-managed off-peak charging reduces subscriber electricity costs by an estimated 20-30% versus unmanaged charging. Bundled maintenance, hardware replacement, and support eliminates the customer's need to independently manage electrician relationships or warranty claims. Optional premium tier offering V2G/V2H bidirectional charging provides home backup power value during outages, a differentiator few competitors currently offer at the subscription tier.
+
+Channels:
+Direct-to-consumer acquisition via digital marketing (search, social) targeting recent EV purchasers, supplemented by partnerships with EV dealerships and manufacturers who can refer new buyers at point of sale. Utility partnership channel, where utilities co-market the subscription to EV-owning customers as part of demand-response and time-of-use rate programs. Referral program leveraging existing subscribers, given the high-consideration nature of the purchase and strong word-of-mouth influence in the EV owner community.
+
+Customer Relationships:
+Ongoing relationship maintained through the subscription itself, with ongoing app-based engagement (charging schedule management, cost savings tracking) that increases switching costs and retention. Dedicated customer support for installation scheduling and troubleshooting, critical given the safety-sensitive nature of electrical work and importance of trust-building against more established brand competitors.
+
+Revenue Streams:
+Primary recurring monthly subscription revenue ($25-$40/month estimated per household based on the $300-$480 annual SAM estimate), covering hardware amortization, software, and maintenance. Secondary revenue from utility demand-response partnerships, where utilities pay per-household or per-kWh fees for participation in managed charging programs. Potential future revenue from premium V2G/V2H tier upsells and fleet/B2B subscription contracts.
+
+Key Resources:
+Charging hardware supply relationships and inventory, smart-charging software platform (proprietary or licensed), network of certified electrician installation partners, and utility partnership agreements for time-of-use and demand-response programs.
+
+Key Activities:
+Software platform development and maintenance for smart charging optimization, installation logistics and electrician network management, customer acquisition and retention marketing, and utility/regulatory partnership development across target states.
+
+Key Partnerships:
+Licensed electrical contractors for installation, hardware manufacturers for charger supply, utilities for demand-response revenue and customer referral channels, and EV manufacturers/dealerships for point-of-sale customer acquisition.
+
+Cost Structure:
+Major cost components include hardware procurement and amortization, electrician installation labor (12-18% cost increase since 2022), software development and cloud infrastructure, customer acquisition cost (estimated $150-$300 per subscriber), and ongoing customer support and maintenance operations.

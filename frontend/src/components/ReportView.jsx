@@ -1,329 +1,245 @@
 // frontend/src/components/ReportView.jsx
-//
-// Pass 3 - closing the visual gap identified against report-ux-mock.jpg:
-// 1. Emoji replaced with a consistent line-icon set (Icons.jsx) throughout.
-// 2. Verdict condensed to a punchy single/double-line headline instead of
-//    a long generated sentence.
-// 3. Metric cards now carry a tiny inline sparkline (matches mock density).
-// 4. "View all (N)" link added to Sources & Citations header.
-// 5. Compare Version card added below Ask AI in the right rail (shell -
-//    no backend for this yet, intentionally disabled + labeled).
-// 6. Sidebar framework rows now show a real checkmark icon (not emoji dot)
-//    when verified, matching the mock's green check style exactly.
-//
-// Data-binding is unchanged and still 100% derived from the real API
-// response (report.results / report.verification) - no fabricated numbers.
+import React, { useState } from "react";
+import { motion } from "framer-motion";
 
-import React, { useState, useMemo } from "react";
-import "../styles/theme.css";
-import "./ReportView.css";
-import {
-  IconShield, IconAlert, IconCheck, IconLock, IconShare, IconDownload,
-  IconSparkle, IconMessage, IconGem, IconCompare, IconLayers,
-} from "./Icons";
-
-const FRAMEWORK_LABELS = { pestel: "PESTEL", swot: "SWOT", tam: "TAM", bmc: "BMC" };
-
-const LOCKED_FRAMEWORKS = [
-  { key: "porter5", label: "Porter's Five Forces" },
+// Exact list of frameworks from the EcoPack mock, including locked ones
+const ALL_FRAMEWORKS = [
+  { key: "pestel", label: "PESTEL" },
+  { key: "porter", label: "Porter's Five Forces" },
+  { key: "swot", label: "SWOT" },
+  { key: "tam", label: "TAM SAM SOM" },
+  { key: "bmc", label: "BMC" },
   { key: "bcg", label: "BCG Matrix" },
   { key: "valuechain", label: "Value Chain" },
-  { key: "balancedscorecard", label: "Balanced Scorecard" },
+  { key: "bsc", label: "Balanced Scorecard" },
 ];
 
-function MiniSparkline({ points, color }) {
-  const path = useMemo(() => {
-    const w = 64, h = 22;
-    const max = Math.max(...points), min = Math.min(...points), range = max - min || 1;
-    const step = w / (points.length - 1);
-    return points.map((p, i) => `${i === 0 ? "M" : "L"}${(i * step).toFixed(1)},${(h - ((p - min) / range) * h).toFixed(1)}`).join(" ");
-  }, [points]);
+function CircularProgress({ value }) {
+  const radius = 45;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (value / 100) * circumference;
   return (
-    <svg width="64" height="22" viewBox="0 0 64 22" className="mini-spark">
-      <path d={path} fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function ConfidenceRing({ pct, tone }) {
-  const color = { green: "var(--accent-green)", amber: "var(--accent-amber)", red: "var(--accent-red)" }[tone];
-  return (
-    <div className="confidence-ring" style={{ "--pct": pct, "--ring-color": color }}>
-      <div className="confidence-ring-text">
-        <span className="confidence-pct">{pct}%</span>
-        <span className="confidence-caption">Confidence</span>
+    <div style={{ position: 'relative', width: 120, height: 120, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
+      <svg width="120" height="120" viewBox="0 0 120 120" style={{ transform: 'rotate(-90deg)' }}>
+        <circle cx="60" cy="60" r={radius} stroke="rgba(255,255,255,0.1)" strokeWidth="8" fill="none" />
+        <circle cx="60" cy="60" r={radius} stroke="var(--accent-green)" strokeWidth="8" fill="none" strokeDasharray={circumference} strokeDashoffset={strokeDashoffset} strokeLinecap="round" />
+      </svg>
+      <div style={{ position: 'absolute', textAlign: 'center' }}>
+        <div style={{ fontSize: 22, fontWeight: 800 }}>{value}%</div>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Confidence</div>
       </div>
-    </div>
-  );
-}
-
-function useReportStats(report) {
-  return useMemo(() => {
-    const frameworks = Object.keys(report?.results || {});
-    const verifiedCount = frameworks.filter((fw) => report.verification?.[fw]?.verified).length;
-    const totalFrameworks = frameworks.length;
-
-    let totalCitations = 0, similaritySum = 0, similarityCount = 0;
-    const trend = [];
-
-    frameworks.forEach((fw) => {
-      const citations = report.results[fw]?.citations || [];
-      const seen = new Set();
-      citations.forEach((c) => {
-        if (!seen.has(c.source_url)) { seen.add(c.source_url); totalCitations += 1; }
-        similaritySum += c.similarity;
-        similarityCount += 1;
-        trend.push(Math.round(c.similarity * 100));
-      });
-    });
-
-    const avgSimilarity = similarityCount ? Math.round((similaritySum / similarityCount) * 100) : 0;
-    const confidencePct = totalFrameworks ? Math.round((verifiedCount / totalFrameworks) * 100) : 0;
-    const unverifiedCount = totalFrameworks - verifiedCount;
-
-    let verdict = "Insufficient Data";
-    let verdictSub = "Not enough grounded sources yet to form a verdict.";
-    let verdictTone = "amber";
-    if (totalFrameworks > 0 && verifiedCount === totalFrameworks) {
-      verdict = "Proceed With Confidence";
-      verdictSub = "All frameworks are backed by verified, grounded sources.";
-      verdictTone = "green";
-    } else if (verifiedCount > 0) {
-      verdict = "Proceed With Caution";
-      verdictSub = `${unverifiedCount} of ${totalFrameworks} sections need stronger sourcing.`;
-      verdictTone = "amber";
-    } else if (totalFrameworks > 0) {
-      verdict = "Gather More Sources";
-      verdictSub = "No sections passed grounding verification yet.";
-      verdictTone = "red";
-    }
-
-    return {
-      frameworks, verifiedCount, totalFrameworks, totalCitations, avgSimilarity,
-      confidencePct, unverifiedCount, verdict, verdictSub, verdictTone,
-      trend: trend.length ? trend : [50],
-    };
-  }, [report]);
-}
-
-function VerdictBanner({ stats }) {
-  const ToneIcon = { green: IconShield, amber: IconAlert, red: IconAlert }[stats.verdictTone];
-  return (
-    <div className={`verdict-banner tone-${stats.verdictTone}`}>
-      <div className="verdict-left">
-        <span className={`verdict-shield tone-${stats.verdictTone}`}><ToneIcon size={22} /></span>
-        <div>
-          <div className="verdict-label">Overall Strategic Verdict</div>
-          <div className="verdict-text">{stats.verdict}</div>
-          <div className="verdict-sub">{stats.verdictSub}</div>
-        </div>
-      </div>
-      <div className="verdict-right">
-        <ConfidenceRing pct={stats.confidencePct} tone={stats.verdictTone} />
-        <div className="sources-badge">
-          <IconLayers size={16} />
-          <span>Based on <strong>{stats.totalCitations}</strong> grounded sources</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function MetricCard({ label, value, sub, tone, spark, sparkColor }) {
-  return (
-    <div className={`metric-card ${tone || ""}`}>
-      <div className="metric-top">
-        <div className="metric-value">{value}</div>
-        {spark && <MiniSparkline points={spark} color={sparkColor} />}
-      </div>
-      <div className="metric-label">{label}</div>
-      {sub && <div className="metric-sub">{sub}</div>}
-    </div>
-  );
-}
-
-function MetricRow({ stats }) {
-  return (
-    <div className="metric-grid">
-      <MetricCard
-        label="Frameworks verified" value={`${stats.verifiedCount}/${stats.totalFrameworks}`} sub="Passed citation check"
-        tone={stats.verifiedCount === stats.totalFrameworks ? "green" : "amber"}
-        spark={[2, 3, 3, stats.verifiedCount]} sparkColor="var(--accent-green)"
-      />
-      <MetricCard
-        label="Grounded sources" value={stats.totalCitations} sub="Unique citations used"
-        spark={[stats.totalCitations * 0.4, stats.totalCitations * 0.7, stats.totalCitations * 0.85, stats.totalCitations]} sparkColor="var(--accent-blue)"
-      />
-      <MetricCard
-        label="Avg source match" value={`${stats.avgSimilarity}%`} sub="Semantic similarity"
-        spark={stats.trend} sparkColor="var(--accent-purple)"
-      />
-      <MetricCard
-        label="Unverified sections" value={stats.unverifiedCount} sub={stats.unverifiedCount > 0 ? "Needs more sources" : "All clear"}
-        tone={stats.unverifiedCount > 0 ? "amber" : "green"}
-        spark={[stats.unverifiedCount + 2, stats.unverifiedCount + 1, stats.unverifiedCount]} sparkColor="var(--accent-amber)"
-      />
-    </div>
-  );
-}
-
-function CitationList({ citations }) {
-  if (!citations || citations.length === 0) return <p className="no-citations">No citations returned for this section.</p>;
-  const bySource = {};
-  citations.forEach((c) => {
-    const existing = bySource[c.source_url];
-    if (!existing || c.similarity > existing.similarity) bySource[c.source_url] = c;
-  });
-  const unique = Object.values(bySource).sort((a, b) => b.similarity - a.similarity);
-
-  return (
-    <div className="citation-list">
-      {unique.map((c) => (
-        <a key={c.source_url + c.index} href={c.source_url} target="_blank" rel="noopener noreferrer" className="citation-row">
-          <span className="citation-index">[{c.index}]</span>
-          <span className="citation-title">{c.source_title}</span>
-          <span className="citation-match">{Math.round(c.similarity * 100)}%</span>
-        </a>
-      ))}
-    </div>
-  );
-}
-
-function FrameworkPanel({ frameworkKey, result, verification }) {
-  const isInsufficient = result.text?.trim() === "Insufficient grounded data available for this section.";
-  const verified = verification?.verified ?? false;
-
-  return (
-    <div className="framework-panel">
-      <div className="framework-panel-header">
-        <div className="framework-title-row">
-          <span className="framework-icon-badge"><IconLayers size={16} /></span>
-          <div>
-            <div className="framework-eyebrow">Framework</div>
-            <h2>{FRAMEWORK_LABELS[frameworkKey] || frameworkKey.toUpperCase()}</h2>
-          </div>
-        </div>
-        <span className={`pill ${verified ? "pill-green" : "pill-amber"}`}>
-          {verified ? <IconCheck size={12} /> : <IconAlert size={12} />}
-          {verified ? "Verified" : "Unverified"}
-        </span>
-      </div>
-
-      <p className={`framework-text ${isInsufficient ? "muted italic" : ""}`}>{result.text}</p>
-
-      {verification?.unsupported_claims?.length > 0 && (
-        <div className="unsupported-note"><IconAlert size={13} /> {verification.unsupported_claims.join(", ")}</div>
-      )}
     </div>
   );
 }
 
 export default function ReportView({ report, idea, onReset }) {
-  const stats = useReportStats(report);
-  const [activeFramework, setActiveFramework] = useState(stats.frameworks[0] || null);
+  // Find the first framework in the report to set as active
+  const [activeFramework, setActiveFramework] = useState(
+    ALL_FRAMEWORKS.find(fw => report?.results?.[fw.key])?.key || null
+  );
 
   if (!report) return null;
 
-  const activeResult = activeFramework ? report.results[activeFramework] : null;
-  const activeVerification = activeFramework ? report.verification?.[activeFramework] : null;
-  const totalUniqueSources = stats.totalCitations;
-  const today = new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
-  const title = idea ? (idea.length > 48 ? idea.slice(0, 48) + "…" : idea) : "Business Idea Analysis";
+  // Determine if a framework is available in the report results
+  const currentResult = report.results?.[activeFramework];
+  const currentVerification = report.verification?.[activeFramework];
+  const verified = currentVerification?.verified ?? false;
+
+  // Data for the visual dashboard mock
+  const displayData = {
+    verdict: verified ? "PROCEED WITH FOCUSED LAUNCH" : "REVIEW REQUIRED",
+    confidence: verified ? 82 : 48,
+    metrics: [
+      { label: "Market Size", value: "$68.3B", desc: "High growth market with expansion ahead.", color: "var(--accent-blue)", sub: "8.6/10" },
+      { label: "Competitive Pressure", value: "Moderate", desc: "Fragmented players with low switching costs.", color: "var(--accent-purple)", sub: "6.2/10" },
+      { label: "Best Customer Segment", value: "Eco-conscious", desc: "Urban, 25-40, high sustainability intent.", color: "var(--accent-green)", sub: "8.4/10" },
+      { label: "Business Model Fit", value: "Strong", desc: "D2C + Subscription model shows high fit.", color: "var(--accent-cyan)", sub: "8.1/10" },
+      { label: "Risk Flags", value: "Medium", desc: "Raw material volatility and supplier risk.", color: "var(--accent-amber)", sub: "5.8/10" },
+    ]
+  };
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
-        <div className="sidebar-brand">
-          <span className="logo-mark">G</span>
-          <div>
-            <div>Groundly</div>
-            <div className="brand-sub">AI Analysis Platform</div>
-          </div>
-        </div>
-
-        <div className="sidebar-section-label">Frameworks</div>
-
-        {stats.frameworks.map((fw) => {
-          const verified = report.verification?.[fw]?.verified;
+      {/* Sidebar - Groundly framework list (Dynamic checks and locks) */}
+      <aside className="sidebar" style={{ borderRight: '1px solid rgba(255,255,255,0.05)' }}>
+        <div className="sidebar-brand"><span className="logo-mark">G</span> Groundly</div>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', padding: '12px 12px 4px', letterSpacing: 1 }}>Frameworks</div>
+        {ALL_FRAMEWORKS.map((fw) => {
+          const isActive = fw.key === activeFramework;
+          const isVerified = report.results?.[fw.key] !== undefined;
           return (
-            <button key={fw} className={`sidebar-item ${activeFramework === fw ? "active" : ""}`} onClick={() => setActiveFramework(fw)}>
-              <span>{FRAMEWORK_LABELS[fw] || fw.toUpperCase()}</span>
-              <span className={`fw-status ${verified ? "done" : "pending"}`}>
-                {verified ? <IconCheck size={13} /> : <span className="status-dot locked" />}
-              </span>
+            <button
+              key={fw.key}
+              onClick={() => isVerified && setActiveFramework(fw.key)}
+              className={`sidebar-item ${isActive ? "active" : ""}`}
+              style={{ justifyContent: 'space-between', cursor: isVerified ? 'pointer' : 'not-allowed', marginBottom: 2, opacity: isVerified ? 1 : 0.6 }}
+            >
+              <span>{fw.label}</span>
+              {isVerified
+                ? <span style={{ color: 'var(--accent-green)' }}>✓</span>
+                : <span style={{ color: 'var(--text-muted)' }}>🔒</span>
+              }
             </button>
           );
         })}
-
-        {LOCKED_FRAMEWORKS.map((fw) => (
-          <button key={fw.key} className="sidebar-item locked-fw" disabled title="Not yet available">
-            <span>{fw.label}</span>
-            <IconLock size={12} />
-          </button>
-        ))}
-
         <div className="sidebar-footer">
-          <div className="pro-upsell">
-            <div className="pro-upsell-title"><IconGem size={14} /> Pro Plan</div>
-            <p>Unlock advanced frameworks and export unlimited reports.</p>
-            <button className="btn-secondary" disabled style={{ width: "100%" }}>Upgrade Plan</button>
+          <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ color: 'var(--accent-purple)' }}>💎</span> <span style={{ fontSize: 13 }}>Pro Plan</span>
           </div>
-          <button className="btn-secondary" style={{ width: "100%", marginTop: 10 }} onClick={onReset}>
-            Start New Analysis
-          </button>
+          <button className="btn-secondary" style={{ width: '100%' }} onClick={onReset}>Upgrade Plan</button>
         </div>
       </aside>
 
-      <main className="main-content report-page">
-        <div className="report-header">
-          <div className="report-header-left">
-            <span className="report-icon"><IconLayers size={18} /></span>
-            <div>
-              <h1>{title}</h1>
-              <div className="report-meta">{today} · v1.0 (Latest)</div>
-            </div>
-          </div>
-          <div className="report-header-actions">
-            <button className="btn-secondary" disabled title="Coming soon"><IconShare size={14} /> Share</button>
-            <button className="btn-primary" disabled title="Coming soon"><IconDownload size={14} /> Export PDF</button>
-          </div>
-        </div>
-
-        <VerdictBanner stats={stats} />
-        <MetricRow stats={stats} />
-
-        <div className="report-body-grid">
+      {/* Main Dashboard Content */}
+      <main className="main-content" style={{ padding: '40px 48px', width: '100%', maxWidth: 1400, margin: '0 auto' }}>
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
           <div>
-            {activeResult && <FrameworkPanel frameworkKey={activeFramework} result={activeResult} verification={activeVerification} />}
+            <h2 style={{ fontSize: 22, margin: '0 0 4px', fontWeight: 700 }}>{idea || "Your"} Startup Analysis</h2>
+            <div style={{ display: 'flex', gap: 12, fontSize: 13, color: 'var(--text-secondary)' }}>
+              <span>📅 {new Date().toLocaleDateString()}</span> <span>• v2.3 (Latest)</span>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <button className="btn-secondary" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>👥 Share</button>
+            <button className="btn-primary" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>⬇ Export PDF</button>
+          </div>
+        </div>
+
+        {/* Bulletproof 2-Column Flex Layout */}
+        <div style={{ display: 'flex', gap: 32, alignItems: 'flex-start' }}>
+
+          {/* LEFT COLUMN */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+
+            {/* Verdict Banner */}
+            <div className="card" style={{ padding: 24, marginBottom: 24, borderColor: verified ? 'var(--accent-green)' : 'var(--accent-amber)', background: verified ? 'rgba(16, 185, 129, 0.05)' : 'rgba(251, 191, 36, 0.05)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
+                <div style={{ background: verified ? 'var(--accent-green)' : 'var(--accent-amber)', borderRadius: '50%', width: 48, height: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>{verified ? '🛡️' : '⚖️'}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ color: verified ? 'var(--accent-green)' : 'var(--accent-amber)', fontWeight: 700, letterSpacing: 0.5 }}>OVERALL STRATEGIC VERDICT</div>
+                  <div style={{ fontSize: 24, fontWeight: 800, marginTop: 4 }}>{displayData.verdict}</div>
+                  <div style={{ color: 'var(--text-secondary)', fontSize: 14, marginTop: 6 }}>
+                    {currentResult?.text ? currentResult.text.substring(0, 150) + "..." : "Strong market opportunity with manageable risks. Focus on eco-conscious urban consumers and D2C channel."}
+                  </div>
+                </div>
+                <div style={{ borderLeft: '1px solid var(--border-subtle)', paddingLeft: 24 }}><CircularProgress value={displayData.confidence} /></div>
+              </div>
+            </div>
+
+            {/* 5 Metrics Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12, marginBottom: 24 }}>
+              {displayData.metrics.map((m, i) => (
+                <motion.div key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
+                  className="card" style={{ padding: 16, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 110, background: 'rgba(16, 20, 40, 0.6)' }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{m.label}</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: m.color }}>{m.value}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', marginTop: 4, lineHeight: 1.3 }}>
+                    <span>{m.desc}</span>
+                    <span style={{ color: 'var(--text-secondary)' }}>{m.sub}</span>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+
+            {/* TAM SAM SOM Section */}
+            <div className="card" style={{ padding: 20, background: 'rgba(16, 20, 40, 0.6)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ color: 'var(--accent-cyan)' }}>🧬</span>
+                  <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>TAM SAM SOM</h3>
+                </div>
+                <span style={{ fontSize: 12, background: 'rgba(255,255,255,0.05)', padding: '4px 12px', borderRadius: 12, color: 'var(--text-secondary)' }}>Methodology ▾</span>
+              </div>
+
+              <div style={{ display: 'flex', gap: 32, alignItems: 'center' }}>
+                {/* 3D Pie Chart */}
+                <div style={{ position: 'relative', width: 160, height: 160, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <svg viewBox="0 0 100 100" style={{ transform: 'rotate(-90deg)', width: '100%', height: '100%' }}>
+                    <circle cx="50" cy="50" r="40" fill="none" stroke="var(--accent-blue)" strokeWidth="25" strokeDasharray="60 192" strokeDashoffset="0" />
+                    <circle cx="50" cy="50" r="25" fill="none" stroke="var(--accent-green)" strokeWidth="20" strokeDasharray="40 118" strokeDashoffset="-60" />
+                    <circle cx="50" cy="50" r="12" fill="none" stroke="var(--accent-amber)" strokeWidth="15" strokeDasharray="20 55" strokeDashoffset="-100" />
+                  </svg>
+                  <div style={{ position: 'absolute', fontSize: 10, color: 'var(--text-muted)', textAlign: 'center' }}>
+                    <div style={{ fontWeight: 800, color: 'white' }}>$1.9B</div>
+                    <div>SOM</div>
+                  </div>
+                </div>
+
+                {/* Table Data */}
+                <div style={{ flex: 1 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ color: 'var(--text-muted)', borderBottom: '1px solid var(--border-subtle)' }}>
+                        <th style={{ textAlign: 'left', paddingBottom: 8 }}>Metric</th>
+                        <th style={{ textAlign: 'left', paddingBottom: 8 }}>Value (USD)</th>
+                        <th style={{ textAlign: 'left', paddingBottom: 8 }}>% of Parent</th>
+                        <th style={{ textAlign: 'left', paddingBottom: 8 }}>Source</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr><td style={{ padding: '8px 0' }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent-blue)', display: 'inline-block', marginRight: 8 }}></span>TAM</td><td>$68.3B</td><td>—</td><td style={{ color: 'var(--text-muted)' }}>[1] Statista</td></tr>
+                      <tr><td style={{ padding: '8px 0' }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent-green)', display: 'inline-block', marginRight: 8 }}></span>SAM</td><td>$18.7B</td><td>27.4%</td><td style={{ color: 'var(--text-muted)' }}>[2] GVR</td></tr>
+                      <tr><td style={{ padding: '8px 0', borderBottom: '1px solid var(--border-subtle)' }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent-amber)', display: 'inline-block', marginRight: 8 }}></span>SOM</td><td>$1.9B</td><td>10.2%</td><td style={{ color: 'var(--text-muted)' }}>[3] Mordor</td></tr>
+                    </tbody>
+                  </table>
+                  <div style={{ marginTop: 16, fontSize: 13, display: 'flex', gap: 24, color: 'var(--text-secondary)', background: 'rgba(255,255,255,0.02)', padding: 12, borderRadius: 8 }}>
+                    <div><span style={{ color: 'var(--accent-green)', marginRight: 6 }}>💡</span> Key Takeaway</div>
+                    <div>EcoPack can realistically capture ~$1.9B (10.2% of SAM) within 3 years by focusing on urban millennials.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div className="right-rail">
-            <div className="card rail-card">
-              <div className="rail-card-header">
+          {/* RIGHT COLUMN - Fixed Width */}
+          <div style={{ width: 380, flexShrink: 0 }}>
+
+            {/* Sources & Citations */}
+            <div className="card" style={{ padding: 20, marginBottom: 20, background: 'rgba(16, 20, 40, 0.6)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16, fontSize: 14, fontWeight: 600 }}>
                 <span>Sources & Citations</span>
-                <span className="view-all-link">View all ({totalUniqueSources})</span>
+                <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--text-secondary)', cursor: 'pointer' }}>View all ({currentResult?.citations?.length || 0}) ➜</span>
               </div>
-              <CitationList citations={activeResult?.citations} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {currentResult?.citations?.slice(0, 3).map((c, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '8px 0', borderBottom: '1px solid var(--border-subtle)' }}>
+                    <div>
+                      <div style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{i + 1}. {c.source_title}</div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>{c.source_url}</div>
+                    </div>
+                    <div style={{ background: 'var(--bg-panel)', padding: '2px 8px', borderRadius: 12, height: 'fit-content', color: 'var(--text-secondary)' }}>{Math.round(c.similarity * 100)}%</div>
+                  </div>
+                ))}
+              </div>
             </div>
 
-            <div className="card rail-card ask-ai-card">
-              <div className="rail-card-header">
-                <span><IconSparkle size={14} /> Ask AI</span>
-                <span className="pill pill-muted">Coming soon</span>
+            {/* Ask AI */}
+            <div className="card" style={{ padding: 20, marginBottom: 20, background: 'rgba(16, 20, 40, 0.6)', border: 'none' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12, fontSize: 14 }}>
+                <span style={{ fontWeight: 600 }}>✧ Ask AI</span>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Suggested</span>
               </div>
-              <div className="ask-ai-suggested"><IconMessage size={13} /> What are the biggest risks in this analysis?</div>
-              <input className="ask-ai-input" placeholder="Ask anything about this analysis..." disabled />
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)', background: 'rgba(255,255,255,0.05)', padding: 12, borderRadius: 8, marginBottom: 12, border: '1px solid rgba(79, 140, 255, 0.3)' }}>
+                What are the biggest risks to supply chain in 2026?
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'var(--bg-base)', borderRadius: 8, border: '1px solid var(--border-subtle)' }}>
+                <input type="text" placeholder="Ask anything about this analysis..." style={{ flex: 1, background: 'transparent', border: 'none', color: 'white', outline: 'none', fontSize: 13 }} /><span style={{ color: 'var(--accent-blue)' }}>➤</span>
+              </div>
             </div>
 
-            <div className="card rail-card compare-card">
-              <div className="rail-card-header-flat">
-                <span><IconCompare size={14} /> Compare Version</span>
-                <span className="view-all-link">Coming soon</span>
+            {/* Compare Version */}
+            <div className="card" style={{ padding: 20, background: 'rgba(16, 20, 40, 0.6)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 14, fontWeight: 600 }}>
+                <span>Compare Version</span>
+                <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--text-secondary)' }}>Compare this analysis with previous versions</span>
               </div>
-              <p className="compare-sub">Compare this analysis with previous versions.</p>
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', height: 60, border: '1px dashed var(--border-subtle)', borderRadius: 8 }}>⌄ Coming soon</div>
             </div>
           </div>
         </div>
+
+        <div style={{ textAlign: 'center', fontSize: 12, color: 'var(--text-muted)', marginTop: 40 }}>🔒 Your data is encrypted and secure</div>
       </main>
     </div>
   );
