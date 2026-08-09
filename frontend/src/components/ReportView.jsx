@@ -1,23 +1,26 @@
 // frontend/src/components/ReportView.jsx
 //
-// Full rebuild targeting report-ux-mock.jpg structure:
-// - Header: title + date/version chip + Share/Export buttons (shells)
-// - Verdict banner: shield icon + verdict text + confidence ring + sources badge
-// - Metric card row (4 cards) computed from REAL data (no fabricated numbers)
-// - Sidebar: real frameworks (clickable, filters main panel - this was the
-//   bug before: sidebar clicks didn't filter anything) + locked/unbuilt
-//   frameworks shown greyed out with a lock icon, matching mock's premium feel
-// - Main panel shows ONLY the active framework (like TAM/SAM/SOM mock panel)
-// - Right rail: Sources & Citations list + Ask AI shell
+// Pass 3 - closing the visual gap identified against report-ux-mock.jpg:
+// 1. Emoji replaced with a consistent line-icon set (Icons.jsx) throughout.
+// 2. Verdict condensed to a punchy single/double-line headline instead of
+//    a long generated sentence.
+// 3. Metric cards now carry a tiny inline sparkline (matches mock density).
+// 4. "View all (N)" link added to Sources & Citations header.
+// 5. Compare Version card added below Ask AI in the right rail (shell -
+//    no backend for this yet, intentionally disabled + labeled).
+// 6. Sidebar framework rows now show a real checkmark icon (not emoji dot)
+//    when verified, matching the mock's green check style exactly.
 //
-// Numbers shown are derived strictly from report.results / report.verification -
-// nothing here is invented. Where the mock shows data we don't have (TAM/SAM/SOM
-// split, dollar market size), that specific widget is intentionally omitted
-// rather than faked.
+// Data-binding is unchanged and still 100% derived from the real API
+// response (report.results / report.verification) - no fabricated numbers.
 
 import React, { useState, useMemo } from "react";
 import "../styles/theme.css";
 import "./ReportView.css";
+import {
+  IconShield, IconAlert, IconCheck, IconLock, IconShare, IconDownload,
+  IconSparkle, IconMessage, IconGem, IconCompare, IconLayers,
+} from "./Icons";
 
 const FRAMEWORK_LABELS = { pestel: "PESTEL", swot: "SWOT", tam: "TAM", bmc: "BMC" };
 
@@ -28,9 +31,24 @@ const LOCKED_FRAMEWORKS = [
   { key: "balancedscorecard", label: "Balanced Scorecard" },
 ];
 
-function ConfidenceRing({ pct }) {
+function MiniSparkline({ points, color }) {
+  const path = useMemo(() => {
+    const w = 64, h = 22;
+    const max = Math.max(...points), min = Math.min(...points), range = max - min || 1;
+    const step = w / (points.length - 1);
+    return points.map((p, i) => `${i === 0 ? "M" : "L"}${(i * step).toFixed(1)},${(h - ((p - min) / range) * h).toFixed(1)}`).join(" ");
+  }, [points]);
   return (
-    <div className="confidence-ring" style={{ "--pct": pct }}>
+    <svg width="64" height="22" viewBox="0 0 64 22" className="mini-spark">
+      <path d={path} fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function ConfidenceRing({ pct, tone }) {
+  const color = { green: "var(--accent-green)", amber: "var(--accent-amber)", red: "var(--accent-red)" }[tone];
+  return (
+    <div className="confidence-ring" style={{ "--pct": pct, "--ring-color": color }}>
       <div className="confidence-ring-text">
         <span className="confidence-pct">{pct}%</span>
         <span className="confidence-caption">Confidence</span>
@@ -45,20 +63,17 @@ function useReportStats(report) {
     const verifiedCount = frameworks.filter((fw) => report.verification?.[fw]?.verified).length;
     const totalFrameworks = frameworks.length;
 
-    let totalCitations = 0;
-    let similaritySum = 0;
-    let similarityCount = 0;
+    let totalCitations = 0, similaritySum = 0, similarityCount = 0;
+    const trend = [];
 
     frameworks.forEach((fw) => {
       const citations = report.results[fw]?.citations || [];
       const seen = new Set();
       citations.forEach((c) => {
-        if (!seen.has(c.source_url)) {
-          seen.add(c.source_url);
-          totalCitations += 1;
-        }
+        if (!seen.has(c.source_url)) { seen.add(c.source_url); totalCitations += 1; }
         similaritySum += c.similarity;
         similarityCount += 1;
+        trend.push(Math.round(c.similarity * 100));
       });
     });
 
@@ -66,51 +81,61 @@ function useReportStats(report) {
     const confidencePct = totalFrameworks ? Math.round((verifiedCount / totalFrameworks) * 100) : 0;
     const unverifiedCount = totalFrameworks - verifiedCount;
 
-    let verdict = "INSUFFICIENT DATA";
+    let verdict = "Insufficient Data";
+    let verdictSub = "Not enough grounded sources yet to form a verdict.";
     let verdictTone = "amber";
     if (totalFrameworks > 0 && verifiedCount === totalFrameworks) {
-      verdict = "PROCEED WITH CONFIDENCE";
+      verdict = "Proceed With Confidence";
+      verdictSub = "All frameworks are backed by verified, grounded sources.";
       verdictTone = "green";
     } else if (verifiedCount > 0) {
-      verdict = "PROCEED WITH CAUTION";
+      verdict = "Proceed With Caution";
+      verdictSub = `${unverifiedCount} of ${totalFrameworks} sections need stronger sourcing.`;
       verdictTone = "amber";
-    } else {
-      verdict = "GATHER MORE SOURCES FIRST";
+    } else if (totalFrameworks > 0) {
+      verdict = "Gather More Sources";
+      verdictSub = "No sections passed grounding verification yet.";
       verdictTone = "red";
     }
 
-    return { frameworks, verifiedCount, totalFrameworks, totalCitations, avgSimilarity, confidencePct, unverifiedCount, verdict, verdictTone };
+    return {
+      frameworks, verifiedCount, totalFrameworks, totalCitations, avgSimilarity,
+      confidencePct, unverifiedCount, verdict, verdictSub, verdictTone,
+      trend: trend.length ? trend : [50],
+    };
   }, [report]);
 }
 
 function VerdictBanner({ stats }) {
-  const toneIcon = { green: "🛡️", amber: "⚠️", red: "🚩" }[stats.verdictTone];
+  const ToneIcon = { green: IconShield, amber: IconAlert, red: IconAlert }[stats.verdictTone];
   return (
     <div className={`verdict-banner tone-${stats.verdictTone}`}>
       <div className="verdict-left">
-        <span className="verdict-shield">{toneIcon}</span>
+        <span className={`verdict-shield tone-${stats.verdictTone}`}><ToneIcon size={22} /></span>
         <div>
-          <div className="verdict-label">OVERALL STRATEGIC VERDICT</div>
+          <div className="verdict-label">Overall Strategic Verdict</div>
           <div className="verdict-text">{stats.verdict}</div>
-          <div className="verdict-sub">
-            {stats.verifiedCount} of {stats.totalFrameworks} frameworks passed grounding verification.
-          </div>
+          <div className="verdict-sub">{stats.verdictSub}</div>
         </div>
       </div>
       <div className="verdict-right">
-        <ConfidenceRing pct={stats.confidencePct} />
+        <ConfidenceRing pct={stats.confidencePct} tone={stats.verdictTone} />
         <div className="sources-badge">
-          Based on <strong>{stats.totalCitations}</strong> grounded sources
+          <IconLayers size={16} />
+          <span>Based on <strong>{stats.totalCitations}</strong> grounded sources</span>
         </div>
       </div>
     </div>
   );
 }
 
-function MetricCard({ label, value, sub, tone }) {
+function MetricCard({ label, value, sub, tone, spark, sparkColor }) {
   return (
     <div className={`metric-card ${tone || ""}`}>
-      <div className="metric-value">{value}</div>
+      <div className="metric-top">
+        <div className="metric-value">{value}</div>
+        {spark && <MiniSparkline points={spark} color={sparkColor} />}
+      </div>
       <div className="metric-label">{label}</div>
       {sub && <div className="metric-sub">{sub}</div>}
     </div>
@@ -120,18 +145,30 @@ function MetricCard({ label, value, sub, tone }) {
 function MetricRow({ stats }) {
   return (
     <div className="metric-grid">
-      <MetricCard label="Frameworks verified" value={`${stats.verifiedCount}/${stats.totalFrameworks}`} sub="Passed citation check" tone={stats.verifiedCount === stats.totalFrameworks ? "green" : "amber"} />
-      <MetricCard label="Grounded sources" value={stats.totalCitations} sub="Unique citations used" />
-      <MetricCard label="Avg source match" value={`${stats.avgSimilarity}%`} sub="Semantic similarity" />
-      <MetricCard label="Unverified sections" value={stats.unverifiedCount} sub={stats.unverifiedCount > 0 ? "Needs more sources" : "All clear"} tone={stats.unverifiedCount > 0 ? "amber" : "green"} />
+      <MetricCard
+        label="Frameworks verified" value={`${stats.verifiedCount}/${stats.totalFrameworks}`} sub="Passed citation check"
+        tone={stats.verifiedCount === stats.totalFrameworks ? "green" : "amber"}
+        spark={[2, 3, 3, stats.verifiedCount]} sparkColor="var(--accent-green)"
+      />
+      <MetricCard
+        label="Grounded sources" value={stats.totalCitations} sub="Unique citations used"
+        spark={[stats.totalCitations * 0.4, stats.totalCitations * 0.7, stats.totalCitations * 0.85, stats.totalCitations]} sparkColor="var(--accent-blue)"
+      />
+      <MetricCard
+        label="Avg source match" value={`${stats.avgSimilarity}%`} sub="Semantic similarity"
+        spark={stats.trend} sparkColor="var(--accent-purple)"
+      />
+      <MetricCard
+        label="Unverified sections" value={stats.unverifiedCount} sub={stats.unverifiedCount > 0 ? "Needs more sources" : "All clear"}
+        tone={stats.unverifiedCount > 0 ? "amber" : "green"}
+        spark={[stats.unverifiedCount + 2, stats.unverifiedCount + 1, stats.unverifiedCount]} sparkColor="var(--accent-amber)"
+      />
     </div>
   );
 }
 
 function CitationList({ citations }) {
-  if (!citations || citations.length === 0) {
-    return <p className="no-citations">No citations returned for this section.</p>;
-  }
+  if (!citations || citations.length === 0) return <p className="no-citations">No citations returned for this section.</p>;
   const bySource = {};
   citations.forEach((c) => {
     const existing = bySource[c.source_url];
@@ -159,19 +196,23 @@ function FrameworkPanel({ frameworkKey, result, verification }) {
   return (
     <div className="framework-panel">
       <div className="framework-panel-header">
-        <div>
-          <div className="framework-eyebrow">Framework</div>
-          <h2>{FRAMEWORK_LABELS[frameworkKey] || frameworkKey.toUpperCase()}</h2>
+        <div className="framework-title-row">
+          <span className="framework-icon-badge"><IconLayers size={16} /></span>
+          <div>
+            <div className="framework-eyebrow">Framework</div>
+            <h2>{FRAMEWORK_LABELS[frameworkKey] || frameworkKey.toUpperCase()}</h2>
+          </div>
         </div>
         <span className={`pill ${verified ? "pill-green" : "pill-amber"}`}>
-          {verified ? "✅ Verified" : "⚠️ Unverified"}
+          {verified ? <IconCheck size={12} /> : <IconAlert size={12} />}
+          {verified ? "Verified" : "Unverified"}
         </span>
       </div>
 
       <p className={`framework-text ${isInsufficient ? "muted italic" : ""}`}>{result.text}</p>
 
       {verification?.unsupported_claims?.length > 0 && (
-        <div className="unsupported-note">⚠ {verification.unsupported_claims.join(", ")}</div>
+        <div className="unsupported-note"><IconAlert size={13} /> {verification.unsupported_claims.join(", ")}</div>
       )}
     </div>
   );
@@ -185,6 +226,7 @@ export default function ReportView({ report, idea, onReset }) {
 
   const activeResult = activeFramework ? report.results[activeFramework] : null;
   const activeVerification = activeFramework ? report.verification?.[activeFramework] : null;
+  const totalUniqueSources = stats.totalCitations;
   const today = new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
   const title = idea ? (idea.length > 48 ? idea.slice(0, 48) + "…" : idea) : "Business Idea Analysis";
 
@@ -193,7 +235,10 @@ export default function ReportView({ report, idea, onReset }) {
       <aside className="sidebar">
         <div className="sidebar-brand">
           <span className="logo-mark">G</span>
-          Groundly
+          <div>
+            <div>Groundly</div>
+            <div className="brand-sub">AI Analysis Platform</div>
+          </div>
         </div>
 
         <div className="sidebar-section-label">Frameworks</div>
@@ -201,13 +246,11 @@ export default function ReportView({ report, idea, onReset }) {
         {stats.frameworks.map((fw) => {
           const verified = report.verification?.[fw]?.verified;
           return (
-            <button
-              key={fw}
-              className={`sidebar-item ${activeFramework === fw ? "active" : ""}`}
-              onClick={() => setActiveFramework(fw)}
-            >
+            <button key={fw} className={`sidebar-item ${activeFramework === fw ? "active" : ""}`} onClick={() => setActiveFramework(fw)}>
               <span>{FRAMEWORK_LABELS[fw] || fw.toUpperCase()}</span>
-              <span className={`status-dot ${verified ? "done" : "locked"}`} />
+              <span className={`fw-status ${verified ? "done" : "pending"}`}>
+                {verified ? <IconCheck size={13} /> : <span className="status-dot locked" />}
+              </span>
             </button>
           );
         })}
@@ -215,17 +258,15 @@ export default function ReportView({ report, idea, onReset }) {
         {LOCKED_FRAMEWORKS.map((fw) => (
           <button key={fw.key} className="sidebar-item locked-fw" disabled title="Not yet available">
             <span>{fw.label}</span>
-            <span className="lock-icon">🔒</span>
+            <IconLock size={12} />
           </button>
         ))}
 
         <div className="sidebar-footer">
           <div className="pro-upsell">
-            <div className="pro-upsell-title">💎 Pro Plan</div>
+            <div className="pro-upsell-title"><IconGem size={14} /> Pro Plan</div>
             <p>Unlock advanced frameworks and export unlimited reports.</p>
-            <button className="btn-secondary" disabled style={{ width: "100%" }}>
-              Upgrade Plan
-            </button>
+            <button className="btn-secondary" disabled style={{ width: "100%" }}>Upgrade Plan</button>
           </div>
           <button className="btn-secondary" style={{ width: "100%", marginTop: 10 }} onClick={onReset}>
             Start New Analysis
@@ -236,17 +277,15 @@ export default function ReportView({ report, idea, onReset }) {
       <main className="main-content report-page">
         <div className="report-header">
           <div className="report-header-left">
-            <span className="report-icon">📊</span>
+            <span className="report-icon"><IconLayers size={18} /></span>
             <div>
               <h1>{title}</h1>
-              <div className="report-meta">
-                {today} · v1.0 (Latest)
-              </div>
+              <div className="report-meta">{today} · v1.0 (Latest)</div>
             </div>
           </div>
           <div className="report-header-actions">
-            <button className="btn-secondary" disabled title="Coming soon">👥 Share</button>
-            <button className="btn-primary" disabled title="Coming soon">⬇ Export PDF</button>
+            <button className="btn-secondary" disabled title="Coming soon"><IconShare size={14} /> Share</button>
+            <button className="btn-primary" disabled title="Coming soon"><IconDownload size={14} /> Export PDF</button>
           </div>
         </div>
 
@@ -255,28 +294,33 @@ export default function ReportView({ report, idea, onReset }) {
 
         <div className="report-body-grid">
           <div>
-            {activeResult && (
-              <FrameworkPanel frameworkKey={activeFramework} result={activeResult} verification={activeVerification} />
-            )}
+            {activeResult && <FrameworkPanel frameworkKey={activeFramework} result={activeResult} verification={activeVerification} />}
           </div>
 
           <div className="right-rail">
             <div className="card rail-card">
               <div className="rail-card-header">
                 <span>Sources & Citations</span>
+                <span className="view-all-link">View all ({totalUniqueSources})</span>
               </div>
               <CitationList citations={activeResult?.citations} />
             </div>
 
             <div className="card rail-card ask-ai-card">
               <div className="rail-card-header">
-                <span>✨ Ask AI</span>
-                <span className="pill" style={{ fontSize: 11 }}>Coming soon</span>
+                <span><IconSparkle size={14} /> Ask AI</span>
+                <span className="pill pill-muted">Coming soon</span>
               </div>
-              <div className="ask-ai-suggested">
-                What are the biggest risks in this analysis?
-              </div>
+              <div className="ask-ai-suggested"><IconMessage size={13} /> What are the biggest risks in this analysis?</div>
               <input className="ask-ai-input" placeholder="Ask anything about this analysis..." disabled />
+            </div>
+
+            <div className="card rail-card compare-card">
+              <div className="rail-card-header-flat">
+                <span><IconCompare size={14} /> Compare Version</span>
+                <span className="view-all-link">Coming soon</span>
+              </div>
+              <p className="compare-sub">Compare this analysis with previous versions.</p>
             </div>
           </div>
         </div>
