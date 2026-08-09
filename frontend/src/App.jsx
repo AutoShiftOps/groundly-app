@@ -1,8 +1,6 @@
 // frontend/src/App.jsx
-//
-// Same state, same handleLaunch/handleReset logic, same /api/analyze contract
-// as your existing App.jsx — only the JSX returned at the bottom changes,
-// switching between HomeView / TrainProgress / ReportView based on state.
+// Same state/handlers/API contract as before. Only change: pass `idea` into
+// ReportView so the report header can show the actual idea text as its title.
 
 import React, { useState } from "react";
 import TrainProgress from "./components/TrainProgress";
@@ -13,9 +11,6 @@ import "./styles/theme.css";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
-// Simulated stage timings while we wait for the real API call to resolve.
-// Backend currently returns one final response (not streaming), so we advance
-// the train visually while the request is in flight, then jump to "done" on response.
 const STAGE_COUNT = 5;
 const SIMULATED_STAGE_INTERVAL_MS = 2000;
 
@@ -76,26 +71,16 @@ export default function App() {
   };
 
   const sourceCount = report
-    ? Object.values(report.results || {}).reduce(
-        (sum, r) => sum + (r.citations?.length || 0),
-        0
-      )
+    ? Object.values(report.results || {}).reduce((sum, r) => sum + (r.citations?.length || 0), 0)
     : 0;
 
   if (report) {
-    return <ReportView report={report} onReset={handleReset} />;
+    return <ReportView report={report} idea={idea} onReset={handleReset} />;
   }
 
   if (isAnalyzing) {
     return <TrainProgress activeIndex={activeStage} sourceCount={sourceCount} />;
   }
 
-  return (
-    <HomeView
-      idea={idea}
-      setIdea={setIdea}
-      onLaunch={handleLaunch}
-      error={error}
-    />
-  );
+  return <HomeView idea={idea} setIdea={setIdea} onLaunch={handleLaunch} error={error} />;
 }

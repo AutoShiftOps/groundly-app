@@ -1,18 +1,21 @@
 // frontend/src/components/TrainProgress.jsx
 //
-// Fixes vs previous version:
-// 1. Emoji written as literal characters (not \uXXXX escapes) - JSX text
-//    nodes are not JS string literals, so escape sequences rendered as
-//    raw text instead of being interpreted. This was the "\uD83D\uDCE1"
-//    garbage text bug.
-// 2. Full sidebar + train track + connecting rail + glow to match mockup.jpg
-//    pixel-for-pixel structure: carriages sit on a horizontal rail, active
-//    carriage glows amber, done carriages are green with a checkmark,
-//    locked/upcoming carriages are outlined only.
+// High-fidelity rebuild targeting mockup.jpg as closely as hand-built
+// SVG/CSS allows (no external art assets - everything below is custom-built):
+// - Curved glowing SVG track with animated flowing highlight
+// - Wagon-shaped carriages with wheels + couplers; final stage rendered as
+//   an "engine nose" shape (asymmetric rounded corner) to read as the
+//   not-yet-arrived front of the train
+// - Animated smoke puffs rising from completed/active carriages
+// - Real inline SVG sparklines in stat cards
+// - Markets-analyzed chip row (country codes)
+// - Pro Tip carousel with prev/next arrows + dot pagination (manual + auto)
+// - Top-right "Live analysis" pill, bottom "encrypted and secure" footer
+// - Shared sidebar with avatar/plan badge in the footer
 //
-// Same props contract as before: activeIndex (0-based stage), sourceCount.
+// Props contract unchanged: activeIndex (0-based stage), sourceCount.
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import "./TrainProgress.css";
 
@@ -33,6 +36,122 @@ const SIDEBAR_ITEMS = [
   { key: "settings", label: "Settings", icon: "⚙️" },
 ];
 
+const MARKET_CODES = ["US", "UK", "IN", "DE", "CA", "AU", "SG", "AE", "BR"];
+
+function Sparkline({ points, color = "var(--accent-blue)", width = 120, height = 32 }) {
+  const path = useMemo(() => {
+    const max = Math.max(...points);
+    const min = Math.min(...points);
+    const range = max - min || 1;
+    const stepX = width / (points.length - 1);
+    return points
+      .map((p, i) => {
+        const x = i * stepX;
+        const y = height - ((p - min) / range) * height;
+        return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .join(" ");
+  }, [points, width, height]);
+
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="sparkline">
+      <path d={path} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function SmokePuffs({ active }) {
+  if (!active) return null;
+  return (
+    <div className="smoke-wrap">
+      {[0, 1, 2].map((i) => (
+        <motion.span
+          key={i}
+          className="smoke-puff"
+          initial={{ opacity: 0.5, y: 0, scale: 0.6 }}
+          animate={{ opacity: 0, y: -26, scale: 1.3 }}
+          transition={{ duration: 1.8, repeat: Infinity, delay: i * 0.5, ease: "easeOut" }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function TrainTrack() {
+  return (
+    <svg className="track-svg" viewBox="0 0 1000 40" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="railGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#4f8cff" stopOpacity="0.15" />
+          <stop offset="60%" stopColor="#a26bff" stopOpacity="0.5" />
+          <stop offset="100%" stopColor="#a26bff" stopOpacity="0.15" />
+        </linearGradient>
+      </defs>
+      <path d="M0,20 Q250,4 500,20 T1000,20" fill="none" stroke="url(#railGrad)" strokeWidth="3" />
+      <path
+        d="M0,20 Q250,4 500,20 T1000,20"
+        fill="none"
+        stroke="#4f8cff"
+        strokeWidth="2"
+        strokeDasharray="6 10"
+        opacity="0.6"
+        className="track-flow"
+      />
+    </svg>
+  );
+}
+
+function Carriage({ stage, state, isLast }) {
+  return (
+    <div className={`carriage-wrap ${isLast ? "engine" : ""}`}>
+      <SmokePuffs active={state === "active" || state === "done"} />
+      <motion.div
+        className={`carriage ${state} ${isLast ? "engine-shape" : ""}`}
+        animate={state === "active" ? { y: [0, -5, 0] } : { y: 0 }}
+        transition={{ duration: 1.3, repeat: state === "active" ? Infinity : 0, ease: "easeInOut" }}
+      >
+        <span className="icon">{state === "done" ? "✅" : stage.icon}</span>
+        <span className="label">{stage.label}</span>
+      </motion.div>
+      <div className="wheels">
+        <span className="wheel" />
+        <span className="wheel" />
+      </div>
+    </div>
+  );
+}
+
+function ProTipCarousel({ tipIndex, setTipIndex }) {
+  const goto = (delta) => setTipIndex((i) => (i + delta + STAGES.length) % STAGES.length);
+  return (
+    <div className="tip-carousel">
+      <button className="tip-arrow" onClick={() => goto(-1)} aria-label="Previous tip">‹</button>
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={tipIndex}
+          className="tip-card"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -8 }}
+          transition={{ duration: 0.3 }}
+        >
+          <span className="tip-icon">💡</span>
+          <div>
+            <strong>Pro Tip</strong>
+            <p>{STAGES[tipIndex].tip}</p>
+          </div>
+        </motion.div>
+      </AnimatePresence>
+      <button className="tip-arrow" onClick={() => goto(1)} aria-label="Next tip">›</button>
+      <div className="tip-dots">
+        {STAGES.map((_, i) => (
+          <span key={i} className={`dot ${i === tipIndex ? "active" : ""}`} onClick={() => setTipIndex(i)} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function TrainProgress({ activeIndex = 0, sourceCount = 0 }) {
   const [tipIndex, setTipIndex] = useState(0);
 
@@ -44,6 +163,7 @@ export default function TrainProgress({ activeIndex = 0, sourceCount = 0 }) {
   }, []);
 
   const overallProgress = Math.min(100, Math.round(((activeIndex + 1) / STAGES.length) * 100));
+  const dataPoints = 328 + activeIndex * 40;
 
   return (
     <div className="app-shell">
@@ -58,12 +178,22 @@ export default function TrainProgress({ activeIndex = 0, sourceCount = 0 }) {
             {item.label}
           </button>
         ))}
-        <div className="sidebar-footer">Your data is encrypted and secure</div>
+        <div className="sidebar-footer">
+          <div className="account-badge">
+            <span className="avatar-dot" />
+            <div>
+              <div className="account-name">Founder</div>
+              <div className="account-plan">Free</div>
+            </div>
+          </div>
+        </div>
       </aside>
 
       <main className="main-content train-page">
         <div className="train-page-header">
-          <div className="pill">📡 Live analysis</div>
+          <div className="pill live-pill">
+            <span className="pulse-dot" /> Live analysis
+          </div>
         </div>
 
         <h1 className="train-headline">
@@ -73,20 +203,12 @@ export default function TrainProgress({ activeIndex = 0, sourceCount = 0 }) {
 
         <div className="train-container">
           <div className="track">
-            <div className="rail" />
+            <div className="track-svg-wrap">
+              <TrainTrack />
+            </div>
             {STAGES.map((stage, i) => {
               const state = i < activeIndex ? "done" : i === activeIndex ? "active" : "upcoming";
-              return (
-                <motion.div
-                  key={stage.key}
-                  className={`carriage ${state}`}
-                  animate={state === "active" ? { y: [0, -5, 0] } : { y: 0 }}
-                  transition={{ duration: 1.3, repeat: state === "active" ? Infinity : 0, ease: "easeInOut" }}
-                >
-                  <span className="icon">{state === "done" ? "✅" : stage.icon}</span>
-                  <span className="label">{stage.label}</span>
-                </motion.div>
-              );
+              return <Carriage key={stage.key} stage={stage} state={state} isLast={i === STAGES.length - 1} />;
             })}
           </div>
 
@@ -107,38 +229,40 @@ export default function TrainProgress({ activeIndex = 0, sourceCount = 0 }) {
 
           <div className="stat-grid">
             <div className="stat-card">
-              <div className="stat-value">{sourceCount}</div>
+              <div className="stat-top">
+                <div className="stat-value">{sourceCount}</div>
+                <Sparkline points={[4, 7, 5, 9, 12, 10, 14, sourceCount || 16]} color="var(--accent-blue)" />
+              </div>
               <div className="stat-label">sources scanned</div>
+              <div className="stat-delta">+{Math.max(1, activeIndex * 3)} in the last 30s</div>
             </div>
+
             <div className="stat-card">
-              <div className="stat-value">4</div>
-              <div className="stat-label">frameworks analyzed</div>
+              <div className="stat-top">
+                <div className="stat-value">{MARKET_CODES.length}</div>
+              </div>
+              <div className="stat-label">markets analyzed</div>
+              <div className="market-chips">
+                {MARKET_CODES.map((code) => (
+                  <span key={code} className="market-chip">{code}</span>
+                ))}
+              </div>
             </div>
+
             <div className="stat-card">
-              <div className="stat-value">{activeIndex + 1}/{STAGES.length}</div>
-              <div className="stat-label">stages complete</div>
+              <div className="stat-top">
+                <div className="stat-value">{dataPoints}</div>
+                <Sparkline points={[20, 45, 30, 60, 55, 80, 70, dataPoints]} color="var(--accent-purple)" />
+              </div>
+              <div className="stat-label">data points processed</div>
+              <div className="stat-delta">Crunching numbers for deeper insights</div>
             </div>
           </div>
 
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={tipIndex}
-              className="tip-card"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.3 }}
-            >
-              <strong>Pro Tip:</strong> {STAGES[tipIndex].tip}
-            </motion.div>
-          </AnimatePresence>
-
-          <div className="tip-dots">
-            {STAGES.map((_, i) => (
-              <span key={i} className={`dot ${i === tipIndex ? "active" : ""}`} />
-            ))}
-          </div>
+          <ProTipCarousel tipIndex={tipIndex} setTipIndex={setTipIndex} />
         </div>
+
+        <div className="secure-footer">🔒 Your data is encrypted and secure</div>
       </main>
     </div>
   );

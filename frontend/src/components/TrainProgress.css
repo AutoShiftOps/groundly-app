@@ -1,74 +1,143 @@
 /* frontend/src/components/TrainProgress.css
-   Rebuilt to match mockup.jpg: carriages on a connecting rail, glow states,
-   stat cards, tip carousel with dot indicators. Uses theme.css variables. */
+   High-fidelity rebuild: curved SVG track, wagon-shaped carriages with
+   wheels, engine-nose final stage, smoke puffs, sparkline stat cards,
+   market chips, Pro Tip carousel with arrows + dots. */
 
 .train-page {
-  max-width: 1000px;
+  max-width: 1080px;
   margin: 0 auto;
+  position: relative;
 }
 
 .train-page-header {
-  margin-bottom: 20px;
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: -8px;
+}
+
+.live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-green);
+  box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.6);
+  animation: pulse 1.6s infinite;
+}
+
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(46, 204, 113, 0.6); }
+  70% { box-shadow: 0 0 0 6px rgba(46, 204, 113, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(46, 204, 113, 0); }
 }
 
 .train-headline {
-  font-size: 34px;
+  font-size: 36px;
   font-weight: 800;
-  margin: 0 0 8px;
+  margin: 20px 0 8px;
   color: var(--text-primary);
 }
 
 .train-subhead {
   color: var(--text-secondary);
   font-size: 15px;
-  margin: 0 0 32px;
+  margin: 0 0 36px;
 }
 
 .train-container {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 24px;
 }
+
+/* --- Track + carriages --- */
 
 .track {
   position: relative;
   display: flex;
   justify-content: space-between;
-  gap: 12px;
-  padding: 32px 12px 12px;
+  align-items: flex-end;
+  gap: 14px;
+  padding: 44px 8px 24px;
 }
 
-.rail {
+.track-svg-wrap {
   position: absolute;
-  top: 50%;
+  top: 46%;
   left: 0;
   right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, rgba(79, 140, 255, 0.15), rgba(162, 107, 255, 0.35));
-  border-radius: 2px;
+  height: 40px;
   z-index: 0;
+  opacity: 0.9;
+}
+
+.track-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.track-flow {
+  animation: dashFlow 3s linear infinite;
+}
+
+@keyframes dashFlow {
+  to { stroke-dashoffset: -160; }
+}
+
+.carriage-wrap {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.smoke-wrap {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  width: 0;
+  height: 0;
+}
+
+.smoke-puff {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.5), transparent 70%);
+  transform: translateX(-50%);
 }
 
 .carriage {
-  position: relative;
-  z-index: 1;
+  width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 20px 12px;
-  border-radius: var(--radius-md);
-  flex: 1;
-  min-width: 0;
+  padding: 18px 10px;
+  border-radius: 14px 14px 6px 6px;
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   color: var(--text-secondary);
   transition: background 0.4s ease, color 0.4s ease, box-shadow 0.4s ease, border-color 0.4s ease;
 }
 
+.carriage.engine-shape {
+  border-radius: 24px 8px 6px 6px;
+}
+
 .carriage.upcoming {
-  opacity: 0.55;
+  opacity: 0.5;
 }
 
 .carriage.done {
@@ -78,10 +147,10 @@
 }
 
 .carriage.active {
-  background: rgba(242, 183, 5, 0.12);
+  background: rgba(242, 183, 5, 0.14);
   border-color: var(--accent-amber);
   color: var(--accent-amber);
-  box-shadow: var(--shadow-glow-amber);
+  box-shadow: 0 0 22px rgba(242, 183, 5, 0.45);
 }
 
 .carriage .icon {
@@ -94,6 +163,22 @@
   font-weight: 600;
   white-space: nowrap;
 }
+
+.wheels {
+  display: flex;
+  gap: 22px;
+  margin-top: -4px;
+}
+
+.wheel {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--bg-panel);
+  border: 2px solid var(--border-strong);
+}
+
+/* --- Progress bar --- */
 
 .progress-block {
   padding: 0 4px;
@@ -110,7 +195,7 @@
 .progress-pct {
   color: var(--accent-blue);
   font-weight: 700;
-  font-size: 15px;
+  font-size: 16px;
 }
 
 .progress-track {
@@ -134,6 +219,8 @@
   margin: 10px 0 0;
 }
 
+/* --- Stat cards --- */
+
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -146,6 +233,16 @@
   border-radius: var(--radius-md);
   padding: 18px 20px;
   box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.stat-top {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .stat-value {
@@ -157,11 +254,65 @@
 .stat-label {
   font-size: 13px;
   color: var(--text-secondary);
-  margin-top: 4px;
+}
+
+.stat-delta {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.sparkline {
+  flex-shrink: 0;
+}
+
+.market-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.market-chip {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+}
+
+/* --- Pro Tip carousel --- */
+
+.tip-carousel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tip-arrow {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.tip-arrow:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
 }
 
 .tip-card {
-  text-align: center;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
   font-size: 14px;
   color: var(--text-secondary);
   background: rgba(255, 255, 255, 0.04);
@@ -170,14 +321,27 @@
   border-radius: var(--radius-md);
 }
 
+.tip-icon {
+  font-size: 18px;
+}
+
 .tip-card strong {
   color: var(--accent-cyan);
+  display: block;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 2px;
+}
+
+.tip-card p {
+  margin: 0;
 }
 
 .tip-dots {
   display: flex;
-  justify-content: center;
   gap: 6px;
+  flex-shrink: 0;
 }
 
 .tip-dots .dot {
@@ -185,6 +349,7 @@
   height: 6px;
   border-radius: 50%;
   background: var(--border-strong);
+  cursor: pointer;
   transition: background 0.3s ease, transform 0.3s ease;
 }
 
@@ -193,18 +358,53 @@
   transform: scale(1.3);
 }
 
+.secure-footer {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-top: 32px;
+}
+
+.account-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.avatar-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--gradient-primary);
+  flex-shrink: 0;
+}
+
+.account-name {
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.account-plan {
+  font-size: 11px;
+  color: var(--accent-purple);
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .carriage.active {
+  .carriage.active,
+  .pulse-dot,
+  .track-flow,
+  .smoke-puff {
     animation: none !important;
     box-shadow: none;
   }
 }
 
-@media (max-width: 720px) {
+@media (max-width: 800px) {
   .track {
     flex-wrap: wrap;
   }
-  .rail {
+  .track-svg-wrap {
     display: none;
   }
   .stat-grid {
