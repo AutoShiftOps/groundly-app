@@ -268,6 +268,9 @@ const MARKET_TIERS = [
 // it. This regex also accepts spelled-out billion/million/trillion and
 // comma-separated thousands, normalized to one internal unit below.
 const UNIT_MULTIPLIER = { b: 1e9, billion: 1e9, m: 1e6, million: 1e6, t: 1e12, trillion: 1e12 };
+// Deliberately does not parse ranges like "$18-22 billion" — which of
+// low/high/midpoint to show is a product decision, not a parsing gap.
+// Falls through to the visible "not parseable" state by design.
 function tagFigureRegex(key) {
   return new RegExp(`\\[${key}\\][^$]*\\$?([\\d,]+\\.?\\d*)\\s*(billion|million|trillion|B|M|T)\\b`, "i");
 }
