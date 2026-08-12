@@ -31,9 +31,22 @@ const PRO_TIPS = [
   "Unit economics drive long-term profitability.",
 ];
 
+function ShortViewportStyles() {
+  return (
+    <style>{`
+      .ls-hero-h1 { font-size: 2.6rem; }
+      .ls-card { min-height: 128px; }
+      @media (max-height: 700px) {
+        .ls-hero-h1 { font-size: 1.85rem; }
+        .ls-card { min-height: 88px; }
+      }
+    `}</style>
+  );
+}
+
 function TopBar() {
   return (
-    <header className="flex items-center justify-between px-6 py-3 shrink-0" style={{ borderBottom: "1px solid rgba(99,140,255,0.08)" }}>
+    <header className="flex items-center justify-between px-6 py-2 shrink-0" style={{ borderBottom: "1px solid rgba(99,140,255,0.08)" }}>
       <div className="flex items-center gap-2">
         <span className="text-[#4a8fff] text-base">✦</span>
         <span className="text-sm font-semibold text-[#c0cce8] tracking-wide">AI Business Analyst</span>
@@ -49,20 +62,20 @@ function TopBar() {
 
 function HeroSection() {
   return (
-    <div className="px-8 pt-8 pb-2">
-      <h1 className="text-[2.6rem] font-extrabold leading-[1.15] text-white" style={{ letterSpacing: "-0.025em" }}>
+    <div className="flex-none px-8 pt-5 pb-1">
+      <h1 className="ls-hero-h1 font-extrabold leading-[1.15] text-white" style={{ letterSpacing: "-0.025em" }}>
         Analyzing your business{" "}
         <span style={{ background: "linear-gradient(90deg,#4a8fff,#2dd4bf)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>idea</span>{" "}
         <span style={{ color: "#4a8fff" }}>✦✦</span>
       </h1>
-      <p className="mt-2 text-[#7a8aaa] text-sm font-medium">Our AI is working its magic ✨</p>
+      <p className="mt-1 text-[#7a8aaa] text-sm font-medium">Our AI is working its magic ✨</p>
     </div>
   );
 }
 
 function OverallProgress({ value }: { value: number }) {
   return (
-    <div className="px-8 py-5">
+    <div className="flex-none px-8 py-3">
       <div className="flex flex-col items-center gap-2">
         <span className="text-xs font-medium text-[#7a8aaa]">Overall progress</span>
         <span className="text-3xl font-bold" style={{ background: "linear-gradient(90deg,#4a8fff,#a78bfa)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
@@ -99,7 +112,7 @@ function Sparkline({ data, color }: { data: { v: number }[]; color: string }) {
 
 function StatCard({ card }: { card: StatCardData }) {
   return (
-    <div className="flex-1 min-w-[185px] flex flex-col gap-3 p-4 rounded-2xl"
+    <div className="ls-card flex-1 min-w-[185px] flex flex-col gap-3 p-2.5 rounded-2xl"
       style={{ background: "rgba(10,20,40,0.92)", border: "1px solid rgba(99,140,255,0.13)", boxShadow: "0 4px 28px rgba(0,0,0,0.35)" }}>
       <div className="flex items-start gap-3">
         <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: card.iconBg }}>{card.icon}</div>
@@ -117,7 +130,7 @@ function StatCard({ card }: { card: StatCardData }) {
 function ProTipCard() {
   const [idx, setIdx] = useState(0);
   return (
-    <div className="flex-1 min-w-[185px] flex flex-col gap-3 p-4 rounded-2xl"
+    <div className="ls-card flex-1 min-w-[185px] flex flex-col gap-3 p-2.5 rounded-2xl"
       style={{ background: "rgba(10,20,40,0.92)", border: "1px solid rgba(99,140,255,0.13)", boxShadow: "0 4px 28px rgba(0,0,0,0.35)" }}>
       <div className="flex items-start gap-3">
         <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: "rgba(124,58,237,0.25)" }}>
@@ -158,7 +171,7 @@ function StatsGrid({ sourceCount }: { sourceCount: number }) {
       value: String(sourceCount * 40), label: "data points processed", subtext: "Crunching numbers for deeper insights", sparkData: sparkFlat, sparkColor: "#a78bfa" },
   ];
   return (
-    <div className="px-8 pb-4">
+    <div className="flex-none px-8 pb-2.5">
       <div className="flex gap-3 flex-wrap">
         {cards.map((c) => <StatCard key={c.label} card={c} />)}
         <ProTipCard />
@@ -177,17 +190,20 @@ export default function LoadingScreen({ activeStageIndex, sourceCount }: Loading
   const progressPct = Math.min(100, Math.round(((activeStageIndex + 1) / STAGE_LABELS.length) * 100));
 
   return (
-    <div className="flex min-h-screen w-full overflow-hidden"
-      style={{ background: "radial-gradient(ellipse 80% 60% at 75% 5%, rgba(90,60,180,0.18) 0%, #050c1a 55%)", fontFamily: "'Inter', sans-serif" }}>
+    <div className="flex w-full overflow-hidden"
+      style={{ height: "100dvh", background: "radial-gradient(ellipse 80% 60% at 75% 5%, rgba(90,60,180,0.18) 0%, #050c1a 55%)", fontFamily: "'Inter', sans-serif" }}>
+      <ShortViewportStyles />
       <Sidebar activeNav={activeNav} onNavChange={setActiveNav} />
       <div className="flex flex-col flex-1 min-h-screen overflow-y-auto">
         <TopBar />
-        <main className="flex-1 flex flex-col">
+        <main className="flex-1 flex flex-col min-h-0">
           <HeroSection />
-          <TrainScene activeStageIndex={activeStageIndex} />
+          <div style={{ flex: "1 1 auto", minHeight: 0, display: "flex", alignItems: "center" }}>
+            <TrainScene activeStageIndex={activeStageIndex} />
+          </div>
           <OverallProgress value={progressPct} />
           <StatsGrid sourceCount={sourceCount} />
-          <div className="flex items-center justify-center gap-2 py-3 text-[#5a6a8a] text-xs">
+          <div className="flex flex-none items-center justify-center gap-2 py-2 text-[#5a6a8a] text-xs">
             <Lock size={12} strokeWidth={2} />
             <span>Your data is encrypted and secure</span>
           </div>

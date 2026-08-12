@@ -269,7 +269,7 @@ export default function TrainScene({ activeStageIndex }: { activeStageIndex: num
       preserveAspectRatio="xMidYMid meet"
       role="img"
       aria-label={`Analysis pipeline. Current stage: ${STAGE_LABELS[active]}.`}
-      style={{ display: "block", width: "100%", height: "clamp(215px, 22vw, 330px)", overflow: "visible", isolation: "isolate" }}
+      style={{ display: "block", width: "100%", height: "100%", minHeight: 120, overflow: "visible", isolation: "isolate" }}
     >
       <style>{`
         .ts-add { mix-blend-mode: plus-lighter; }
