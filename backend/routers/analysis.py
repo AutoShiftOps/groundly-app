@@ -1,5 +1,5 @@
+import asyncio
 import sys
-import os
 from pathlib import Path
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -34,7 +34,7 @@ class AnalysisResponse(BaseModel):
 
 
 @router.post("/analyze", response_model=AnalysisResponse)
-def analyze(req: AnalysisRequest):
+async def analyze(req: AnalysisRequest):
     # Enforce free-tier framework gating server-side (never trust frontend toggles alone)
     if req.tier == "free":
         allowed = [f for f in req.frameworks if f in FREE_FRAMEWORKS]
@@ -44,14 +44,21 @@ def analyze(req: AnalysisRequest):
     results = {}
     verification = {}
 
-    for framework in allowed:
+    def build_query(framework: str) -> str:
         query = f"{framework.upper()} analysis for: {req.idea}"
         if req.industry:
             query += f" | industry: {req.industry}"
         if req.geography:
             query += f" | geography: {req.geography}"
+        return query
 
-        pipeline_output = run_pipeline(query, framework_tag=framework)
+    # Run every requested framework's pipeline concurrently instead of
+    # blocking on 4 serial OpenAI calls.
+    pipeline_outputs = await asyncio.gather(
+        *(run_pipeline(build_query(framework), framework_tag=framework) for framework in allowed)
+    )
+
+    for framework, pipeline_output in zip(allowed, pipeline_outputs):
         results[framework] = {
             "text": pipeline_output["text"],
             "citations": pipeline_output["citations"],

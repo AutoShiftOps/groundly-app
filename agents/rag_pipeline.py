@@ -2,11 +2,13 @@
 RAG grounding pipeline: retrieve -> generate with citations -> verify claims -> confidence score.
 """
 
+import asyncio
+
 from agents import config  # noqa: F401  side-effect: loads backend/.env reliably
-from openai import OpenAI
+from openai import AsyncOpenAI
 from agents.db import search_similar
 
-client = OpenAI(api_key=config.OPENAI_API_KEY)
+client = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
 
 EMBEDDING_MODEL = "text-embedding-3-small"
 CHAT_MODEL = "gpt-4o-mini"
@@ -20,18 +22,21 @@ Rules you must follow strictly:
 """
 
 
-def embed_query(query: str):
-    response = client.embeddings.create(model=EMBEDDING_MODEL, input=query)
+async def embed_query(query: str):
+    response = await client.embeddings.create(model=EMBEDDING_MODEL, input=query)
     return response.data[0].embedding
 
 
-def retrieve(query: str, top_k: int = 8, framework_tag: str | None = None):
-    embedding = embed_query(query)
-    rows = search_similar(embedding, top_k=top_k, framework_tag=framework_tag)
+async def retrieve(query: str, top_k: int = 8, framework_tag: str | None = None):
+    embedding = await embed_query(query)
+    # search_similar() is a blocking psycopg2 call; run it off the event
+    # loop so concurrent run_pipeline() calls (one per framework) don't
+    # serialize behind it.
+    rows = await asyncio.to_thread(search_similar, embedding, top_k=top_k, framework_tag=framework_tag)
     return rows
 
 
-def generate_with_citations(query: str, context_chunks: list):
+async def generate_with_citations(query: str, context_chunks: list):
     if not context_chunks:
         return {
             "text": "Insufficient grounded data available for this section.",
@@ -43,7 +48,7 @@ def generate_with_citations(query: str, context_chunks: list):
         for i, c in enumerate(context_chunks)
     )
 
-    completion = client.chat.completions.create(
+    completion = await client.chat.completions.create(
         model=CHAT_MODEL,
         messages=[
             {"role": "system", "content": GROUNDING_SYSTEM_PROMPT},
@@ -80,8 +85,8 @@ def verify_claims(generated_text: str, citations: list):
     }
 
 
-def run_pipeline(query: str, framework_tag: str | None = None):
-    chunks = retrieve(query, framework_tag=framework_tag)
-    result = generate_with_citations(query, chunks)
+async def run_pipeline(query: str, framework_tag: str | None = None):
+    chunks = await retrieve(query, framework_tag=framework_tag)
+    result = await generate_with_citations(query, chunks)
     verification = verify_claims(result["text"], result["citations"])
     return {**result, "verification": verification}

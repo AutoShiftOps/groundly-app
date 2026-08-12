@@ -49,8 +49,9 @@ Expected output: `Ingested N chunk(s) from 'Test Market Snippet' tagged as 'tam'
 
 ```bash
 python
+>>> import asyncio
 >>> from agents.rag_pipeline import run_pipeline
->>> result = run_pipeline("What is the TAM for eco-friendly packaging?", framework_tag="tam")
+>>> result = asyncio.run(run_pipeline("What is the TAM for eco-friendly packaging?", framework_tag="tam"))
 >>> print(result["text"])
 >>> print(result["citations"])
 >>> print(result["verification"])
