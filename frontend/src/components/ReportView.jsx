@@ -403,7 +403,7 @@ export default function ReportView({ report, idea, onReset }) {
 
   return (
     <div className="flex min-h-screen w-full overflow-hidden" style={{ background: PALETTE.bgOuter, fontFamily: "'Inter', sans-serif" }}>
-      <aside className="flex flex-col w-[236px] min-h-screen py-5 px-3 shrink-0" style={{ background: PALETTE.bgSidebar, borderRight: `1px solid ${PALETTE.border}` }}>
+      <aside className="flex flex-col w-[250px] min-h-screen py-5 px-3 shrink-0" style={{ background: PALETTE.bgSidebar, borderRight: `1px solid ${PALETTE.border}` }}>
         <div className="flex items-center gap-2 px-2 mb-6">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: `linear-gradient(135deg, ${PALETTE.blue}, ${PALETTE.purple})` }}>
             <svg width="16" height="16" viewBox="0 0 18 18" fill="none"><path d="M9 2L16 14H2L9 2Z" fill="white" fillOpacity="0.9" /></svg>
