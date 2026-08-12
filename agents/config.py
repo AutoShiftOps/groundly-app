@@ -18,6 +18,10 @@ load_dotenv(dotenv_path=ENV_PATH)
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 DATABASE_URL = os.getenv("DATABASE_URL")
+# Optional: live web-retrieval fallback (agents/web_retrieval.py). Unlike the
+# two vars below, a missing key is not fatal -- it just disables that
+# fallback and the pipeline behaves as it did before that feature existed.
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 
 if not OPENAI_API_KEY:
     raise RuntimeError(
