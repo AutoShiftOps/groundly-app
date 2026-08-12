@@ -21,6 +21,17 @@ Rules you must follow strictly:
 4. Do not fabricate numbers, company names, or sources under any circumstance.
 """
 
+TAM_TAGGING_INSTRUCTION = """
+Additionally, since this is a market-sizing (TAM/SAM/SOM) analysis:
+whenever you state a Total Addressable Market figure, prefix it with
+[TAM]. Whenever you state a Serviceable Available Market figure, prefix
+it with [SAM]. Whenever you state a Serviceable Obtainable Market
+figure, prefix it with [SOM]. Example: "[TAM] The global market is
+$68.3B [1]." Only tag a figure if the CONTEXT explicitly supports that
+specific tier — do not invent SAM or SOM if the context only supports
+TAM.
+"""
+
 
 async def embed_query(query: str):
     response = await client.embeddings.create(model=EMBEDDING_MODEL, input=query)
@@ -36,7 +47,7 @@ async def retrieve(query: str, top_k: int = 8, framework_tag: str | None = None)
     return rows
 
 
-async def generate_with_citations(query: str, context_chunks: list):
+async def generate_with_citations(query: str, context_chunks: list, framework_tag: str | None = None):
     if not context_chunks:
         return {
             "text": "Insufficient grounded data available for this section.",
@@ -48,10 +59,14 @@ async def generate_with_citations(query: str, context_chunks: list):
         for i, c in enumerate(context_chunks)
     )
 
+    system_prompt = GROUNDING_SYSTEM_PROMPT
+    if framework_tag == "tam":
+        system_prompt += TAM_TAGGING_INSTRUCTION
+
     completion = await client.chat.completions.create(
         model=CHAT_MODEL,
         messages=[
-            {"role": "system", "content": GROUNDING_SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"CONTEXT:\n{context_block}\n\nQUESTION:\n{query}"},
         ],
         temperature=0.2,
@@ -87,6 +102,6 @@ def verify_claims(generated_text: str, citations: list):
 
 async def run_pipeline(query: str, framework_tag: str | None = None):
     chunks = await retrieve(query, framework_tag=framework_tag)
-    result = await generate_with_citations(query, chunks)
+    result = await generate_with_citations(query, chunks, framework_tag=framework_tag)
     verification = verify_claims(result["text"], result["citations"])
     return {**result, "verification": verification}
