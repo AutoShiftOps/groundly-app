@@ -1,5 +1,10 @@
 @custom-variant dark (&:is(.dark *));
 
+/* backstop: nothing in the app should ever be able to widen the page itself.
+   the train row and stat cards had their overflow sources fixed directly,
+   but this stays as a safety net for anything added later. */
+html, body { overflow-x: hidden; max-width: 100%; }
+
 :root {
   --font-size: 16px;
   --font-family: 'Inter', sans-serif;
