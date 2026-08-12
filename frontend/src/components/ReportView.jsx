@@ -19,6 +19,7 @@ import {
   ShieldCheck, ShieldAlert, CheckCircle2, AlertTriangle, Lock,
   Share2, Download, Sparkles, MessageSquare, GitCompare, Layers, ChevronLeft,
 } from "lucide-react";
+import { AreaChart, Area, ResponsiveContainer } from "recharts";
 
 const PALETTE = {
   bgOuter: "radial-gradient(ellipse 80% 60% at 75% 5%, rgba(90,60,180,0.18) 0%, #050c1a 55%)",
@@ -94,6 +95,52 @@ function ToneColor(tone) {
   return { teal: PALETTE.teal, amber: PALETTE.amber, red: PALETTE.red }[tone] || PALETTE.amber;
 }
 
+// Separate from useReportStats() on purpose -- that hook's numbers feed the
+// verdict/metric values shown elsewhere and its dedup discipline stays
+// untouched. This derives two additional per-framework trend arrays (real
+// data, same report shape) purely for the MetricRow sparklines.
+function useMetricTrends(report) {
+  return useMemo(() => {
+    const frameworks = Object.keys(report?.results || {});
+    let cumulativeCitations = 0;
+    const citationTrend = [];
+    const similarityTrend = [];
+
+    frameworks.forEach((fw) => {
+      const citations = report.results[fw]?.citations || [];
+      const seen = new Set();
+      let simSum = 0;
+      citations.forEach((c) => {
+        if (!seen.has(c.source_url)) { seen.add(c.source_url); cumulativeCitations += 1; }
+        simSum += c.similarity;
+      });
+      citationTrend.push({ v: cumulativeCitations });
+      similarityTrend.push({ v: citations.length ? Math.round((simSum / citations.length) * 100) : 0 });
+    });
+
+    return { citationTrend, similarityTrend };
+  }, [report]);
+}
+
+function Sparkline({ data, color }) {
+  const id = color.replace(/[^a-z0-9]/gi, "");
+  return (
+    <div style={{ width: 64, height: 28 }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={data} margin={{ top: 2, right: 0, bottom: 0, left: 0 }}>
+          <defs>
+            <linearGradient id={`rvsg${id}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity={0.3} />
+              <stop offset="100%" stopColor={color} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <Area type="monotone" dataKey="v" stroke={color} strokeWidth={1.5} fill={`url(#rvsg${id})`} dot={false} isAnimationActive={false} />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
 function ConfidenceRing({ pct, tone }) {
   const color = ToneColor(tone);
   const size = 150;
@@ -149,23 +196,30 @@ function VerdictBanner({ stats }) {
   );
 }
 
-function MetricCard({ label, value, sub, tone }) {
+function MetricCard({ label, value, sub, tone, sparkData, sparkColor }) {
   const color = tone ? ToneColor(tone) : PALETTE.border;
+  const showSpark = sparkData && sparkData.length > 1;
   return (
     <div className="rounded-2xl p-4" style={{ background: PALETTE.bgCard, border: `1px solid ${tone ? color + "55" : PALETTE.border}` }}>
-      <div className="text-xl font-extrabold text-white">{value}</div>
-      <div className="text-xs mt-1" style={{ color: PALETTE.textSecondary }}>{label}</div>
-      {sub && <div className="text-[10px] mt-1" style={{ color: PALETTE.textMuted }}>{sub}</div>}
+      <div className="flex items-end justify-between gap-2">
+        <div>
+          <div className="text-xl font-extrabold text-white">{value}</div>
+          <div className="text-xs mt-1" style={{ color: PALETTE.textSecondary }}>{label}</div>
+          {sub && <div className="text-[10px] mt-1" style={{ color: PALETTE.textMuted }}>{sub}</div>}
+        </div>
+        {showSpark && <Sparkline data={sparkData} color={sparkColor} />}
+      </div>
     </div>
   );
 }
 
-function MetricRow({ stats }) {
+function MetricRow({ report, stats }) {
+  const { citationTrend, similarityTrend } = useMetricTrends(report);
   return (
     <div className="grid grid-cols-4 gap-3 mb-5">
       <MetricCard label="Frameworks verified" value={`${stats.verifiedCount}/${stats.totalFrameworks}`} sub="Passed citation check" tone={stats.verifiedCount === stats.totalFrameworks ? "teal" : "amber"} />
-      <MetricCard label="Grounded sources" value={stats.totalCitations} sub="Unique citations used" />
-      <MetricCard label="Avg source match" value={`${stats.avgSimilarity}%`} sub="Semantic similarity" />
+      <MetricCard label="Grounded sources" value={stats.totalCitations} sub="Unique citations used" sparkData={citationTrend} sparkColor={PALETTE.blue} />
+      <MetricCard label="Avg source match" value={`${stats.avgSimilarity}%`} sub="Semantic similarity" sparkData={similarityTrend} sparkColor={PALETTE.purpleLight} />
       <MetricCard label="Unverified sections" value={stats.unverifiedCount} sub={stats.unverifiedCount > 0 ? "Needs more sources" : "All clear"} tone={stats.unverifiedCount > 0 ? "amber" : "teal"} />
     </div>
   );
@@ -322,7 +376,7 @@ export default function ReportView({ report, idea, onReset }) {
         </div>
 
         <VerdictBanner stats={stats} />
-        <MetricRow stats={stats} />
+        <MetricRow report={report} stats={stats} />
 
         <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 320px" }}>
           <div>{activeResult && <FrameworkPanel frameworkKey={activeFramework} result={activeResult} verification={activeVerification} />}</div>
