@@ -96,13 +96,26 @@ function ToneColor(tone) {
 
 function ConfidenceRing({ pct, tone }) {
   const color = ToneColor(tone);
+  const size = 150;
+  const strokeWidth = 12;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const dash = (Math.max(0, Math.min(100, pct)) / 100) * circumference;
+
   return (
-    <div className="relative flex items-center justify-center rounded-full shrink-0"
-      style={{ width: 78, height: 78, background: `conic-gradient(${color} calc(${pct} * 1%), rgba(255,255,255,0.06) 0)` }}>
-      <div className="absolute rounded-full" style={{ inset: 5, background: "#0b1428" }} />
-      <div className="relative z-10 flex flex-col items-center">
-        <span className="text-lg font-extrabold text-white">{pct}%</span>
-        <span className="text-[8px] uppercase tracking-wide" style={{ color: PALETTE.textMuted }}>Confidence</span>
+    <div className="relative flex items-center justify-center shrink-0" style={{ width: size, height: size }}>
+      <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={strokeWidth} />
+        <circle
+          cx={size / 2} cy={size / 2} r={radius} fill="none"
+          stroke={color} strokeWidth={strokeWidth} strokeLinecap="round"
+          strokeDasharray={`${dash} ${circumference - dash}`}
+          style={{ filter: `drop-shadow(0 0 8px ${color}88)` }}
+        />
+      </svg>
+      <div className="absolute flex flex-col items-center">
+        <span className="text-3xl font-extrabold text-white">{pct}%</span>
+        <span className="text-[11px] uppercase tracking-wide" style={{ color: PALETTE.textMuted }}>Confidence</span>
       </div>
     </div>
   );
