@@ -7,6 +7,7 @@ import asyncio
 from agents import config  # noqa: F401  side-effect: loads backend/.env reliably
 from openai import AsyncOpenAI
 from agents.db import search_similar
+from agents import web_retrieval
 
 client = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
 
@@ -39,13 +40,16 @@ async def embed_query(query: str):
     return response.data[0].embedding
 
 
-async def retrieve(query: str, top_k: int = 8, framework_tag: str | None = None):
-    embedding = await embed_query(query)
+async def _search_similar_chunks(embedding, top_k: int = 8, framework_tag: str | None = None):
     # search_similar() is a blocking psycopg2 call; run it off the event
     # loop so concurrent run_pipeline() calls (one per framework) don't
     # serialize behind it.
-    rows = await asyncio.to_thread(search_similar, embedding, top_k=top_k, framework_tag=framework_tag)
-    return rows
+    return await asyncio.to_thread(search_similar, embedding, top_k=top_k, framework_tag=framework_tag)
+
+
+async def retrieve(query: str, top_k: int = 8, framework_tag: str | None = None):
+    embedding = await embed_query(query)
+    return await _search_similar_chunks(embedding, top_k=top_k, framework_tag=framework_tag)
 
 
 async def generate_with_citations(query: str, context_chunks: list, framework_tag: str | None = None):
@@ -102,7 +106,28 @@ def verify_claims(generated_text: str, citations: list):
 
 
 async def run_pipeline(query: str, framework_tag: str | None = None):
-    chunks = await retrieve(query, framework_tag=framework_tag)
+    embedding = await embed_query(query)
+    chunks = await _search_similar_chunks(embedding, framework_tag=framework_tag)
+
+    if not chunks and framework_tag:
+        # Local grounding is empty -- the exact condition the MIN_SIMILARITY
+        # floor in agents/db.py now correctly produces. Try live web
+        # retrieval before falling through to "insufficient grounded data".
+        #
+        # Cost/safety cap: this call site is reached at most once per
+        # run_pipeline() invocation (no loop, no retry), and analyze() calls
+        # run_pipeline() exactly once per framework per request -- so this
+        # single, unconditional call already enforces "at most 1
+        # search_and_ingest per framework per analyze() request" without
+        # needing separate request-scoped bookkeeping. Don't wrap this in a
+        # retry loop without revisiting that invariant.
+        ingested = await web_retrieval.search_and_ingest(query, framework_tag)
+        if ingested > 0:
+            chunks = await _search_similar_chunks(embedding, framework_tag=framework_tag)
+        # If ingested == 0 (search failed or found nothing usable), chunks
+        # stays empty and we fall through to the existing insufficient-data
+        # path in generate_with_citations() exactly as before this feature.
+
     result = await generate_with_citations(query, chunks, framework_tag=framework_tag)
     verification = verify_claims(result["text"], result["citations"])
     return {**result, "verification": verification}

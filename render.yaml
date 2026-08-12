@@ -12,6 +12,8 @@ services:
         sync: false
       - key: DATABASE_URL
         sync: false   # paste your Supabase session-pooler connection string here in the Render dashboard
+      - key: TAVILY_API_KEY
+        sync: false   # optional -- live web-retrieval fallback; paste your Tavily key here in the Render dashboard
       - key: ALLOWED_ORIGIN
         value: https://your-app.vercel.app
 
