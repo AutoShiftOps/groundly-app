@@ -9,6 +9,14 @@ from contextlib import contextmanager
 
 DATABASE_URL = config.DATABASE_URL
 
+# Minimum cosine similarity (1 - cosine distance) a row must clear to be
+# considered relevant at all. Without this, search_similar() always returns
+# the top_k nearest rows regardless of how far they actually are, so
+# generate_with_citations() never sees an empty context_chunks list and the
+# LLM ends up deciding groundedness from the prompt instead of retrieval
+# enforcing it.
+MIN_SIMILARITY = 0.35
+
 
 @contextmanager
 def get_connection():
@@ -49,10 +57,11 @@ def search_similar(embedding, top_k=8, framework_tag=None):
                            1 - (embedding <=> %s::vector) AS similarity
                     FROM sources
                     WHERE framework_tag = %s
+                      AND 1 - (embedding <=> %s::vector) >= %s
                     ORDER BY embedding <=> %s::vector
                     LIMIT %s;
                     """,
-                    (embedding, framework_tag, embedding, top_k),
+                    (embedding, framework_tag, embedding, MIN_SIMILARITY, embedding, top_k),
                 )
             else:
                 cur.execute(
@@ -61,9 +70,10 @@ def search_similar(embedding, top_k=8, framework_tag=None):
                            framework_tag, confidence_score,
                            1 - (embedding <=> %s::vector) AS similarity
                     FROM sources
+                    WHERE 1 - (embedding <=> %s::vector) >= %s
                     ORDER BY embedding <=> %s::vector
                     LIMIT %s;
                     """,
-                    (embedding, embedding, top_k),
+                    (embedding, embedding, MIN_SIMILARITY, embedding, top_k),
                 )
             return cur.fetchall()
