@@ -51,31 +51,49 @@ def embed_batch(texts: list[str]):
     return [item.embedding for item in response.data]
 
 
-def ingest_text(text: str, source_url: str | None = None, source_title: str | None = None,
-                 source_date: date | None = None, framework_tag: str = "general",
-                 confidence_score: float = 0.8):
+def ingest_content(text: str, title: str, url: str, framework_tag: str,
+                    source_date: date | None = None, confidence_score: float = 0.8) -> int:
+    """
+    Core reusable ingest path: chunk -> embed -> store. Returns the number of
+    chunks actually ingested (0 if there was nothing to ingest after chunking).
+
+    Shared by the CLI path below (ingest_text/ingest_file) and the live
+    web-retrieval fallback (agents/web_retrieval.py). source_date and
+    confidence_score are optional keyword-only extras the CLI uses; callers
+    that only care about the four required params (e.g. web_retrieval.py)
+    can call this with just text/title/url/framework_tag.
+    """
     chunks = chunk_text(text)
     if not chunks:
-        print("No content to ingest (empty text after chunking).")
-        return []
+        return 0
 
     embeddings = embed_batch(chunks)
-    inserted_ids = []
+    count = 0
     for chunk, embedding in zip(chunks, embeddings):
-        source_id = insert_source(
+        insert_source(
             chunk_text=chunk,
             embedding=embedding,
-            source_url=source_url,
-            source_title=source_title,
+            source_url=url,
+            source_title=title,
             source_date=source_date,
             framework_tag=framework_tag,
             confidence_score=confidence_score,
         )
-        inserted_ids.append(source_id)
+        count += 1
+    return count
 
-    print(f"Ingested {len(inserted_ids)} chunk(s) from '{source_title or source_url or 'raw text'}' "
-          f"tagged as '{framework_tag}'.")
-    return inserted_ids
+
+def ingest_text(text: str, source_url: str | None = None, source_title: str | None = None,
+                 source_date: date | None = None, framework_tag: str = "general",
+                 confidence_score: float = 0.8):
+    count = ingest_content(text, title=source_title, url=source_url, framework_tag=framework_tag,
+                            source_date=source_date, confidence_score=confidence_score)
+    if count == 0:
+        print("No content to ingest (empty text after chunking).")
+    else:
+        print(f"Ingested {count} chunk(s) from '{source_title or source_url or 'raw text'}' "
+              f"tagged as '{framework_tag}'.")
+    return count
 
 
 def ingest_file(file_path: str, source_url: str | None = None, source_title: str | None = None,
