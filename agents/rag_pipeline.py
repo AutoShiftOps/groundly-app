@@ -68,7 +68,12 @@ def generate_with_citations(query: str, context_chunks: list):
 
 def verify_claims(generated_text: str, citations: list):
     has_markers = any(f"[{c['index']}]" in generated_text for c in citations)
-    unsupported = [] if has_markers or not citations else ["No inline citation markers found in output"]
+    if not citations:
+        unsupported = ["No grounded sources retrieved for this section"]
+    elif not has_markers:
+        unsupported = ["No inline citation markers found in output"]
+    else:
+        unsupported = []
     return {
         "verified": len(unsupported) == 0,
         "unsupported_claims": unsupported,
