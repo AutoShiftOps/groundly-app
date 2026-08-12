@@ -29,7 +29,8 @@ it with [SAM]. Whenever you state a Serviceable Obtainable Market
 figure, prefix it with [SOM]. Example: "[TAM] The global market is
 $68.3B [1]." Only tag a figure if the CONTEXT explicitly supports that
 specific tier — do not invent SAM or SOM if the context only supports
-TAM.
+TAM. Always write the figure in abbreviated form ($68.3B, $1.9M, $2.1T)
+— never spell out "billion"/"million"/"trillion" as words.
 """
 
 
