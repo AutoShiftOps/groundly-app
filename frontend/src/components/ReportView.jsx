@@ -250,6 +250,110 @@ function CitationList({ citations }) {
   );
 }
 
+// [TAM]/[SAM]/[SOM] are parsing hooks the model is asked to emit (tam
+// framework only, see agents/rag_pipeline.py TAM_TAGGING_INSTRUCTION) --
+// not meant to be user-visible. Citation markers like [1] are left alone.
+function stripMarketTags(text) {
+  return text ? text.replace(/\[(TAM|SAM|SOM)\]\s*/gi, "") : text;
+}
+
+const MARKET_TIERS = [
+  { key: "TAM", label: "TAM", color: PALETTE.blue, regex: /\[TAM\][^$]*(\$[\d.]+[BMT])/i },
+  { key: "SAM", label: "SAM", color: PALETTE.purple, regex: /\[SAM\][^$]*(\$[\d.]+[BMT])/i },
+  { key: "SOM", label: "SOM", color: PALETTE.teal, regex: /\[SOM\][^$]*(\$[\d.]+[BMT])/i },
+];
+const UNIT_MULTIPLIER = { B: 1e9, M: 1e6, T: 1e12 };
+
+// Only returns tiers that were both tagged AND had a parseable $NN.NB-style
+// figure -- a tag with no matching figure contributes nothing (no fabricated
+// placeholder), same as a tier that was never tagged at all.
+function parseMarketTiers(text) {
+  if (!text) return [];
+  return MARKET_TIERS.map(({ key, label, color, regex }) => {
+    const match = text.match(regex);
+    if (!match) return null;
+    const displayValue = match[1];
+    const numMatch = displayValue.match(/^\$([\d.]+)([BMT])$/i);
+    if (!numMatch) return null;
+    const value = parseFloat(numMatch[1]) * UNIT_MULTIPLIER[numMatch[2].toUpperCase()];
+
+    // Look for a citation marker in the text right after the parsed figure,
+    // stopping before the next $ figure or the next TAM/SAM/SOM tag so it
+    // can't pick up a citation that belongs to a different tier.
+    const figureAt = text.indexOf(displayValue, text.search(new RegExp(`\\[${key}\\]`, "i")));
+    const tail = figureAt >= 0 ? text.slice(figureAt + displayValue.length, figureAt + displayValue.length + 40) : "";
+    const stop = tail.search(/\$|\[(TAM|SAM|SOM)\]/i);
+    const window = stop === -1 ? tail : tail.slice(0, stop);
+    const citeMatch = window.match(/\[(\d+)\]/);
+
+    return { key, label, color, displayValue, value, citationIndex: citeMatch ? Number(citeMatch[1]) : null };
+  }).filter(Boolean);
+}
+
+function MarketSizingPanel({ frameworkKey, result }) {
+  const items = useMemo(
+    () => (frameworkKey === "tam" ? parseMarketTiers(result?.text) : []),
+    [frameworkKey, result]
+  );
+  if (items.length === 0) return null;
+
+  const maxOuter = 78, minRadius = 22;
+  const maxValue = Math.max(...items.map((it) => it.value));
+  const radii = items.map((it) => Math.max(minRadius, maxOuter * Math.sqrt(it.value / maxValue)));
+  for (let i = 1; i < radii.length; i++) radii[i] = Math.min(radii[i], Math.max(minRadius, radii[i - 1] - 10));
+  const size = maxOuter * 2 + 16;
+  const cx = size / 2, cy = size / 2;
+
+  return (
+    <div className="rounded-2xl p-6 mb-4" style={{ background: PALETTE.bgCard, border: `1px solid ${PALETTE.border}` }}>
+      <div className="flex items-center gap-2 mb-4">
+        <BarChart2 size={16} style={{ color: PALETTE.blue }} />
+        <h3 className="text-sm font-bold text-white">Market Sizing (Parsed from Analysis)</h3>
+      </div>
+
+      <div className="flex items-center gap-6 flex-wrap">
+        <svg width={size} height={size} className="shrink-0">
+          {items.map((item, i) => (
+            <circle key={item.key} cx={cx} cy={cy} r={radii[i]} fill={`${item.color}22`} stroke={item.color} strokeWidth={2} />
+          ))}
+        </svg>
+        <div className="flex flex-col gap-2">
+          {items.map((item) => (
+            <div key={item.key} className="flex items-center gap-2 text-xs">
+              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: item.color }} />
+              <span className="font-semibold text-white w-9">{item.label}</span>
+              <span style={{ color: PALETTE.textSecondary }}>{item.displayValue}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <table className="w-full mt-4 text-xs">
+        <thead>
+          <tr style={{ color: PALETTE.textMuted }}>
+            <th className="text-left font-medium pb-1.5">Label</th>
+            <th className="text-left font-medium pb-1.5">Parsed value</th>
+            <th className="text-left font-medium pb-1.5">Source</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item) => (
+            <tr key={item.key} style={{ borderTop: `1px solid ${PALETTE.border}` }}>
+              <td className="py-1.5 font-semibold" style={{ color: item.color }}>{item.label}</td>
+              <td className="py-1.5 text-white">{item.displayValue}</td>
+              <td className="py-1.5" style={{ color: PALETTE.textSecondary }}>{item.citationIndex ? `[${item.citationIndex}]` : "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <p className="text-[10px] mt-3" style={{ color: PALETTE.textMuted }}>
+        Parsed from grounded analysis text — not independently verified market data.
+      </p>
+    </div>
+  );
+}
+
 function FrameworkPanel({ frameworkKey, result, verification }) {
   const isInsufficient = result.text?.trim() === "Insufficient grounded data available for this section.";
   const verified = verification?.verified ?? false;
@@ -274,7 +378,7 @@ function FrameworkPanel({ frameworkKey, result, verification }) {
       </div>
 
       <p className="text-sm leading-relaxed" style={{ color: isInsufficient ? PALETTE.textMuted : "#e4e9f5", fontStyle: isInsufficient ? "italic" : "normal" }}>
-        {result.text}
+        {stripMarketTags(result.text)}
       </p>
 
       {verification?.unsupported_claims?.length > 0 && (
@@ -379,7 +483,10 @@ export default function ReportView({ report, idea, onReset }) {
         <MetricRow report={report} stats={stats} />
 
         <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 320px" }}>
-          <div>{activeResult && <FrameworkPanel frameworkKey={activeFramework} result={activeResult} verification={activeVerification} />}</div>
+          <div>
+            {activeResult && <MarketSizingPanel frameworkKey={activeFramework} result={activeResult} />}
+            {activeResult && <FrameworkPanel frameworkKey={activeFramework} result={activeResult} verification={activeVerification} />}
+          </div>
 
           <div className="flex flex-col gap-3.5">
             <div className="rounded-2xl p-4" style={{ background: PALETTE.bgCard, border: `1px solid ${PALETTE.border}` }}>
