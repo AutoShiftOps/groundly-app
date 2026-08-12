@@ -51,7 +51,7 @@ def analyze(req: AnalysisRequest):
         if req.geography:
             query += f" | geography: {req.geography}"
 
-        pipeline_output = run_pipeline(query)
+        pipeline_output = run_pipeline(query, framework_tag=framework)
         results[framework] = {
             "text": pipeline_output["text"],
             "citations": pipeline_output["citations"],
