@@ -258,35 +258,53 @@ function stripMarketTags(text) {
 }
 
 const MARKET_TIERS = [
-  { key: "TAM", label: "TAM", color: PALETTE.blue, regex: /\[TAM\][^$]*(\$[\d.]+[BMT])/i },
-  { key: "SAM", label: "SAM", color: PALETTE.purple, regex: /\[SAM\][^$]*(\$[\d.]+[BMT])/i },
-  { key: "SOM", label: "SOM", color: PALETTE.teal, regex: /\[SOM\][^$]*(\$[\d.]+[BMT])/i },
+  { key: "TAM", label: "TAM", color: PALETTE.blue },
+  { key: "SAM", label: "SAM", color: PALETTE.purple },
+  { key: "SOM", label: "SOM", color: PALETTE.teal },
 ];
-const UNIT_MULTIPLIER = { B: 1e9, M: 1e6, T: 1e12 };
+// Broadened fallback: the backend asks the model to always use abbreviated
+// form (agents/rag_pipeline.py TAM_TAGGING_INSTRUCTION), but that's prompt
+// compliance, not a guarantee -- verified 0/5 real calls actually followed
+// it. This regex also accepts spelled-out billion/million/trillion and
+// comma-separated thousands, normalized to one internal unit below.
+const UNIT_MULTIPLIER = { b: 1e9, billion: 1e9, m: 1e6, million: 1e6, t: 1e12, trillion: 1e12 };
+function tagFigureRegex(key) {
+  return new RegExp(`\\[${key}\\][^$]*\\$?([\\d,]+\\.?\\d*)\\s*(billion|million|trillion|B|M|T)\\b`, "i");
+}
 
-// Only returns tiers that were both tagged AND had a parseable $NN.NB-style
-// figure -- a tag with no matching figure contributes nothing (no fabricated
-// placeholder), same as a tier that was never tagged at all.
+// One entry per TAM/SAM/SOM tag actually present in text -- whether or not a
+// figure could be parsed next to it. A tag with no parseable figure is
+// returned as { parsed: false } rather than dropped, so a grounding/format
+// failure stays visible in the panel instead of silently disappearing. A
+// tier that was never tagged at all is still omitted (nothing to show).
 function parseMarketTiers(text) {
   if (!text) return [];
-  return MARKET_TIERS.map(({ key, label, color, regex }) => {
-    const match = text.match(regex);
-    if (!match) return null;
-    const displayValue = match[1];
-    const numMatch = displayValue.match(/^\$([\d.]+)([BMT])$/i);
-    if (!numMatch) return null;
-    const value = parseFloat(numMatch[1]) * UNIT_MULTIPLIER[numMatch[2].toUpperCase()];
+  return MARKET_TIERS.map(({ key, label, color }) => {
+    if (!new RegExp(`\\[${key}\\]`, "i").test(text)) return null;
 
-    // Look for a citation marker in the text right after the parsed figure,
-    // stopping before the next $ figure or the next TAM/SAM/SOM tag so it
-    // can't pick up a citation that belongs to a different tier.
-    const figureAt = text.indexOf(displayValue, text.search(new RegExp(`\\[${key}\\]`, "i")));
-    const tail = figureAt >= 0 ? text.slice(figureAt + displayValue.length, figureAt + displayValue.length + 40) : "";
+    const match = text.match(tagFigureRegex(key));
+    if (!match) return { key, label, color, parsed: false, displayValue: null, value: null, citationIndex: null };
+
+    const num = parseFloat(match[1].replace(/,/g, ""));
+    const unit = match[2].toLowerCase();
+    const multiplier = UNIT_MULTIPLIER[unit];
+    if (!Number.isFinite(num) || !multiplier) {
+      return { key, label, color, parsed: false, displayValue: null, value: null, citationIndex: null };
+    }
+    const value = num * multiplier;
+    const unitAbbrev = unit[0].toUpperCase();
+    const displayValue = `$${match[1]}${unitAbbrev}`;
+
+    // Look for a citation marker right after the matched figure, stopping
+    // before the next $ figure or the next TAM/SAM/SOM tag so it can't pick
+    // up a citation that belongs to a different tier.
+    const matchEnd = text.indexOf(match[0]) + match[0].length;
+    const tail = text.slice(matchEnd, matchEnd + 40);
     const stop = tail.search(/\$|\[(TAM|SAM|SOM)\]/i);
     const window = stop === -1 ? tail : tail.slice(0, stop);
     const citeMatch = window.match(/\[(\d+)\]/);
 
-    return { key, label, color, displayValue, value, citationIndex: citeMatch ? Number(citeMatch[1]) : null };
+    return { key, label, color, parsed: true, displayValue, value, citationIndex: citeMatch ? Number(citeMatch[1]) : null };
   }).filter(Boolean);
 }
 
@@ -297,9 +315,10 @@ function MarketSizingPanel({ frameworkKey, result }) {
   );
   if (items.length === 0) return null;
 
+  const parsedItems = items.filter((it) => it.parsed);
   const maxOuter = 78, minRadius = 22;
-  const maxValue = Math.max(...items.map((it) => it.value));
-  const radii = items.map((it) => Math.max(minRadius, maxOuter * Math.sqrt(it.value / maxValue)));
+  const maxValue = parsedItems.length ? Math.max(...parsedItems.map((it) => it.value)) : 0;
+  const radii = parsedItems.map((it) => Math.max(minRadius, maxOuter * Math.sqrt(it.value / maxValue)));
   for (let i = 1; i < radii.length; i++) radii[i] = Math.min(radii[i], Math.max(minRadius, radii[i - 1] - 10));
   const size = maxOuter * 2 + 16;
   const cx = size / 2, cy = size / 2;
@@ -312,17 +331,23 @@ function MarketSizingPanel({ frameworkKey, result }) {
       </div>
 
       <div className="flex items-center gap-6 flex-wrap">
-        <svg width={size} height={size} className="shrink-0">
-          {items.map((item, i) => (
-            <circle key={item.key} cx={cx} cy={cy} r={radii[i]} fill={`${item.color}22`} stroke={item.color} strokeWidth={2} />
-          ))}
-        </svg>
+        {parsedItems.length > 0 && (
+          <svg width={size} height={size} className="shrink-0">
+            {parsedItems.map((item, i) => (
+              <circle key={item.key} cx={cx} cy={cy} r={radii[i]} fill={`${item.color}22`} stroke={item.color} strokeWidth={2} />
+            ))}
+          </svg>
+        )}
         <div className="flex flex-col gap-2">
           {items.map((item) => (
             <div key={item.key} className="flex items-center gap-2 text-xs">
-              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: item.color }} />
+              {item.parsed
+                ? <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: item.color }} />
+                : <AlertTriangle size={11} className="shrink-0" style={{ color: PALETTE.amber }} />}
               <span className="font-semibold text-white w-9">{item.label}</span>
-              <span style={{ color: PALETTE.textSecondary }}>{item.displayValue}</span>
+              {item.parsed
+                ? <span style={{ color: PALETTE.textSecondary }}>{item.displayValue}</span>
+                : <span style={{ color: PALETTE.amber, fontStyle: "italic" }}>figure not parseable</span>}
             </div>
           ))}
         </div>
@@ -340,7 +365,9 @@ function MarketSizingPanel({ frameworkKey, result }) {
           {items.map((item) => (
             <tr key={item.key} style={{ borderTop: `1px solid ${PALETTE.border}` }}>
               <td className="py-1.5 font-semibold" style={{ color: item.color }}>{item.label}</td>
-              <td className="py-1.5 text-white">{item.displayValue}</td>
+              <td className="py-1.5" style={item.parsed ? { color: "#fff" } : { color: PALETTE.amber, fontStyle: "italic" }}>
+                {item.parsed ? item.displayValue : "Not parseable"}
+              </td>
               <td className="py-1.5" style={{ color: PALETTE.textSecondary }}>{item.citationIndex ? `[${item.citationIndex}]` : "—"}</td>
             </tr>
           ))}
