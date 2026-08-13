@@ -60,17 +60,21 @@ async def analyze(req: AnalysisRequest):
         *(run_pipeline(build_query(framework), framework_tag=framework) for framework in allowed)
     )
 
+    # Extra structured-output fields (agents/rag_pipeline.py's
+    # STRUCTURED_FRAMEWORKS, Phase 1 for market_sizing + Phase 3 for the
+    # other three), each only present on pipeline_output for its own
+    # framework_tag -- forwarded here the same way, generalized instead of
+    # one `if "market_sizing" in ...` per framework.
+    STRUCTURED_RESULT_KEYS = ("market_sizing", "pestel_analysis", "swot_analysis", "bmc_canvas")
+
     for framework, pipeline_output in zip(allowed, pipeline_outputs):
         results[framework] = {
             "text": pipeline_output["text"],
             "citations": pipeline_output["citations"],
         }
-        # Only present for tam (agents/rag_pipeline.py's structured-output
-        # path, docs/BUSINESS_METRICS_SPEC.md Phase 1); absent for every
-        # other framework, same as pipeline_output itself only has the key
-        # when framework_tag == "tam".
-        if "market_sizing" in pipeline_output:
-            results[framework]["market_sizing"] = pipeline_output["market_sizing"]
+        for key in STRUCTURED_RESULT_KEYS:
+            if key in pipeline_output:
+                results[framework][key] = pipeline_output[key]
         verification[framework] = pipeline_output["verification"]
 
     # No new retrieval -- reuses the results dict just built above. Never

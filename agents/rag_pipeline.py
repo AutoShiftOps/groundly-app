@@ -37,12 +37,18 @@ Rules you must follow strictly:
 4. Do not fabricate numbers, company names, or sources under any circumstance.
 """
 
-# Phase 1 of docs/BUSINESS_METRICS_SPEC.md: replaces the old inline
-# [TAM]/[SAM]/[SOM] bracket-tagging instruction (asked the model to tag
+# Phase 1 (TAM) + Phase 3 (PESTEL/SWOT/BMC) of docs/BUSINESS_METRICS_SPEC.md:
+# replaces the old inline bracket-tagging approach (asked the model to tag
 # figures inside free-form prose, then regex-recovered structure from that
 # prose after the fact -- lossy and, per prior measurement, unreliable: 0/5
-# real calls followed the abbreviated-unit rule). Structured output makes
-# the shape guaranteed instead of best-effort-parsed.
+# real calls followed the abbreviated-unit rule for TAM). Structured output
+# makes the shape guaranteed instead of best-effort-parsed, for all four.
+#
+# Every structured framework's schema has the same top-level shape --
+# { "narrative": string, "<field>": ... } -- so FrameworkStrip's
+# lastSentence(result.text) and the plain-prose fallback rendering keep
+# working completely unchanged (narrative IS result.text, exactly as before
+# this feature); "<field>" is purely additive, same as market_sizing was.
 TAM_STRUCTURED_SUFFIX = """
 Additionally, since this is a market-sizing (TAM/SAM/SOM) analysis, also
 populate the market_sizing object:
@@ -94,6 +100,82 @@ MARKET_SIZING_SCHEMA = {
     "additionalProperties": False,
 }
 
+# Phase 3: SWOT/PESTEL/BMC all reduce to the same shape -- a narrative plus
+# N named categories, each an array of { text, citation_index } points.
+# Built generically instead of writing the same schema 3x with different
+# category names.
+_CATEGORY_ITEM_SCHEMA = {
+    "type": "object",
+    "properties": {"text": {"type": "string"}, "citation_index": {"type": ["integer", "null"]}},
+    "required": ["text", "citation_index"],
+    "additionalProperties": False,
+}
+
+
+def _category_breakdown_schema(field_name: str, categories: tuple[str, ...]) -> dict:
+    return {
+        "type": "object",
+        "properties": {
+            "narrative": {
+                "type": "string",
+                "description": "The full grounded analysis, same rules as ungrounded prose output: cite every factual sentence with [N] markers.",
+            },
+            field_name: {
+                "type": "object",
+                "properties": {c: {"type": "array", "items": _CATEGORY_ITEM_SCHEMA} for c in categories},
+                "required": list(categories),
+                "additionalProperties": False,
+            },
+        },
+        "required": ["narrative", field_name],
+        "additionalProperties": False,
+    }
+
+
+def _category_instruction_suffix(kind_label: str, field_name: str, categories: tuple[str, ...]) -> str:
+    return f"""
+Additionally, since this is a {kind_label} analysis, also populate the
+{field_name} object with one array per category ({", ".join(categories)}).
+Each item is one specific point: {{ "text": "...", "citation_index": N or
+null }}. Only include a point if the CONTEXT actually supports it -- an
+empty array for a category is fine and expected if the CONTEXT doesn't
+cover it. citation_index is the number of the CONTEXT chunk (matching the
+[N] citation markers you use in narrative) that supports that specific
+point, or null if you can't attribute it to one specific chunk.
+"""
+
+
+SWOT_CATEGORIES = ("strengths", "weaknesses", "opportunities", "threats")
+PESTEL_CATEGORIES = ("political", "economic", "social", "technological", "environmental", "legal")
+BMC_CATEGORIES = (
+    "customer_segments", "value_propositions", "channels", "customer_relationships",
+    "revenue_streams", "key_resources", "key_activities", "key_partners", "cost_structure",
+)
+
+SWOT_SCHEMA = _category_breakdown_schema("swot_analysis", SWOT_CATEGORIES)
+PESTEL_SCHEMA = _category_breakdown_schema("pestel_analysis", PESTEL_CATEGORIES)
+BMC_SCHEMA = _category_breakdown_schema("bmc_canvas", BMC_CATEGORIES)
+
+# framework_tag -> (extra suffix appended to GROUNDING_SYSTEM_PROMPT, the
+# extra field name in the parsed response, the json_schema name sent to
+# OpenAI, the schema itself). A framework not in this dict (e.g. paid-tier
+# frameworks not yet migrated) uses the plain, non-structured path below.
+STRUCTURED_FRAMEWORKS = {
+    "tam": (TAM_STRUCTURED_SUFFIX, "market_sizing", "grounded_market_analysis", MARKET_SIZING_SCHEMA),
+    "pestel": (
+        _category_instruction_suffix("PESTEL", "pestel_analysis", PESTEL_CATEGORIES),
+        "pestel_analysis", "grounded_pestel_analysis", PESTEL_SCHEMA,
+    ),
+    "swot": (
+        _category_instruction_suffix("SWOT", "swot_analysis", SWOT_CATEGORIES),
+        "swot_analysis", "grounded_swot_analysis", SWOT_SCHEMA,
+    ),
+    "bmc": (
+        _category_instruction_suffix("Business Model Canvas", "bmc_canvas", BMC_CATEGORIES),
+        "bmc_canvas", "grounded_bmc_analysis", BMC_SCHEMA,
+    ),
+}
+
 
 async def embed_query(query: str):
     response = await client.embeddings.create(model=EMBEDDING_MODEL, input=query)
@@ -135,11 +217,12 @@ async def generate_with_citations(query: str, context_chunks: list, framework_ta
         for i, c in enumerate(context_chunks)
     ]
 
-    is_tam = framework_tag == "tam"
-    system_prompt = GROUNDING_SYSTEM_PROMPT + (TAM_STRUCTURED_SUFFIX if is_tam else "")
+    structured = STRUCTURED_FRAMEWORKS.get(framework_tag)
     user_content = f"CONTEXT:\n{context_block}\n\nQUESTION:\n{query}"
 
-    if is_tam:
+    if structured:
+        suffix, field_name, schema_name, schema = structured
+        system_prompt = GROUNDING_SYSTEM_PROMPT + suffix
         completion = await client.chat.completions.create(
             model=CHAT_MODEL,
             messages=[
@@ -148,7 +231,7 @@ async def generate_with_citations(query: str, context_chunks: list, framework_ta
             ],
             response_format={
                 "type": "json_schema",
-                "json_schema": {"name": "grounded_market_analysis", "strict": True, "schema": MARKET_SIZING_SCHEMA},
+                "json_schema": {"name": schema_name, "strict": True, "schema": schema},
             },
             temperature=0.2,
         )
@@ -156,20 +239,20 @@ async def generate_with_citations(query: str, context_chunks: list, framework_ta
         try:
             parsed = json.loads(raw)
             text = parsed["narrative"]
-            market_sizing = parsed["market_sizing"]
+            extra_value = parsed[field_name]
         except (json.JSONDecodeError, KeyError, TypeError):
             # Should not happen under strict schema mode, but this must never
-            # crash the request -- degrade to the same shape a non-TAM
-            # response has (no market_sizing) rather than raising.
-            logger.exception("generate_with_citations: failed to parse structured TAM response, raw=%r", raw)
+            # crash the request -- degrade to the same shape a non-structured
+            # response has (no extra field) rather than raising.
+            logger.exception("generate_with_citations: failed to parse structured %r response, raw=%r", framework_tag, raw)
             text = raw
-            market_sizing = None
-        return {"text": text, "citations": citations, "market_sizing": market_sizing}
+            extra_value = None
+        return {"text": text, "citations": citations, field_name: extra_value}
 
     completion = await client.chat.completions.create(
         model=CHAT_MODEL,
         messages=[
-            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": GROUNDING_SYSTEM_PROMPT},
             {"role": "user", "content": user_content},
         ],
         temperature=0.2,
