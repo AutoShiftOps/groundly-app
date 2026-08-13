@@ -487,9 +487,70 @@ function MarketSizingPanel({ frameworkKey, result }) {
   );
 }
 
+// Phase 3 of docs/BUSINESS_METRICS_SPEC.md. Shared by PESTEL/SWOT/BMC's
+// structured category rendering -- each category is an array of
+// {text, citation_index} points from the model's structured output. An
+// empty array is a real, expected "CONTEXT didn't cover this category"
+// state, not an error, same discipline as everywhere else in this file.
+function StructuredItemList({ items }) {
+  if (!items || items.length === 0) {
+    return <p className="text-xs italic" style={{ color: PALETTE.textMuted }}>No grounded points for this category.</p>;
+  }
+  return (
+    <ul className="flex flex-col gap-1.5">
+      {items.map((item, i) => (
+        <li key={i} className="text-xs leading-relaxed flex items-start gap-1.5" style={{ color: "#e4e9f5" }}>
+          <span className="mt-1.5 w-1 h-1 rounded-full shrink-0" style={{ background: PALETTE.textMuted }} />
+          <span>
+            {renderBoldText(item.text)}
+            {item.citation_index != null && <span className="ml-1" style={{ color: PALETTE.blue }}>[{item.citation_index}]</span>}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+const PESTEL_BLOCKS = [
+  { key: "political", label: "Political", color: PALETTE.blue },
+  { key: "economic", label: "Economic", color: PALETTE.teal },
+  { key: "social", label: "Social", color: PALETTE.purple },
+  { key: "technological", label: "Technological", color: PALETTE.purpleLight },
+  { key: "environmental", label: "Environmental", color: PALETTE.amber },
+  { key: "legal", label: "Legal", color: PALETTE.red },
+];
+
+function PestelBlocks({ pestelAnalysis }) {
+  return (
+    <div className="flex flex-col gap-4">
+      {PESTEL_BLOCKS.map((b) => (
+        <div key={b.key}>
+          <div className="text-xs font-bold uppercase tracking-wide mb-1.5" style={{ color: b.color }}>{b.label}</div>
+          <StructuredItemList items={pestelAnalysis[b.key]} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Dispatches to a framework's structured visual treatment when available;
+// falls back to the plain prose paragraph otherwise (missing field, older
+// cached report, or a framework Phase 3 hasn't migrated yet) -- same
+// graceful-degradation pattern as MarketSizingPanel.
+function FrameworkBody({ frameworkKey, result }) {
+  if (frameworkKey === "pestel" && result.pestel_analysis) {
+    return <PestelBlocks pestelAnalysis={result.pestel_analysis} />;
+  }
+  const isInsufficient = result.text?.trim() === "Insufficient grounded data available for this section.";
+  return (
+    <p className="text-sm leading-relaxed" style={{ color: isInsufficient ? PALETTE.textMuted : "#e4e9f5", fontStyle: isInsufficient ? "italic" : "normal" }}>
+      {renderBoldText(stripMarketTags(result.text))}
+    </p>
+  );
+}
+
 function FrameworkPanel({ frameworkKey, result, verification, ideaTitle }) {
   const [collapsed, setCollapsed] = useState(false);
-  const isInsufficient = result.text?.trim() === "Insufficient grounded data available for this section.";
   const verified = verification?.verified ?? false;
 
   return (
@@ -526,9 +587,7 @@ function FrameworkPanel({ frameworkKey, result, verification, ideaTitle }) {
 
       {!collapsed && (
         <>
-          <p className="text-sm leading-relaxed" style={{ color: isInsufficient ? PALETTE.textMuted : "#e4e9f5", fontStyle: isInsufficient ? "italic" : "normal" }}>
-            {renderBoldText(stripMarketTags(result.text))}
-          </p>
+          <FrameworkBody frameworkKey={frameworkKey} result={result} />
 
           {verification?.unsupported_claims?.length > 0 && (
             <div className="flex items-center gap-2 mt-4 text-xs px-3 py-2 rounded-lg" style={{ color: PALETTE.amber, background: `${PALETTE.amber}14`, border: `1px solid ${PALETTE.amber}44` }}>
