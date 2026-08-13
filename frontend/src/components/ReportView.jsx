@@ -182,7 +182,8 @@ function VerdictBanner({ stats }) {
         </div>
         <div>
           <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: PALETTE.textMuted }}>Overall Strategic Verdict</div>
-          <div className="text-3xl font-extrabold leading-tight" style={{ color }}>{stats.verdict}</div>
+          <div className="text-3xl font-extrabold uppercase leading-[1.05] tracking-tight"
+            style={{ color, textShadow: `0 0 20px ${color}70, 0 0 44px ${color}35` }}>{stats.verdict}</div>
           <div className="text-sm mt-1" style={{ color: PALETTE.textSecondary }}>{stats.verdictSub}</div>
         </div>
       </div>
