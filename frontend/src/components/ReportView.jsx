@@ -321,71 +321,47 @@ function FrameworkStrip({ result }) {
   );
 }
 
-const MARKET_TIERS = [
-  { key: "TAM", label: "TAM", color: PALETTE.blue },
-  { key: "SAM", label: "SAM", color: PALETTE.purple },
-  { key: "SOM", label: "SOM", color: PALETTE.teal },
-];
-// Broadened fallback: the backend asks the model to always use abbreviated
-// form (agents/rag_pipeline.py TAM_TAGGING_INSTRUCTION), but that's prompt
-// compliance, not a guarantee -- verified 0/5 real calls actually followed
-// it. This regex also accepts spelled-out billion/million/trillion and
-// comma-separated thousands, normalized to one internal unit below.
-const UNIT_MULTIPLIER = { b: 1e9, billion: 1e9, m: 1e6, million: 1e6, t: 1e12, trillion: 1e12 };
-// Deliberately does not parse ranges like "$18-22 billion" — which of
-// low/high/midpoint to show is a product decision, not a parsing gap.
-// Falls through to the visible "not parseable" state by design.
-function tagFigureRegex(key) {
-  return new RegExp(`\\[${key}\\][^$]*\\$?([\\d,]+\\.?\\d*)\\s*(billion|million|trillion|B|M|T)\\b`, "i");
-}
+// Phase 1 of docs/BUSINESS_METRICS_SPEC.md: market_sizing now comes
+// structured straight from the API (agents/rag_pipeline.py's response_format
+// json_schema call on the tam framework -- see AnalysisResponse.results.tam
+// .market_sizing), not regex-recovered from prose. The old bracket-tag
+// regex parser (parseMarketTiers/tagFigureRegex/UNIT_MULTIPLIER/
+// MARKET_TIERS) was removed here after verifying the new field 15/15 (100%)
+// on real calls, per the spec's "remove once verified" cutover.
+const MARKET_TIER_META = {
+  tam: { label: "TAM", color: PALETTE.blue },
+  sam: { label: "SAM", color: PALETTE.purple },
+  som: { label: "SOM", color: PALETTE.teal },
+};
 
-// One entry per TAM/SAM/SOM tag actually present in text -- whether or not a
-// figure could be parsed next to it. A tag with no parseable figure is
-// returned as { parsed: false } rather than dropped, so a grounding/format
-// failure stays visible in the panel instead of silently disappearing. A
-// tier that was never tagged at all is still omitted (nothing to show).
-function parseMarketTiers(text) {
-  if (!text) return [];
-  return MARKET_TIERS.map(({ key, label, color }) => {
-    if (!new RegExp(`\\[${key}\\]`, "i").test(text)) return null;
-
-    const match = text.match(tagFigureRegex(key));
-    if (!match) return { key, label, color, parsed: false, displayValue: null, value: null, citationIndex: null };
-
-    const num = parseFloat(match[1].replace(/,/g, ""));
-    const unit = match[2].toLowerCase();
-    const multiplier = UNIT_MULTIPLIER[unit];
-    if (!Number.isFinite(num) || !multiplier) {
-      return { key, label, color, parsed: false, displayValue: null, value: null, citationIndex: null };
-    }
-    const value = num * multiplier;
-    const unitAbbrev = unit[0].toUpperCase();
-    const displayValue = `$${match[1]}${unitAbbrev}`;
-
-    // Look for a citation marker right after the matched figure, stopping
-    // before the next $ figure or the next TAM/SAM/SOM tag so it can't pick
-    // up a citation that belongs to a different tier.
-    const matchEnd = text.indexOf(match[0]) + match[0].length;
-    const tail = text.slice(matchEnd, matchEnd + 40);
-    const stop = tail.search(/\$|\[(TAM|SAM|SOM)\]/i);
-    const window = stop === -1 ? tail : tail.slice(0, stop);
-    const citeMatch = window.match(/\[(\d+)\]/);
-
-    return { key, label, color, parsed: true, displayValue, value, citationIndex: citeMatch ? Number(citeMatch[1]) : null };
-  }).filter(Boolean);
+// One entry per tier actually present in market_sizing (API already omits
+// tiers the CONTEXT didn't support -- null in, nothing rendered for that
+// tier, same "don't show what wasn't grounded" discipline as before).
+function marketTiersFromApi(marketSizing) {
+  if (!marketSizing) return [];
+  return Object.entries(MARKET_TIER_META)
+    .map(([key, meta]) => {
+      const tier = marketSizing[key];
+      if (!tier) return null;
+      return { key, label: meta.label, color: meta.color, value: tier.value_usd, displayValue: tier.label, citationIndex: tier.citation_index };
+    })
+    .filter(Boolean);
 }
 
 function MarketSizingPanel({ frameworkKey, result }) {
   const items = useMemo(
-    () => (frameworkKey === "tam" ? parseMarketTiers(result?.text) : []),
+    () => (frameworkKey === "tam" ? marketTiersFromApi(result?.market_sizing) : []),
     [frameworkKey, result]
   );
   if (items.length === 0) return null;
 
-  const parsedItems = items.filter((it) => it.parsed);
+  // Every item here came from a real, present tier in market_sizing -- no
+  // more "tagged but couldn't parse a number out of it" ambiguous state,
+  // since the API guarantees value_usd is a real number whenever a tier is
+  // non-null. A tier the CONTEXT didn't support is just absent from items.
   const maxOuter = 78, minRadius = 22;
-  const maxValue = parsedItems.length ? Math.max(...parsedItems.map((it) => it.value)) : 0;
-  const radii = parsedItems.map((it) => Math.max(minRadius, maxOuter * Math.sqrt(it.value / maxValue)));
+  const maxValue = Math.max(...items.map((it) => it.value));
+  const radii = items.map((it) => Math.max(minRadius, maxOuter * Math.sqrt(it.value / maxValue)));
   for (let i = 1; i < radii.length; i++) radii[i] = Math.min(radii[i], Math.max(minRadius, radii[i - 1] - 10));
   const size = maxOuter * 2 + 16;
   const cx = size / 2, cy = size / 2;
@@ -394,27 +370,21 @@ function MarketSizingPanel({ frameworkKey, result }) {
     <div className="rounded-2xl p-6 mb-4" style={{ background: PALETTE.bgCard, border: `1px solid ${PALETTE.border}` }}>
       <div className="flex items-center gap-2 mb-4">
         <BarChart2 size={16} style={{ color: PALETTE.blue }} />
-        <h3 className="text-sm font-bold text-white">Market Sizing (Parsed from Analysis)</h3>
+        <h3 className="text-sm font-bold text-white">Market Sizing</h3>
       </div>
 
       <div className="flex items-center gap-6 flex-wrap">
-        {parsedItems.length > 0 && (
-          <svg width={size} height={size} className="shrink-0">
-            {parsedItems.map((item, i) => (
-              <circle key={item.key} cx={cx} cy={cy} r={radii[i]} fill={`${item.color}22`} stroke={item.color} strokeWidth={2} />
-            ))}
-          </svg>
-        )}
+        <svg width={size} height={size} className="shrink-0">
+          {items.map((item, i) => (
+            <circle key={item.key} cx={cx} cy={cy} r={radii[i]} fill={`${item.color}22`} stroke={item.color} strokeWidth={2} />
+          ))}
+        </svg>
         <div className="flex flex-col gap-2">
           {items.map((item) => (
             <div key={item.key} className="flex items-center gap-2 text-xs">
-              {item.parsed
-                ? <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: item.color }} />
-                : <AlertTriangle size={11} className="shrink-0" style={{ color: PALETTE.amber }} />}
+              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: item.color }} />
               <span className="font-semibold text-white w-9">{item.label}</span>
-              {item.parsed
-                ? <span style={{ color: PALETTE.textSecondary }}>{item.displayValue}</span>
-                : <span style={{ color: PALETTE.amber, fontStyle: "italic" }}>figure not parseable</span>}
+              <span style={{ color: PALETTE.textSecondary }}>{item.displayValue}</span>
             </div>
           ))}
         </div>
@@ -424,7 +394,7 @@ function MarketSizingPanel({ frameworkKey, result }) {
         <thead>
           <tr style={{ color: PALETTE.textMuted }}>
             <th className="text-left font-medium pb-1.5">Label</th>
-            <th className="text-left font-medium pb-1.5">Parsed value</th>
+            <th className="text-left font-medium pb-1.5">Value</th>
             <th className="text-left font-medium pb-1.5">Source</th>
           </tr>
         </thead>
@@ -432,9 +402,7 @@ function MarketSizingPanel({ frameworkKey, result }) {
           {items.map((item) => (
             <tr key={item.key} style={{ borderTop: `1px solid ${PALETTE.border}` }}>
               <td className="py-1.5 font-semibold" style={{ color: item.color }}>{item.label}</td>
-              <td className="py-1.5" style={item.parsed ? { color: "#fff" } : { color: PALETTE.amber, fontStyle: "italic" }}>
-                {item.parsed ? item.displayValue : "Not parseable"}
-              </td>
+              <td className="py-1.5 text-white">{item.displayValue}</td>
               <td className="py-1.5" style={{ color: PALETTE.textSecondary }}>{item.citationIndex ? `[${item.citationIndex}]` : "—"}</td>
             </tr>
           ))}
@@ -442,7 +410,7 @@ function MarketSizingPanel({ frameworkKey, result }) {
       </table>
 
       <p className="text-[10px] mt-3" style={{ color: PALETTE.textMuted }}>
-        Parsed from grounded analysis text — not independently verified market data.
+        Grounded market sizing extracted from the retrieved sources — not independently verified market data.
       </p>
     </div>
   );
