@@ -21,6 +21,7 @@ import {
   Info, ChevronUp, ChevronDown, LayoutGrid,
   Landmark, Users, Cpu, Leaf, Scale, Zap, Target, Gift, Truck, Heart,
   DollarSign, Boxes, Handshake, Receipt,
+  Globe, Grid3X3, Shield, Link2, Gauge,
 } from "lucide-react";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 
@@ -41,8 +42,29 @@ const PALETTE = {
   red: "#f87171",
 };
 
-const FRAMEWORK_LABELS = { pestel: "PESTEL", swot: "SWOT", tam: "TAM", bmc: "BMC" };
-const LOCKED_FRAMEWORKS = ["Porter's Five Forces", "BCG Matrix", "Value Chain", "Balanced Scorecard"];
+// Sidebar-nav sync: tam/bmc read the mock's spelled-out labels. This is the
+// single source of truth also used by OverviewFrameworkLinks and the
+// citation-source tags (showFrameworkSource) -- changing it here keeps all
+// three consistent automatically instead of patching each usage.
+const FRAMEWORK_LABELS = { pestel: "PESTEL", swot: "SWOT", tam: "TAM SAM SOM", bmc: "Business Model Canvas" };
+
+// Per-framework nav icon, matching the mock's icon language. Real,
+// unlocked frameworks only -- FREE_FRAMEWORKS in
+// backend/routers/analysis.py is PESTEL/SWOT/TAM/BMC; this map doesn't
+// decide what's locked, it just labels the nav row once a framework is
+// actually rendered as a real tab.
+const FRAMEWORK_NAV_ICONS = { pestel: Globe, swot: Grid3X3, tam: Target, bmc: LayoutGrid };
+
+// Locked placeholders: the mock's icon language applied to this app's real
+// lock/unlock set, not the mock's own (which unlocks Porter's/STP and
+// locks BMC -- those don't match FREE_FRAMEWORKS, so intentionally not
+// copied). Only the icons/labels are borrowed from the mock here.
+const LOCKED_FRAMEWORKS = [
+  { label: "Porter's Five Forces", icon: Shield },
+  { label: "BCG Matrix", icon: Users },
+  { label: "Value Chain", icon: Link2 },
+  { label: "Balanced Scorecard", icon: Gauge },
+];
 const SIDE_NAV = [
   { icon: TrendingUp, label: "Analyze" },
   { icon: FolderOpen, label: "Projects" },
@@ -705,9 +727,12 @@ function TamSizingCard({ result, verification, ideaTitle }) {
           </div>
           <div className="min-w-0">
             <div className="text-[10px] uppercase tracking-wider" style={{ color: PALETTE.textMuted }}>Framework</div>
-            {/* docs/TAM_100_MATCH_SPEC.md item 2: this tab's title only --
-                FRAMEWORK_LABELS.tam (used by the sidebar nav and
-                OverviewFrameworkLinks) stays "TAM", unchanged. */}
+            {/* Hardcoded rather than reading FRAMEWORK_LABELS.tam -- this
+                card's own title is a fixed part of its layout, not a
+                lookup. FRAMEWORK_LABELS.tam (sidebar nav,
+                OverviewFrameworkLinks, citation-source tags) is now also
+                "TAM SAM SOM", intentionally: same string, single source of
+                truth for those other call sites, no double-labeling. */}
             <h2 className="text-xl font-extrabold text-white">TAM SAM SOM</h2>
             <p className="text-xs mt-0.5 truncate" style={{ color: PALETTE.textMuted }}>Analysis for {ideaTitle}</p>
           </div>
@@ -886,18 +911,23 @@ export default function ReportView({ report, idea, onReset }) {
       <aside className="flex flex-col w-[250px] min-h-screen py-5 px-3 shrink-0" style={{ background: PALETTE.bgSidebar, borderRight: `1px solid ${PALETTE.border}` }}>
         <div className="flex items-center gap-2 px-2 mb-6">
           <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: `linear-gradient(135deg, ${PALETTE.blue}, ${PALETTE.purple})` }}>
-            <svg width="16" height="16" viewBox="0 0 18 18" fill="none"><path d="M9 2L16 14H2L9 2Z" fill="white" fillOpacity="0.9" /></svg>
+            {/* Hexagonal "G" mark, matching the mock -- asset swap only,
+                same gradient tile it sits in as before. */}
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M12 2L21 7V17L12 22L3 17V7L12 2Z" fill="white" fillOpacity="0.9" />
+              <text x="12" y="16" textAnchor="middle" fontSize="11" fontWeight="700" fill={PALETTE.blue} fontFamily="'Inter', sans-serif">G</text>
+            </svg>
           </div>
           <div>
             <div className="text-sm font-bold text-white leading-tight">Groundly</div>
-            <div className="text-[9px] leading-tight" style={{ color: PALETTE.textMuted }}>AI Analysis Platform</div>
+            <div className="text-[9px] leading-tight uppercase tracking-wider" style={{ color: PALETTE.textMuted }}>AI Analysis Platform</div>
           </div>
         </div>
 
         <button onClick={() => setActiveFramework("overview")}
           className="flex items-center gap-2 text-sm font-semibold px-3 py-2.5 rounded-xl transition-colors mb-3"
-          style={{ background: isOverview ? PALETTE.bgPanel : "transparent", color: isOverview ? "#fff" : PALETTE.textSecondary,
-            boxShadow: isOverview ? `inset 0 0 0 1px ${PALETTE.border}` : "none" }}>
+          style={{ background: isOverview ? `${PALETTE.blue}1f` : "transparent", color: isOverview ? "#fff" : PALETTE.textSecondary,
+            boxShadow: isOverview ? `inset 0 0 0 1.5px ${PALETTE.blue}` : "none" }}>
           <LayoutGrid size={15} style={{ color: isOverview ? PALETTE.blue : PALETTE.textMuted }} />
           Overview
         </button>
@@ -908,21 +938,28 @@ export default function ReportView({ report, idea, onReset }) {
           {stats.frameworks.map((fw) => {
             const verified = report.verification?.[fw]?.verified;
             const active = activeFramework === fw;
+            const NavIcon = FRAMEWORK_NAV_ICONS[fw] || FileText;
             return (
               <button key={fw} onClick={() => setActiveFramework(fw)}
                 className="flex items-center justify-between gap-2 text-sm px-3 py-2.5 rounded-xl transition-colors"
-                style={{ background: active ? PALETTE.bgPanel : "transparent", color: active ? "#fff" : PALETTE.textSecondary,
-                  boxShadow: active ? `inset 0 0 0 1px ${PALETTE.border}` : "none" }}>
-                <span>{FRAMEWORK_LABELS[fw] || fw.toUpperCase()}</span>
-                {verified ? <CheckCircle2 size={14} style={{ color: PALETTE.teal }} /> : <span className="w-1.5 h-1.5 rounded-full" style={{ background: PALETTE.textMuted }} />}
+                style={{ background: active ? `${PALETTE.blue}1f` : "transparent", color: active ? "#fff" : PALETTE.textSecondary,
+                  boxShadow: active ? `inset 0 0 0 1.5px ${PALETTE.blue}` : "none" }}>
+                <span className="flex items-center gap-2 min-w-0">
+                  <NavIcon size={15} style={{ color: active ? PALETTE.blue : PALETTE.textMuted }} className="shrink-0" />
+                  <span className="truncate">{FRAMEWORK_LABELS[fw] || fw.toUpperCase()}</span>
+                </span>
+                {verified ? <CheckCircle2 size={14} style={{ color: PALETTE.teal }} className="shrink-0" /> : <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: PALETTE.textMuted }} />}
               </button>
             );
           })}
 
-          {LOCKED_FRAMEWORKS.map((label) => (
+          {LOCKED_FRAMEWORKS.map(({ label, icon: LockedIcon }) => (
             <button key={label} disabled className="flex items-center justify-between gap-2 text-sm px-3 py-2.5 rounded-xl opacity-40 cursor-not-allowed" style={{ color: PALETTE.textSecondary }}>
-              <span>{label}</span>
-              <Lock size={12} />
+              <span className="flex items-center gap-2 min-w-0">
+                <LockedIcon size={15} className="shrink-0" />
+                <span className="truncate">{label}</span>
+              </span>
+              <Lock size={12} className="shrink-0" />
             </button>
           ))}
         </div>
