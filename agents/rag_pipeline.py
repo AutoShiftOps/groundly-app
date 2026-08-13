@@ -3,16 +3,29 @@ RAG grounding pipeline: retrieve -> generate with citations -> verify claims -> 
 """
 
 import asyncio
+import logging
 
 from agents import config  # noqa: F401  side-effect: loads backend/.env reliably
 from openai import AsyncOpenAI
 from agents.db import search_similar
 from agents import web_retrieval
 
+logger = logging.getLogger(__name__)
+
 client = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
 
 EMBEDDING_MODEL = "text-embedding-3-small"
 CHAT_MODEL = "gpt-4o-mini"
+
+# Separate from agents.db.MIN_SIMILARITY (0.35), which is a SQL-side floor
+# that decides whether a row is returned from the corpus AT ALL. This is a
+# Python-side threshold on the BEST similarity among rows that already
+# cleared that floor: a couple of chunks scraping past 0.35 from an
+# unrelated seed topic (e.g. EV-charging content matching a synth-rental
+# query) should not silently prevent the live web-retrieval safety net from
+# running just because *something* technically came back. Local retrieval
+# only counts as "good enough" here if its best match clears this bar.
+LIVE_RETRIEVAL_TRIGGER_THRESHOLD = 0.5
 
 GROUNDING_SYSTEM_PROMPT = """You are a grounded business-analysis assistant.
 Rules you must follow strictly:
@@ -109,10 +122,23 @@ async def run_pipeline(query: str, framework_tag: str | None = None):
     embedding = await embed_query(query)
     chunks = await _search_similar_chunks(embedding, framework_tag=framework_tag)
 
-    if not chunks and framework_tag:
-        # Local grounding is empty -- the exact condition the MIN_SIMILARITY
-        # floor in agents/db.py now correctly produces. Try live web
-        # retrieval before falling through to "insufficient grounded data".
+    best_local_similarity = max((c["similarity"] for c in chunks), default=0.0)
+    is_empty = not chunks
+    is_weak = bool(chunks) and best_local_similarity < LIVE_RETRIEVAL_TRIGGER_THRESHOLD
+
+    if (is_empty or is_weak) and framework_tag:
+        # Local grounding is either empty, or non-empty but weak (best match
+        # below LIVE_RETRIEVAL_TRIGGER_THRESHOLD -- see constant above). Try
+        # live web retrieval before falling through to "insufficient
+        # grounded data". Logged here (not just inside web_retrieval.py,
+        # whose own log line always says "empty" regardless of which of the
+        # two conditions actually triggered it) so the trigger reason is
+        # visible in logs.
+        logger.info(
+            "run_pipeline: local grounding %s for framework=%r (best_similarity=%.4f, %d row(s)) -- "
+            "invoking live web-retrieval fallback.",
+            "empty" if is_empty else "weak", framework_tag, best_local_similarity, len(chunks),
+        )
         #
         # Cost/safety cap: this call site is reached at most once per
         # run_pipeline() invocation (no loop, no retry), and analyze() calls
@@ -123,10 +149,17 @@ async def run_pipeline(query: str, framework_tag: str | None = None):
         # retry loop without revisiting that invariant.
         ingested = await web_retrieval.search_and_ingest(query, framework_tag)
         if ingested > 0:
-            chunks = await _search_similar_chunks(embedding, framework_tag=framework_tag)
-        # If ingested == 0 (search failed or found nothing usable), chunks
-        # stays empty and we fall through to the existing insufficient-data
-        # path in generate_with_citations() exactly as before this feature.
+            refreshed = await _search_similar_chunks(embedding, framework_tag=framework_tag)
+            # Only replace what we have if the fresh search actually found
+            # something. In the "weak" case especially, don't discard
+            # marginal-but-real local matches just because the re-search
+            # came back empty (e.g. a transient DB hiccup).
+            if refreshed:
+                chunks = refreshed
+        # Otherwise chunks keeps whatever it already had -- empty (falls
+        # through to insufficient-data below) or the original weak matches
+        # (falls through to generation with those, same as before this
+        # threshold existed) -- exactly as before this feature in both cases.
 
     result = await generate_with_citations(query, chunks, framework_tag=framework_tag)
     verification = verify_claims(result["text"], result["citations"])
