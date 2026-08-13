@@ -63,6 +63,11 @@ populate the market_sizing object:
 - "citation_index" is the number of the CONTEXT chunk (matching the [N]
   citation markers you use in narrative) that states this specific
   figure, or null if you can't attribute it to one specific chunk.
+- "cagr_pct" is the compound annual growth rate as a plain percentage
+  number (e.g. 8.7 for an 8.7% CAGR) ONLY if the CONTEXT explicitly states
+  one for that specific tier, otherwise null. Do not estimate or infer a
+  CAGR that isn't stated -- null is the correct, expected result when the
+  source material doesn't give a growth rate for that tier.
 """
 
 MARKET_SIZING_SCHEMA = {
@@ -83,8 +88,9 @@ MARKET_SIZING_SCHEMA = {
                                 "value_usd": {"type": "number"},
                                 "label": {"type": "string"},
                                 "citation_index": {"type": ["integer", "null"]},
+                                "cagr_pct": {"type": ["number", "null"]},
                             },
-                            "required": ["value_usd", "label", "citation_index"],
+                            "required": ["value_usd", "label", "citation_index", "cagr_pct"],
                             "additionalProperties": False,
                         },
                         {"type": "null"},
