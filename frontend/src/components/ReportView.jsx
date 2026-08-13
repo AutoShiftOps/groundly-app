@@ -227,6 +227,77 @@ function MetricRow({ report, stats }) {
   );
 }
 
+// Phase 2 of docs/BUSINESS_METRICS_SPEC.md. card -> required framework(s),
+// mirrors agents/synthesis.py's CARD_FRAMEWORK_MAP exactly (market_size
+// requires tam specifically, per the spec: "none -- this card requires TAM").
+const BUSINESS_METRIC_CARDS = [
+  { key: "market_size", label: "Market Size", requires: "TAM" },
+  { key: "competitive_pressure", label: "Competitive Pressure", requires: "PESTEL", fallback: "SWOT" },
+  { key: "customer_segment", label: "Best Customer Segment", requires: "BMC", fallback: "SWOT" },
+  { key: "business_model_fit", label: "Business Model Fit", requires: "BMC" },
+  { key: "risk_flags", label: "Risk Flags", requires: "SWOT", fallback: "PESTEL" },
+];
+
+// Confirmed decision: the /10 meter is computed here from real similarity
+// data, never asked of (or invented by) the LLM -- same discipline as
+// stats.avgSimilarity. Prefers the specific citation the card's rationale
+// was tied to; falls back to that framework's average similarity if the
+// synthesis call couldn't attribute one specific citation.
+function computeEvidenceScore(metric, report) {
+  if (!metric) return null;
+  const citations = report?.results?.[metric.source_framework]?.citations || [];
+  if (citations.length === 0) return null;
+  const cited = metric.citation_index ? citations.find((c) => c.index === metric.citation_index) : null;
+  const similarity = cited ? cited.similarity : citations.reduce((sum, c) => sum + c.similarity, 0) / citations.length;
+  return Math.round(similarity * 100) / 10;
+}
+
+function BusinessMetricCard({ meta, metric, report }) {
+  if (!metric) {
+    const requiredLabel = meta.fallback ? `${meta.requires} or ${meta.fallback}` : meta.requires;
+    return (
+      <div className="rounded-2xl p-4 flex flex-col items-center justify-center text-center gap-1.5"
+        style={{ background: PALETTE.bgCard, border: `1px dashed ${PALETTE.border}`, minHeight: 112 }}>
+        <Lock size={14} style={{ color: PALETTE.textMuted }} />
+        <div className="text-xs font-semibold" style={{ color: PALETTE.textSecondary }}>{meta.label}</div>
+        <div className="text-[10px] leading-snug" style={{ color: PALETTE.textMuted }}>Not enough data — run the {requiredLabel} framework</div>
+      </div>
+    );
+  }
+
+  const score = computeEvidenceScore(metric, report);
+  const tone = score == null ? null : score >= 7 ? "teal" : score >= 4 ? "amber" : "red";
+  const color = tone ? ToneColor(tone) : PALETTE.blue;
+
+  return (
+    <MetricCard
+      label={meta.label}
+      value={metric.label}
+      sub={
+        <div className="flex flex-col items-start gap-1">
+          <span>{metric.rationale}</span>
+          {score != null && (
+            <span className="px-1.5 py-0.5 rounded-full font-semibold" style={{ background: `${color}22`, color }}>
+              {score.toFixed(1)}/10
+            </span>
+          )}
+        </div>
+      }
+    />
+  );
+}
+
+function BusinessMetricRow({ report, businessMetrics }) {
+  if (!businessMetrics) return null;
+  return (
+    <div className="grid grid-cols-5 gap-3 mb-5">
+      {BUSINESS_METRIC_CARDS.map((meta) => (
+        <BusinessMetricCard key={meta.key} meta={meta} metric={businessMetrics[meta.key]} report={report} />
+      ))}
+    </div>
+  );
+}
+
 // Shared by CitationList and FrameworkStrip's "Top Citations" -- one entry
 // per unique source_url, keeping whichever citation of that source had the
 // highest similarity, sorted best-match first.
@@ -563,6 +634,7 @@ export default function ReportView({ report, idea, onReset }) {
 
         <VerdictBanner stats={stats} />
         <MetricRow report={report} stats={stats} />
+        <BusinessMetricRow report={report} businessMetrics={report.business_metrics} />
 
         <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 320px" }}>
           <div>
