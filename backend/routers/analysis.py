@@ -11,6 +11,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from agents.rag_pipeline import run_pipeline  # noqa: E402
+from agents.synthesis import synthesize_business_metrics  # noqa: E402
 
 router = APIRouter()
 
@@ -31,6 +32,7 @@ class AnalysisResponse(BaseModel):
     frameworks_allowed: list[str]
     results: dict
     verification: dict
+    business_metrics: dict  # Phase 2 of docs/BUSINESS_METRICS_SPEC.md; keys: market_size, competitive_pressure, customer_segment, business_model_fit, risk_flags -- each a dict or None
 
 
 @router.post("/analyze", response_model=AnalysisResponse)
@@ -71,12 +73,25 @@ async def analyze(req: AnalysisRequest):
             results[framework]["market_sizing"] = pipeline_output["market_sizing"]
         verification[framework] = pipeline_output["verification"]
 
+    # No new retrieval -- reuses the results dict just built above. Never
+    # allowed to turn a successful framework run into a 500: any failure
+    # here degrades to "not enough data" for every synthesized card
+    # (see synthesize_business_metrics()'s own try/except), and if even
+    # that call itself somehow raises, business_metrics degrades to all-None
+    # here rather than losing the whole response.
+    try:
+        business_metrics = await synthesize_business_metrics(req.idea, results, allowed)
+    except Exception:
+        business_metrics = {key: None for key in
+                             ("market_size", "competitive_pressure", "customer_segment", "business_model_fit", "risk_flags")}
+
     return AnalysisResponse(
         stage="finalizing",
         frameworks_requested=req.frameworks,
         frameworks_allowed=allowed,
         results=results,
         verification=verification,
+        business_metrics=business_metrics,
     )
 
 
