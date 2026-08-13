@@ -3,6 +3,7 @@ RAG grounding pipeline: retrieve -> generate with citations -> verify claims -> 
 """
 
 import asyncio
+import json
 import logging
 
 from agents import config  # noqa: F401  side-effect: loads backend/.env reliably
@@ -36,17 +37,62 @@ Rules you must follow strictly:
 4. Do not fabricate numbers, company names, or sources under any circumstance.
 """
 
-TAM_TAGGING_INSTRUCTION = """
-Additionally, since this is a market-sizing (TAM/SAM/SOM) analysis:
-whenever you state a Total Addressable Market figure, prefix it with
-[TAM]. Whenever you state a Serviceable Available Market figure, prefix
-it with [SAM]. Whenever you state a Serviceable Obtainable Market
-figure, prefix it with [SOM]. Example: "[TAM] The global market is
-$68.3B [1]." Only tag a figure if the CONTEXT explicitly supports that
-specific tier — do not invent SAM or SOM if the context only supports
-TAM. Always write the figure in abbreviated form ($68.3B, $1.9M, $2.1T)
-— never spell out "billion"/"million"/"trillion" as words.
+# Phase 1 of docs/BUSINESS_METRICS_SPEC.md: replaces the old inline
+# [TAM]/[SAM]/[SOM] bracket-tagging instruction (asked the model to tag
+# figures inside free-form prose, then regex-recovered structure from that
+# prose after the fact -- lossy and, per prior measurement, unreliable: 0/5
+# real calls followed the abbreviated-unit rule). Structured output makes
+# the shape guaranteed instead of best-effort-parsed.
+TAM_STRUCTURED_SUFFIX = """
+Additionally, since this is a market-sizing (TAM/SAM/SOM) analysis, also
+populate the market_sizing object:
+- Only fill in a tier (tam/sam/som) if the CONTEXT explicitly states a
+  dollar figure for that specific tier. Leave it null if the CONTEXT
+  doesn't support it -- do not invent SAM or SOM if the context only
+  supports TAM.
+- "label" must be the abbreviated dollar form, e.g. "$68.3B", "$1.9M",
+  "$2.1T" -- never spell out "billion"/"million"/"trillion" as words.
+- "value_usd" must be that same figure as a plain number of dollars
+  (e.g. 68300000000 for $68.3B).
+- "citation_index" is the number of the CONTEXT chunk (matching the [N]
+  citation markers you use in narrative) that states this specific
+  figure, or null if you can't attribute it to one specific chunk.
 """
+
+MARKET_SIZING_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "narrative": {
+            "type": "string",
+            "description": "The full grounded analysis, same rules as ungrounded prose output: cite every factual sentence with [N] markers.",
+        },
+        "market_sizing": {
+            "type": "object",
+            "properties": {
+                tier: {
+                    "anyOf": [
+                        {
+                            "type": "object",
+                            "properties": {
+                                "value_usd": {"type": "number"},
+                                "label": {"type": "string"},
+                                "citation_index": {"type": ["integer", "null"]},
+                            },
+                            "required": ["value_usd", "label", "citation_index"],
+                            "additionalProperties": False,
+                        },
+                        {"type": "null"},
+                    ]
+                }
+                for tier in ("tam", "sam", "som")
+            },
+            "required": ["tam", "sam", "som"],
+            "additionalProperties": False,
+        },
+    },
+    "required": ["narrative", "market_sizing"],
+    "additionalProperties": False,
+}
 
 
 async def embed_query(query: str):
@@ -78,20 +124,6 @@ async def generate_with_citations(query: str, context_chunks: list, framework_ta
         for i, c in enumerate(context_chunks)
     )
 
-    system_prompt = GROUNDING_SYSTEM_PROMPT
-    if framework_tag == "tam":
-        system_prompt += TAM_TAGGING_INSTRUCTION
-
-    completion = await client.chat.completions.create(
-        model=CHAT_MODEL,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"CONTEXT:\n{context_block}\n\nQUESTION:\n{query}"},
-        ],
-        temperature=0.2,
-    )
-
-    text = completion.choices[0].message.content
     citations = [
         {
             "index": i + 1,
@@ -102,6 +134,47 @@ async def generate_with_citations(query: str, context_chunks: list, framework_ta
         }
         for i, c in enumerate(context_chunks)
     ]
+
+    is_tam = framework_tag == "tam"
+    system_prompt = GROUNDING_SYSTEM_PROMPT + (TAM_STRUCTURED_SUFFIX if is_tam else "")
+    user_content = f"CONTEXT:\n{context_block}\n\nQUESTION:\n{query}"
+
+    if is_tam:
+        completion = await client.chat.completions.create(
+            model=CHAT_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content},
+            ],
+            response_format={
+                "type": "json_schema",
+                "json_schema": {"name": "grounded_market_analysis", "strict": True, "schema": MARKET_SIZING_SCHEMA},
+            },
+            temperature=0.2,
+        )
+        raw = completion.choices[0].message.content
+        try:
+            parsed = json.loads(raw)
+            text = parsed["narrative"]
+            market_sizing = parsed["market_sizing"]
+        except (json.JSONDecodeError, KeyError, TypeError):
+            # Should not happen under strict schema mode, but this must never
+            # crash the request -- degrade to the same shape a non-TAM
+            # response has (no market_sizing) rather than raising.
+            logger.exception("generate_with_citations: failed to parse structured TAM response, raw=%r", raw)
+            text = raw
+            market_sizing = None
+        return {"text": text, "citations": citations, "market_sizing": market_sizing}
+
+    completion = await client.chat.completions.create(
+        model=CHAT_MODEL,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ],
+        temperature=0.2,
+    )
+    text = completion.choices[0].message.content
     return {"text": text, "citations": citations}
 
 

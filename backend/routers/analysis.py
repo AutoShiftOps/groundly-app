@@ -63,6 +63,12 @@ async def analyze(req: AnalysisRequest):
             "text": pipeline_output["text"],
             "citations": pipeline_output["citations"],
         }
+        # Only present for tam (agents/rag_pipeline.py's structured-output
+        # path, docs/BUSINESS_METRICS_SPEC.md Phase 1); absent for every
+        # other framework, same as pipeline_output itself only has the key
+        # when framework_tag == "tam".
+        if "market_sizing" in pipeline_output:
+            results[framework]["market_sizing"] = pipeline_output["market_sizing"]
         verification[framework] = pipeline_output["verification"]
 
     return AnalysisResponse(
