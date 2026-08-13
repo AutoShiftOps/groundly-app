@@ -441,111 +441,23 @@ function marketTiersFromApi(marketSizing) {
   return Object.entries(MARKET_TIER_META).map(([key, meta]) => {
     const tier = marketSizing[key];
     if (!tier) {
-      return { key, label: meta.label, color: meta.color, present: false, value: null, displayValue: null, citationIndex: null, cagrPct: null };
+      return { key, label: meta.label, color: meta.color, present: false, value: null, displayValue: null, citationIndex: null, cagrPct: null, tierDescription: null };
     }
     return {
       key, label: meta.label, color: meta.color, present: true, value: tier.value_usd, displayValue: tier.label,
-      citationIndex: tier.citation_index, cagrPct: tier.cagr_pct ?? null,
+      citationIndex: tier.citation_index, cagrPct: tier.cagr_pct ?? null, tierDescription: tier.tier_description ?? null,
     };
   });
 }
 
-function MarketSizingPanel({ frameworkKey, result }) {
-  const items = useMemo(
-    () => (frameworkKey === "tam" ? marketTiersFromApi(result?.market_sizing) : []),
-    [frameworkKey, result]
-  );
-  // items is only [] when market_sizing itself is absent (not tam, or the
-  // API never attempted it) -- marketTiersFromApi() always returns all 3
-  // tiers once market_sizing exists, even if every tier came back null, so
-  // this panel now renders (with explicit "no data found" tiers) instead
-  // of silently disappearing whenever nothing was grounded.
-  if (items.length === 0) return null;
-
-  const presentItems = items.filter((it) => it.present);
-  const maxOuter = 78, minRadius = 22, ghostRadius = 34;
-  const maxValue = presentItems.length ? Math.max(...presentItems.map((it) => it.value)) : 0;
-  // Present tiers size by sqrt-scaled value, same as before. Absent tiers
-  // get a fixed placeholder radius -- there's no value to size them by,
-  // and faking one would fabricate a number this file has never fabricated
-  // anywhere else. The sequential nesting clamp still applies uniformly so
-  // a ghost ring never looks bigger than a real circle before it.
-  const radii = items.map((it) => (it.present ? Math.max(minRadius, maxOuter * Math.sqrt(it.value / maxValue)) : ghostRadius));
-  for (let i = 1; i < radii.length; i++) radii[i] = Math.min(radii[i], Math.max(minRadius, radii[i - 1] - 10));
-  const size = maxOuter * 2 + 16;
-  const cx = size / 2, cy = size / 2;
-
-  const byKey = Object.fromEntries(items.map((it) => [it.key, it]));
-
-  return (
-    <div className="rounded-2xl p-6 mb-4" style={{ background: PALETTE.bgCard, border: `1px solid ${PALETTE.border}` }}>
-      <div className="flex items-center gap-2 mb-4">
-        <BarChart2 size={16} style={{ color: PALETTE.blue }} />
-        <h3 className="text-sm font-bold text-white">Market Sizing</h3>
-      </div>
-
-      <div className="flex items-center gap-6 flex-wrap">
-        <svg width={size} height={size} className="shrink-0">
-          {items.map((item, i) =>
-            item.present ? (
-              <circle key={item.key} cx={cx} cy={cy} r={radii[i]} fill={`${item.color}22`} stroke={item.color} strokeWidth={2} />
-            ) : (
-              <g key={item.key}>
-                <circle cx={cx} cy={cy} r={radii[i]} fill="none" stroke={PALETTE.textMuted} strokeWidth={1.5} strokeDasharray="4 3" opacity={0.6} />
-                <text x={cx} y={cy - radii[i] + 9} textAnchor="middle" fontSize="7" fill={PALETTE.textMuted}>No data found</text>
-              </g>
-            )
-          )}
-        </svg>
-        <div className="flex flex-col gap-2">
-          {items.map((item) => (
-            <div key={item.key} className="flex items-center gap-2 text-xs">
-              <span className="w-2.5 h-2.5 rounded-full shrink-0"
-                style={item.present ? { background: item.color } : { border: `1.5px dashed ${PALETTE.textMuted}` }} />
-              <span className="font-semibold text-white w-9">{item.label}</span>
-              {item.present
-                ? <span style={{ color: PALETTE.textSecondary }}>{item.displayValue}</span>
-                : <span style={{ color: PALETTE.textMuted, fontStyle: "italic" }}>No data found</span>}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <table className="w-full mt-4 text-xs">
-        <thead>
-          <tr style={{ color: PALETTE.textMuted }}>
-            <th className="text-left font-medium pb-1.5">Label</th>
-            <th className="text-left font-medium pb-1.5">Value</th>
-            <th className="text-left font-medium pb-1.5">% of Parent</th>
-            <th className="text-left font-medium pb-1.5">CAGR</th>
-            <th className="text-left font-medium pb-1.5">Source</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((item) => {
-            const parent = byKey[PARENT_TIER_KEY[item.key]];
-            const pctOfParent = item.present && parent?.present ? Math.round((item.value / parent.value) * 1000) / 10 : null;
-            return (
-              <tr key={item.key} style={{ borderTop: `1px solid ${PALETTE.border}` }}>
-                <td className="py-1.5 font-semibold" style={{ color: item.color }}>{item.label}</td>
-                <td className="py-1.5" style={item.present ? { color: "#fff" } : { color: PALETTE.textMuted, fontStyle: "italic" }}>
-                  {item.present ? item.displayValue : "No data found"}
-                </td>
-                <td className="py-1.5" style={{ color: PALETTE.textSecondary }}>{pctOfParent != null ? `${pctOfParent}%` : "—"}</td>
-                <td className="py-1.5" style={{ color: item.cagrPct != null ? PALETTE.teal : PALETTE.textSecondary }}>{item.cagrPct != null ? `${item.cagrPct}%` : "—"}</td>
-                <td className="py-1.5" style={{ color: PALETTE.textSecondary }}>{item.citationIndex ? `[${item.citationIndex}]` : "—"}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-
-      <p className="text-[10px] mt-3" style={{ color: PALETTE.textMuted }}>
-        Grounded market sizing extracted from the retrieved sources — not independently verified market data.
-      </p>
-    </div>
-  );
-}
+// docs/TAM_100_MATCH_SPEC.md item 4: full tier names are static,
+// standard-definition text (not a claim about this idea's actual market),
+// so hardcoding them per tier carries no fabrication risk.
+const TIER_FULL_NAME = {
+  tam: "Total Addressable Market",
+  sam: "Serviceable Available Market",
+  som: "Serviceable Obtainable Market",
+};
 
 // Phase 3 of docs/BUSINESS_METRICS_SPEC.md. Shared by PESTEL/SWOT/BMC's
 // structured category rendering -- each category is an array of
@@ -756,6 +668,164 @@ function FrameworkPanel({ frameworkKey, result, verification, ideaTitle }) {
   );
 }
 
+// docs/TAM_100_MATCH_SPEC.md: the TAM tab's merged card -- one component
+// instead of MarketSizingPanel + FrameworkPanel stacked separately, so the
+// circles/legend/table become the primary content directly under the
+// header (matching the mock) instead of sitting above a second card with
+// its own duplicate header. Only used at the call site when
+// result.market_sizing exists; when it doesn't (older cached report, or
+// tam structured output wasn't attempted), the call site falls back to
+// plain FrameworkPanel since there's nothing to merge into then.
+function TamSizingCard({ result, verification, ideaTitle }) {
+  const items = useMemo(() => marketTiersFromApi(result.market_sizing), [result]);
+  // Assumption 1 (confirmed): narrative stays available, not deleted --
+  // collapsed behind a toggle, default closed, so circles/table (what the
+  // mock shows first) lead while "why this number" stays one click away
+  // instead of disappearing outright.
+  const [showNarrative, setShowNarrative] = useState(false);
+  const verified = verification?.verified ?? false;
+
+  const presentItems = items.filter((it) => it.present);
+  const maxOuter = 78, minRadius = 22, ghostRadius = 34;
+  const maxValue = presentItems.length ? Math.max(...presentItems.map((it) => it.value)) : 0;
+  const radii = items.map((it) => (it.present ? Math.max(minRadius, maxOuter * Math.sqrt(it.value / maxValue)) : ghostRadius));
+  for (let i = 1; i < radii.length; i++) radii[i] = Math.min(radii[i], Math.max(minRadius, radii[i - 1] - 10));
+  const size = maxOuter * 2 + 16;
+  const cx = size / 2, cy = size / 2;
+  const byKey = Object.fromEntries(items.map((it) => [it.key, it]));
+
+  const isInsufficient = result.text?.trim() === "Insufficient grounded data available for this section.";
+
+  return (
+    <div className="rounded-2xl p-6" style={{ background: PALETTE.bgCard, border: `1px solid ${PALETTE.border}` }}>
+      <div className="flex items-start justify-between mb-4 gap-3">
+        <div className="flex items-start gap-3 min-w-0">
+          <div className="flex items-center justify-center rounded-lg shrink-0" style={{ width: 34, height: 34, background: PALETTE.bgPanel, border: `1px solid ${PALETTE.border}`, color: PALETTE.blue }}>
+            <Layers size={17} />
+          </div>
+          <div className="min-w-0">
+            <div className="text-[10px] uppercase tracking-wider" style={{ color: PALETTE.textMuted }}>Framework</div>
+            {/* docs/TAM_100_MATCH_SPEC.md item 2: this tab's title only --
+                FRAMEWORK_LABELS.tam (used by the sidebar nav and
+                OverviewFrameworkLinks) stays "TAM", unchanged. */}
+            <h2 className="text-xl font-extrabold text-white">TAM SAM SOM</h2>
+            <p className="text-xs mt-0.5 truncate" style={{ color: PALETTE.textMuted }}>Analysis for {ideaTitle}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full"
+            style={{ color: verified ? PALETTE.teal : PALETTE.amber, border: `1px solid ${verified ? PALETTE.teal : PALETTE.amber}` }}>
+            {verified ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
+            {verified ? "Verified" : "Unverified"}
+          </span>
+          {/* Visual parity only, not wired up yet -- no methodology content to show. */}
+          <button disabled title="Coming soon" className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full opacity-70"
+            style={{ background: PALETTE.bgPanel, border: `1px solid ${PALETTE.border}`, color: PALETTE.textSecondary }}>
+            <Info size={12} /> Methodology
+          </button>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-6 flex-wrap">
+        <svg width={size} height={size} className="shrink-0">
+          {items.map((item, i) =>
+            item.present ? (
+              <circle key={item.key} cx={cx} cy={cy} r={radii[i]} fill={`${item.color}22`} stroke={item.color} strokeWidth={2} />
+            ) : (
+              <g key={item.key}>
+                <circle cx={cx} cy={cy} r={radii[i]} fill="none" stroke={PALETTE.textMuted} strokeWidth={1.5} strokeDasharray="4 3" opacity={0.6} />
+                <text x={cx} y={cy - radii[i] + 9} textAnchor="middle" fontSize="7" fill={PALETTE.textMuted}>No data found</text>
+              </g>
+            )
+          )}
+        </svg>
+        <div className="flex flex-col gap-2.5">
+          {items.map((item) => (
+            <div key={item.key} className="flex items-start gap-2 text-xs">
+              <span className="w-2.5 h-2.5 rounded-full shrink-0 mt-0.5"
+                style={item.present ? { background: item.color } : { border: `1.5px dashed ${PALETTE.textMuted}` }} />
+              <div>
+                <div>
+                  <span className="font-semibold text-white">{item.label}</span>{" "}
+                  {item.present
+                    ? <span style={{ color: PALETTE.textSecondary }}>{item.displayValue}</span>
+                    : <span style={{ color: PALETTE.textMuted, fontStyle: "italic" }}>No data found</span>}
+                </div>
+                {/* Assumption 2 (confirmed): tier_description is a real
+                    grounded schema field (agents/rag_pipeline.py's
+                    MARKET_SIZING_SCHEMA), null when the CONTEXT didn't
+                    support a specific description -- same discipline as
+                    cagr_pct, never fake-derived from unrelated text. */}
+                {item.present && item.tierDescription && (
+                  <div className="text-[11px] mt-0.5" style={{ color: PALETTE.textMuted }}>{item.tierDescription}</div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <table className="w-full mt-4 text-xs">
+        <thead>
+          <tr style={{ color: PALETTE.textMuted }}>
+            <th className="text-left font-medium pb-1.5">Metric</th>
+            <th className="text-left font-medium pb-1.5">Value (USD)</th>
+            <th className="text-left font-medium pb-1.5">% of Parent</th>
+            <th className="text-left font-medium pb-1.5">CAGR</th>
+            <th className="text-left font-medium pb-1.5">Source</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item) => {
+            const parent = byKey[PARENT_TIER_KEY[item.key]];
+            const pctOfParent = item.present && parent?.present ? Math.round((item.value / parent.value) * 1000) / 10 : null;
+            return (
+              <tr key={item.key} style={{ borderTop: `1px solid ${PALETTE.border}` }}>
+                <td className="py-1.5">
+                  <div className="font-semibold" style={{ color: item.color }}>{item.label}</div>
+                  <div className="text-[10px]" style={{ color: PALETTE.textMuted }}>{TIER_FULL_NAME[item.key]}</div>
+                </td>
+                <td className="py-1.5" style={item.present ? { color: "#fff" } : { color: PALETTE.textMuted, fontStyle: "italic" }}>
+                  {item.present ? item.displayValue : "No data found"}
+                </td>
+                <td className="py-1.5" style={{ color: PALETTE.textSecondary }}>{pctOfParent != null ? `${pctOfParent}%` : "—"}</td>
+                <td className="py-1.5" style={{ color: item.cagrPct != null ? PALETTE.teal : PALETTE.textSecondary }}>{item.cagrPct != null ? `${item.cagrPct}%` : "—"}</td>
+                <td className="py-1.5" style={{ color: PALETTE.textSecondary }}>{item.citationIndex ? `[${item.citationIndex}]` : "—"}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+
+      <p className="text-[10px] mt-3" style={{ color: PALETTE.textMuted }}>
+        Grounded market sizing extracted from the retrieved sources — not independently verified market data.
+      </p>
+
+      <div className="mt-4">
+        <button onClick={() => setShowNarrative((s) => !s)} aria-expanded={showNarrative}
+          className="flex items-center gap-1.5 text-xs font-semibold transition-colors hover:opacity-80"
+          style={{ color: PALETTE.blue }}>
+          {showNarrative ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+          {showNarrative ? "Hide full analysis" : "Read full analysis"}
+        </button>
+        {showNarrative && (
+          <p className="text-sm leading-relaxed mt-2" style={{ color: isInsufficient ? PALETTE.textMuted : "#e4e9f5", fontStyle: isInsufficient ? "italic" : "normal" }}>
+            {renderBoldText(stripMarketTags(result.text))}
+          </p>
+        )}
+      </div>
+
+      {verification?.unsupported_claims?.length > 0 && (
+        <div className="flex items-center gap-2 mt-4 text-xs px-3 py-2 rounded-lg" style={{ color: PALETTE.amber, background: `${PALETTE.amber}14`, border: `1px solid ${PALETTE.amber}44` }}>
+          <AlertTriangle size={13} /> {verification.unsupported_claims.join(", ")}
+        </div>
+      )}
+
+      <FrameworkStrip result={result} />
+    </div>
+  );
+}
+
 // docs/PHASE_5_SPEC.md A: the Overview tab's optional (per the spec,
 // "nice-to-have") main-content area -- real per-framework counts/verified
 // state, not fabricated, doubling as quick navigation into each tab.
@@ -912,11 +982,16 @@ export default function ReportView({ report, idea, onReset }) {
           <div>
             {isOverview
               ? <OverviewFrameworkLinks stats={stats} report={report} onSelectFramework={setActiveFramework} />
-              : (
-                <>
-                  {activeResult && <MarketSizingPanel frameworkKey={activeFramework} result={activeResult} />}
-                  {activeResult && <FrameworkPanel frameworkKey={activeFramework} result={activeResult} verification={activeVerification} ideaTitle={title} />}
-                </>
+              : activeResult && (
+                // docs/TAM_100_MATCH_SPEC.md item 1: merged single card for
+                // TAM specifically, but only once market_sizing actually
+                // exists to merge around -- an older cached report or a
+                // framework run where tam structured output wasn't
+                // attempted has nothing to show there, so it falls back to
+                // the plain FrameworkPanel every other framework already uses.
+                activeFramework === "tam" && activeResult.market_sizing
+                  ? <TamSizingCard result={activeResult} verification={activeVerification} ideaTitle={title} />
+                  : <FrameworkPanel frameworkKey={activeFramework} result={activeResult} verification={activeVerification} ideaTitle={title} />
               )}
           </div>
 
