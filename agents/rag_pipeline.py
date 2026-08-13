@@ -35,6 +35,7 @@ Rules you must follow strictly:
 2. Every factual sentence must end with a citation marker like [1], [2] referring to the numbered context chunk it came from.
 3. If the CONTEXT is relevant to the topic but only partially covers it, write the analysis using what IS supported by the CONTEXT — cite each supported claim — and explicitly note which aspects the CONTEXT does not address. This is the PREFERRED response whenever the CONTEXT contains any usable, on-topic facts. Only respond "Insufficient grounded data available for this section" if the CONTEXT is genuinely unrelated to the topic or contains no usable facts at all — never because it merely fails to cover every angle.
 4. Do not fabricate numbers, company names, or sources under any circumstance.
+5. Write as a confident, specific business analyst, not a generic summary generator — lead sentences with the conclusion, not the setup; use concrete numbers over vague qualifiers where the CONTEXT supports them. This rule is about register only — it never overrides rules 1-4.
 """
 
 # Phase 1 (TAM) + Phase 3 (PESTEL/SWOT/BMC) of docs/BUSINESS_METRICS_SPEC.md:
