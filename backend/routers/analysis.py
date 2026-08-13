@@ -47,7 +47,12 @@ async def analyze(req: AnalysisRequest):
     verification = {}
 
     def build_query(framework: str) -> str:
-        query = f"{framework.upper()} analysis for: {req.idea}"
+        # docs/PHASE_5_SPEC.md C1: previously led with the framework name
+        # ("PESTEL analysis for: <idea>"), which biased both local embedding
+        # retrieval and the Tavily fallback toward generic framework-
+        # methodology content instead of the actual idea topic. Idea leads
+        # now; framework is trailing context, not the dominant term.
+        query = f"{req.idea} — {framework.upper()} analysis"
         if req.industry:
             query += f" | industry: {req.industry}"
         if req.geography:

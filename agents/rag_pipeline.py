@@ -28,6 +28,30 @@ CHAT_MODEL = "gpt-4o-mini"
 # only counts as "good enough" here if its best match clears this bar.
 LIVE_RETRIEVAL_TRIGGER_THRESHOLD = 0.5
 
+# docs/PHASE_5_SPEC.md C2. Neither MIN_SIMILARITY (0.35) nor
+# LIVE_RETRIEVAL_TRIGGER_THRESHOLD (0.5, only ever decided whether to
+# ATTEMPT web retrieval) stopped a chunk that technically cleared 0.35 from
+# being used as real context if the web-retrieval attempt didn't improve
+# things -- confirmed live: a "Solar panel based electric grid for
+# villages" PESTEL report cited "PESTEL: EV Charging Market" at 0.53
+# similarity, which never even triggered web retrieval since 0.53 already
+# clears 0.5.
+#
+# The spec's own suggestion was to reuse 0.5 for this too -- verified that
+# does NOT work: 0.53 (the confirmed bad case) clears 0.5 outright. Instead
+# calibrated empirically against real retrieval data: genuinely off-topic
+# ideas (ferret grooming, yo-yo marketplace, hot-sauce subscription) scored
+# 0.35-0.46 against this corpus; the solar case scored 0.53; a genuinely
+# on-topic case (synth-rental PESTEL, matched against real web-retrieved
+# synth content) scored 0.5468. 0.54 sits in the gap between the highest
+# confirmed-bad case (0.53) and the lowest confirmed-good case (0.5468).
+#
+# Applied as a hard floor on whatever run_pipeline() ends up with AFTER any
+# web-retrieval attempt (not a trigger -- LIVE_RETRIEVAL_TRIGGER_THRESHOLD
+# still owns that decision, unchanged) -- if nothing clears this bar, don't
+# generate from it.
+MIN_CONTEXT_SIMILARITY = 0.54
+
 GROUNDING_SYSTEM_PROMPT = """You are a grounded business-analysis assistant.
 
 Rules you must follow strictly:
@@ -321,9 +345,24 @@ async def run_pipeline(query: str, framework_tag: str | None = None):
             if refreshed:
                 chunks = refreshed
         # Otherwise chunks keeps whatever it already had -- empty (falls
-        # through to insufficient-data below) or the original weak matches
-        # (falls through to generation with those, same as before this
-        # threshold existed) -- exactly as before this feature in both cases.
+        # through to insufficient-data below) or the original weak matches,
+        # subject to the hard floor check right below.
+
+    # docs/PHASE_5_SPEC.md C2 hard floor: whatever we ended up with above
+    # (untouched local matches, web-retrieval-refreshed matches, or a
+    # failed-refresh fallback to the original weak matches) must clear
+    # MIN_CONTEXT_SIMILARITY or it's not usable as context, regardless of
+    # whether it cleared the lower LIVE_RETRIEVAL_TRIGGER_THRESHOLD bar
+    # earlier. This is what actually stops a technically-above-0.35 but
+    # topically-wrong chunk (e.g. EV-charging content in a solar report)
+    # from reaching generation.
+    if chunks and max(c["similarity"] for c in chunks) < MIN_CONTEXT_SIMILARITY:
+        logger.info(
+            "run_pipeline: best available similarity for framework=%r still below "
+            "MIN_CONTEXT_SIMILARITY (%.4f < %.2f) after retrieval -- discarding as unusable context.",
+            framework_tag, max(c["similarity"] for c in chunks), MIN_CONTEXT_SIMILARITY,
+        )
+        chunks = []
 
     result = await generate_with_citations(query, chunks, framework_tag=framework_tag)
     verification = verify_claims(result["text"], result["citations"])
