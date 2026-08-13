@@ -405,6 +405,13 @@ const MARKET_TIER_META = {
   som: { label: "SOM", color: PALETTE.teal },
 };
 
+// docs/PHASE_4_SPEC.md B1: % of Parent is derived, not fabricated -- pure
+// arithmetic on value_usd fields the API already returns, no prompt/schema
+// change. TAM has no parent tier (shows "--"). Only computed when the
+// parent tier is also present; a missing parent means "no basis to compute
+// a percentage of", not 0%.
+const PARENT_TIER_KEY = { sam: "tam", som: "sam" };
+
 // One entry per tier actually present in market_sizing (API already omits
 // tiers the CONTEXT didn't support -- null in, nothing rendered for that
 // tier, same "don't show what wasn't grounded" discipline as before).
@@ -437,6 +444,8 @@ function MarketSizingPanel({ frameworkKey, result }) {
   const size = maxOuter * 2 + 16;
   const cx = size / 2, cy = size / 2;
 
+  const byKey = Object.fromEntries(items.map((it) => [it.key, it]));
+
   return (
     <div className="rounded-2xl p-6 mb-4" style={{ background: PALETTE.bgCard, border: `1px solid ${PALETTE.border}` }}>
       <div className="flex items-center gap-2 mb-4">
@@ -466,17 +475,23 @@ function MarketSizingPanel({ frameworkKey, result }) {
           <tr style={{ color: PALETTE.textMuted }}>
             <th className="text-left font-medium pb-1.5">Label</th>
             <th className="text-left font-medium pb-1.5">Value</th>
+            <th className="text-left font-medium pb-1.5">% of Parent</th>
             <th className="text-left font-medium pb-1.5">Source</th>
           </tr>
         </thead>
         <tbody>
-          {items.map((item) => (
-            <tr key={item.key} style={{ borderTop: `1px solid ${PALETTE.border}` }}>
-              <td className="py-1.5 font-semibold" style={{ color: item.color }}>{item.label}</td>
-              <td className="py-1.5 text-white">{item.displayValue}</td>
-              <td className="py-1.5" style={{ color: PALETTE.textSecondary }}>{item.citationIndex ? `[${item.citationIndex}]` : "—"}</td>
-            </tr>
-          ))}
+          {items.map((item) => {
+            const parent = byKey[PARENT_TIER_KEY[item.key]];
+            const pctOfParent = parent ? Math.round((item.value / parent.value) * 1000) / 10 : null;
+            return (
+              <tr key={item.key} style={{ borderTop: `1px solid ${PALETTE.border}` }}>
+                <td className="py-1.5 font-semibold" style={{ color: item.color }}>{item.label}</td>
+                <td className="py-1.5 text-white">{item.displayValue}</td>
+                <td className="py-1.5" style={{ color: PALETTE.textSecondary }}>{pctOfParent != null ? `${pctOfParent}%` : "—"}</td>
+                <td className="py-1.5" style={{ color: PALETTE.textSecondary }}>{item.citationIndex ? `[${item.citationIndex}]` : "—"}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
 
