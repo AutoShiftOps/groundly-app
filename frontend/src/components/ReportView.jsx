@@ -226,16 +226,24 @@ function MetricRow({ report, stats }) {
   );
 }
 
-function CitationList({ citations }) {
-  if (!citations || citations.length === 0) {
-    return <p className="text-sm" style={{ color: PALETTE.textMuted }}>No citations returned for this section.</p>;
-  }
+// Shared by CitationList and FrameworkStrip's "Top Citations" -- one entry
+// per unique source_url, keeping whichever citation of that source had the
+// highest similarity, sorted best-match first.
+function dedupeCitations(citations) {
+  if (!citations || citations.length === 0) return [];
   const bySource = {};
   citations.forEach((c) => {
     const existing = bySource[c.source_url];
     if (!existing || c.similarity > existing.similarity) bySource[c.source_url] = c;
   });
-  const unique = Object.values(bySource).sort((a, b) => b.similarity - a.similarity);
+  return Object.values(bySource).sort((a, b) => b.similarity - a.similarity);
+}
+
+function CitationList({ citations }) {
+  const unique = dedupeCitations(citations);
+  if (unique.length === 0) {
+    return <p className="text-sm" style={{ color: PALETTE.textMuted }}>No citations returned for this section.</p>;
+  }
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -269,6 +277,46 @@ function renderBoldText(text) {
     part.startsWith("**") && part.endsWith("**") && part.length > 4
       ? <strong key={i} className="font-bold text-white">{part.slice(2, -2)}</strong>
       : part
+  );
+}
+
+// No separate "summary" field exists in the API response, and fabricating
+// one would violate the no-invented-numbers discipline this file is built
+// on. The last sentence of the grounded text is a real, non-fabricated
+// proxy for a takeaway -- it's the model's own words, not synthesized copy.
+function lastSentence(text) {
+  if (!text) return "";
+  const sentences = text.trim().split(/(?<=[.!?])\s+/).filter(Boolean);
+  return sentences.length ? sentences[sentences.length - 1] : text.trim();
+}
+
+function FrameworkStrip({ result }) {
+  const takeaway = stripMarketTags(lastSentence(result.text));
+  const topCitations = dedupeCitations(result.citations).slice(0, 3);
+
+  return (
+    <div className="flex items-start gap-6 mt-5 pt-4 flex-wrap" style={{ borderTop: `1px solid ${PALETTE.border}` }}>
+      <div className="flex-1 min-w-[220px]">
+        <div className="flex items-center gap-1.5 text-xs font-bold mb-1" style={{ color: PALETTE.amber }}>
+          <Lightbulb size={13} /> Key Takeaway
+        </div>
+        <p className="text-xs leading-relaxed" style={{ color: PALETTE.textSecondary }}>{renderBoldText(takeaway)}</p>
+      </div>
+      {topCitations.length > 0 && (
+        <div className="shrink-0">
+          <div className="text-xs font-bold text-white mb-1.5">Top Citations</div>
+          <div className="flex flex-wrap gap-1.5 max-w-[220px]">
+            {topCitations.map((c) => (
+              <a key={c.source_url + c.index} href={c.source_url} target="_blank" rel="noopener noreferrer"
+                className="text-[10px] font-medium px-2 py-1 rounded-full transition-colors hover:bg-white/5"
+                style={{ border: `1px solid ${PALETTE.border}`, color: PALETTE.blue, textDecoration: "none" }}>
+                [{c.index}] {c.source_title && c.source_title.length > 22 ? c.source_title.slice(0, 22) + "…" : c.source_title}
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -449,6 +497,8 @@ function FrameworkPanel({ frameworkKey, result, verification, ideaTitle }) {
           )}
         </>
       )}
+
+      <FrameworkStrip result={result} />
     </div>
   );
 }
