@@ -18,6 +18,7 @@ import {
   TrendingUp, FolderOpen, Lightbulb, BarChart2, FileText, Settings,
   ShieldCheck, ShieldAlert, CheckCircle2, AlertTriangle, Lock,
   Share2, Download, Sparkles, MessageSquare, GitCompare, Layers, ChevronLeft,
+  Info, ChevronUp, ChevronDown,
 } from "lucide-react";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 
@@ -398,37 +399,55 @@ function MarketSizingPanel({ frameworkKey, result }) {
   );
 }
 
-function FrameworkPanel({ frameworkKey, result, verification }) {
+function FrameworkPanel({ frameworkKey, result, verification, ideaTitle }) {
+  const [collapsed, setCollapsed] = useState(false);
   const isInsufficient = result.text?.trim() === "Insufficient grounded data available for this section.";
   const verified = verification?.verified ?? false;
 
   return (
     <div className="rounded-2xl p-6" style={{ background: PALETTE.bgCard, border: `1px solid ${PALETTE.border}` }}>
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-start gap-3">
+      <div className="flex items-start justify-between mb-4 gap-3">
+        <div className="flex items-start gap-3 min-w-0">
           <div className="flex items-center justify-center rounded-lg shrink-0" style={{ width: 34, height: 34, background: PALETTE.bgPanel, border: `1px solid ${PALETTE.border}`, color: PALETTE.blue }}>
             <Layers size={17} />
           </div>
-          <div>
+          <div className="min-w-0">
             <div className="text-[10px] uppercase tracking-wider" style={{ color: PALETTE.textMuted }}>Framework</div>
             <h2 className="text-xl font-extrabold text-white">{FRAMEWORK_LABELS[frameworkKey] || frameworkKey.toUpperCase()}</h2>
+            <p className="text-xs mt-0.5 truncate" style={{ color: PALETTE.textMuted }}>Analysis for {ideaTitle}</p>
           </div>
         </div>
-        <span className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full"
-          style={{ color: verified ? PALETTE.teal : PALETTE.amber, border: `1px solid ${verified ? PALETTE.teal : PALETTE.amber}` }}>
-          {verified ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
-          {verified ? "Verified" : "Unverified"}
-        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full"
+            style={{ color: verified ? PALETTE.teal : PALETTE.amber, border: `1px solid ${verified ? PALETTE.teal : PALETTE.amber}` }}>
+            {verified ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
+            {verified ? "Verified" : "Unverified"}
+          </span>
+          {/* Visual parity only, not wired up yet -- no methodology content to show. */}
+          <button disabled title="Coming soon" className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full opacity-70"
+            style={{ background: PALETTE.bgPanel, border: `1px solid ${PALETTE.border}`, color: PALETTE.textSecondary }}>
+            <Info size={12} /> Methodology
+          </button>
+          <button onClick={() => setCollapsed((c) => !c)} aria-label={collapsed ? "Expand section" : "Collapse section"}
+            className="flex items-center justify-center rounded-full transition-colors hover:bg-white/5"
+            style={{ width: 28, height: 28, background: PALETTE.bgPanel, border: `1px solid ${PALETTE.border}`, color: PALETTE.textSecondary }}>
+            {collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+          </button>
+        </div>
       </div>
 
-      <p className="text-sm leading-relaxed" style={{ color: isInsufficient ? PALETTE.textMuted : "#e4e9f5", fontStyle: isInsufficient ? "italic" : "normal" }}>
-        {renderBoldText(stripMarketTags(result.text))}
-      </p>
+      {!collapsed && (
+        <>
+          <p className="text-sm leading-relaxed" style={{ color: isInsufficient ? PALETTE.textMuted : "#e4e9f5", fontStyle: isInsufficient ? "italic" : "normal" }}>
+            {renderBoldText(stripMarketTags(result.text))}
+          </p>
 
-      {verification?.unsupported_claims?.length > 0 && (
-        <div className="flex items-center gap-2 mt-4 text-xs px-3 py-2 rounded-lg" style={{ color: PALETTE.amber, background: `${PALETTE.amber}14`, border: `1px solid ${PALETTE.amber}44` }}>
-          <AlertTriangle size={13} /> {verification.unsupported_claims.join(", ")}
-        </div>
+          {verification?.unsupported_claims?.length > 0 && (
+            <div className="flex items-center gap-2 mt-4 text-xs px-3 py-2 rounded-lg" style={{ color: PALETTE.amber, background: `${PALETTE.amber}14`, border: `1px solid ${PALETTE.amber}44` }}>
+              <AlertTriangle size={13} /> {verification.unsupported_claims.join(", ")}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -529,7 +548,7 @@ export default function ReportView({ report, idea, onReset }) {
         <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 320px" }}>
           <div>
             {activeResult && <MarketSizingPanel frameworkKey={activeFramework} result={activeResult} />}
-            {activeResult && <FrameworkPanel frameworkKey={activeFramework} result={activeResult} verification={activeVerification} />}
+            {activeResult && <FrameworkPanel frameworkKey={activeFramework} result={activeResult} verification={activeVerification} ideaTitle={title} />}
           </div>
 
           <div className="flex flex-col gap-3.5">
