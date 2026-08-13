@@ -18,7 +18,7 @@ import {
   TrendingUp, FolderOpen, Lightbulb, BarChart2, FileText, Settings,
   ShieldCheck, ShieldAlert, CheckCircle2, AlertTriangle, Lock,
   Share2, Download, Sparkles, MessageSquare, GitCompare, Layers, ChevronLeft,
-  Info, ChevronUp, ChevronDown,
+  Info, ChevronUp, ChevronDown, LayoutGrid,
 } from "lucide-react";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 
@@ -320,7 +320,12 @@ function dedupeCitations(citations) {
   return Object.values(bySource).sort((a, b) => b.similarity - a.similarity);
 }
 
-function CitationList({ citations }) {
+// showFrameworkSource: Overview's aggregate citation list mixes citations
+// from multiple frameworks, each with its own locally-1-based index -- a
+// bare "[1]" would be ambiguous there (which framework's [1]?), so it
+// shows "PESTEL · title" instead. Single-framework use (the per-tab
+// Sources panel) keeps the plain "[N] title" form, unchanged.
+function CitationList({ citations, showFrameworkSource = false }) {
   const unique = dedupeCitations(citations);
   if (unique.length === 0) {
     return <p className="text-sm" style={{ color: PALETTE.textMuted }}>No citations returned for this section.</p>;
@@ -329,10 +334,13 @@ function CitationList({ citations }) {
   return (
     <div className="flex flex-col gap-1.5">
       {unique.map((c) => (
-        <a key={c.source_url + c.index} href={c.source_url} target="_blank" rel="noopener noreferrer"
+        <a key={c.source_url + c.index + (c._framework || "")} href={c.source_url} target="_blank" rel="noopener noreferrer"
           className="flex items-center justify-between gap-2 text-xs px-2 py-1.5 rounded-lg transition-colors hover:bg-white/5"
           style={{ color: PALETTE.blue, textDecoration: "none" }}>
-          <span className="truncate">[{c.index}] {c.source_title}</span>
+          <span className="truncate">
+            {showFrameworkSource && c._framework ? `${FRAMEWORK_LABELS[c._framework] || c._framework.toUpperCase()} · ` : `[${c.index}] `}
+            {c.source_title}
+          </span>
           <span className="shrink-0" style={{ color: PALETTE.textMuted }}>{Math.round(c.similarity * 100)}%</span>
         </a>
       ))}
@@ -720,16 +728,60 @@ function FrameworkPanel({ frameworkKey, result, verification, ideaTitle }) {
   );
 }
 
+// docs/PHASE_5_SPEC.md A: the Overview tab's optional (per the spec,
+// "nice-to-have") main-content area -- real per-framework counts/verified
+// state, not fabricated, doubling as quick navigation into each tab.
+function OverviewFrameworkLinks({ stats, report, onSelectFramework }) {
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      {stats.frameworks.map((fw) => {
+        const verified = report.verification?.[fw]?.verified;
+        const citationCount = report.results?.[fw]?.citations?.length || 0;
+        return (
+          <button key={fw} onClick={() => onSelectFramework(fw)}
+            className="text-left rounded-2xl p-4 transition-colors hover:bg-white/5"
+            style={{ background: PALETTE.bgCard, border: `1px solid ${PALETTE.border}` }}>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-sm font-bold text-white">{FRAMEWORK_LABELS[fw] || fw.toUpperCase()}</span>
+              {verified
+                ? <CheckCircle2 size={14} style={{ color: PALETTE.teal }} />
+                : <AlertTriangle size={14} style={{ color: PALETTE.amber }} />}
+            </div>
+            <p className="text-xs" style={{ color: PALETTE.textSecondary }}>
+              {citationCount} grounded source{citationCount === 1 ? "" : "s"} · {verified ? "Verified" : "Needs review"}
+            </p>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function ReportView({ report, idea, onReset }) {
   const stats = useReportStats(report);
-  const [activeFramework, setActiveFramework] = useState(stats.frameworks[0] || null);
+  // docs/PHASE_5_SPEC.md A: "overview" is a real selectable state alongside
+  // the framework keys, not a separate parallel concept -- defaults here
+  // instead of the first framework, since the verdict/metrics block now
+  // only renders when this is active.
+  const [activeFramework, setActiveFramework] = useState("overview");
 
   if (!report) return null;
 
-  const activeResult = activeFramework ? report.results[activeFramework] : null;
-  const activeVerification = activeFramework ? report.verification?.[activeFramework] : null;
+  const isOverview = activeFramework === "overview";
+  // report.results has no "overview" key, so this is naturally
+  // null/undefined on the overview tab -- the existing `activeResult &&`
+  // guards below already correctly skip the framework-only panels then.
+  const activeResult = activeFramework && !isOverview ? report.results[activeFramework] : null;
+  const activeVerification = activeFramework && !isOverview ? report.verification?.[activeFramework] : null;
   const today = new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
   const title = idea ? (idea.length > 52 ? idea.slice(0, 52) + "…" : idea) : "Business Idea Analysis";
+  // Real citations from every framework, tagged with which one they came
+  // from -- feeds the Sources & Citations panel on the Overview tab, where
+  // a single framework's activeResult doesn't exist to pull from.
+  const allCitations = useMemo(
+    () => Object.entries(report.results || {}).flatMap(([fw, r]) => (r.citations || []).map((c) => ({ ...c, _framework: fw }))),
+    [report]
+  );
 
   return (
     <div className="flex min-h-screen w-full overflow-hidden" style={{ background: PALETTE.bgOuter, fontFamily: "'Inter', sans-serif" }}>
@@ -743,6 +795,14 @@ export default function ReportView({ report, idea, onReset }) {
             <div className="text-[9px] leading-tight" style={{ color: PALETTE.textMuted }}>AI Analysis Platform</div>
           </div>
         </div>
+
+        <button onClick={() => setActiveFramework("overview")}
+          className="flex items-center gap-2 text-sm font-semibold px-3 py-2.5 rounded-xl transition-colors mb-3"
+          style={{ background: isOverview ? PALETTE.bgPanel : "transparent", color: isOverview ? "#fff" : PALETTE.textSecondary,
+            boxShadow: isOverview ? `inset 0 0 0 1px ${PALETTE.border}` : "none" }}>
+          <LayoutGrid size={15} style={{ color: isOverview ? PALETTE.blue : PALETTE.textMuted }} />
+          Overview
+        </button>
 
         <div className="text-[10px] uppercase tracking-wider px-2 mb-1" style={{ color: PALETTE.textMuted }}>Frameworks</div>
 
@@ -809,14 +869,27 @@ export default function ReportView({ report, idea, onReset }) {
           </div>
         </div>
 
-        <VerdictBanner stats={stats} />
-        <MetricRow report={report} stats={stats} />
-        <BusinessMetricRow report={report} businessMetrics={report.business_metrics} />
+        {/* docs/PHASE_5_SPEC.md A: this block used to render unconditionally
+            above every framework tab (identical on all of them) -- it's now
+            the Overview tab's content and renders exactly once per report. */}
+        {isOverview && (
+          <>
+            <VerdictBanner stats={stats} />
+            <MetricRow report={report} stats={stats} />
+            <BusinessMetricRow report={report} businessMetrics={report.business_metrics} />
+          </>
+        )}
 
         <div className="grid gap-4" style={{ gridTemplateColumns: "1fr 320px" }}>
           <div>
-            {activeResult && <MarketSizingPanel frameworkKey={activeFramework} result={activeResult} />}
-            {activeResult && <FrameworkPanel frameworkKey={activeFramework} result={activeResult} verification={activeVerification} ideaTitle={title} />}
+            {isOverview
+              ? <OverviewFrameworkLinks stats={stats} report={report} onSelectFramework={setActiveFramework} />
+              : (
+                <>
+                  {activeResult && <MarketSizingPanel frameworkKey={activeFramework} result={activeResult} />}
+                  {activeResult && <FrameworkPanel frameworkKey={activeFramework} result={activeResult} verification={activeVerification} ideaTitle={title} />}
+                </>
+              )}
           </div>
 
           <div className="flex flex-col gap-3.5">
@@ -825,7 +898,7 @@ export default function ReportView({ report, idea, onReset }) {
                 <span>Sources & Citations</span>
                 <span className="text-[11px] font-medium" style={{ color: PALETTE.blue }}>View all ({stats.totalCitations})</span>
               </div>
-              <CitationList citations={activeResult?.citations} />
+              <CitationList citations={isOverview ? allCitations : activeResult?.citations} showFrameworkSource={isOverview} />
             </div>
 
             <div className="rounded-2xl p-4" style={{ background: PALETTE.bgCard, border: `1px solid ${PALETTE.border}` }}>
