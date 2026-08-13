@@ -533,6 +533,26 @@ function PestelBlocks({ pestelAnalysis }) {
   );
 }
 
+const SWOT_QUADRANTS = [
+  { key: "strengths", label: "Strengths", color: PALETTE.teal },
+  { key: "weaknesses", label: "Weaknesses", color: PALETTE.red },
+  { key: "opportunities", label: "Opportunities", color: PALETTE.blue },
+  { key: "threats", label: "Threats", color: PALETTE.amber },
+];
+
+function SwotGrid({ swotAnalysis }) {
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      {SWOT_QUADRANTS.map((q) => (
+        <div key={q.key} className="rounded-xl p-3" style={{ background: PALETTE.bgPanel, border: `1px solid ${q.color}33` }}>
+          <div className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: q.color }}>{q.label}</div>
+          <StructuredItemList items={swotAnalysis[q.key]} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // Dispatches to a framework's structured visual treatment when available;
 // falls back to the plain prose paragraph otherwise (missing field, older
 // cached report, or a framework Phase 3 hasn't migrated yet) -- same
@@ -540,6 +560,9 @@ function PestelBlocks({ pestelAnalysis }) {
 function FrameworkBody({ frameworkKey, result }) {
   if (frameworkKey === "pestel" && result.pestel_analysis) {
     return <PestelBlocks pestelAnalysis={result.pestel_analysis} />;
+  }
+  if (frameworkKey === "swot" && result.swot_analysis) {
+    return <SwotGrid swotAnalysis={result.swot_analysis} />;
   }
   const isInsufficient = result.text?.trim() === "Insufficient grounded data available for this section.";
   return (
