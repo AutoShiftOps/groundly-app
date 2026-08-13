@@ -10,7 +10,7 @@
 
 import { useState } from "react";
 import {
-  Lightbulb, BarChart2, Search, Globe, ChevronLeft, ChevronRight, Lock, Activity,
+  Lightbulb, BarChart2, Search, Globe, ChevronLeft, ChevronRight, Lock, Activity, LayoutGrid,
 } from "lucide-react";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 import Sidebar from "./Sidebar";
@@ -23,12 +23,30 @@ interface StatCardData {
 }
 
 const STAGE_LABELS = ["Ideating", "Researching", "Prototyping", "Testing", "Finalizing"];
-const PRO_TIPS = [
-  "TAM measures your total addressable market.",
-  "SAM is your serviceable addressable market.",
-  "SOM is your obtainable market share.",
-  "Validate assumptions early with customer interviews.",
-  "Unit economics drive long-term profitability.",
+
+// docs/PHASE_5_SPEC.md D. The carousel already rotated (5 tips, working
+// prev/next) but the content itself was thin -- generic one-line
+// definitions, not a reason to keep watching. Expanded per the spec's
+// suggested categories: framework explainers, what a strong vs. weak
+// result looks like, why grounding/citations matter -- plus one
+// "preview" slide (the spec's structural-preview suggestion) reusing this
+// same card instead of a new page section, so it doesn't disturb the
+// single-viewport layout tuned earlier. Entirely honest per the Phase 4
+// A1 discipline: no slide here claims to be counting anything real.
+type TipSlide = { kind: "tip"; text: string } | { kind: "preview" };
+
+const TIP_SLIDES: TipSlide[] = [
+  { kind: "preview" },
+  { kind: "tip", text: "PESTEL scans forces outside your control — Political, Economic, Social, Technological, Environmental, Legal — for risks and tailwinds." },
+  { kind: "tip", text: "SWOT maps what's true today: Strengths and Weaknesses inside the business, Opportunities and Threats outside it." },
+  { kind: "tip", text: "TAM, SAM, and SOM size the market in three narrowing circles — everyone who could buy, who you can realistically reach, and who you can realistically win." },
+  { kind: "tip", text: "BMC lays out how the business actually works — who it serves, what it offers, how it makes money — on one page." },
+  { kind: "tip", text: "A “Verified” badge means every claim in that section traces back to a real, cited source — not that the idea itself is good." },
+  { kind: "tip", text: "“Insufficient grounded data” isn't a failure state — it means the sources didn't say enough to answer honestly, so nothing was guessed." },
+  { kind: "tip", text: "Every [1], [2] you see is a real citation — click it to read the actual source behind that claim." },
+  { kind: "tip", text: "This report never invents numbers. If a figure isn't stated in a real source, it's left out or marked as missing." },
+  { kind: "tip", text: "Validate assumptions early with real customer interviews before you build." },
+  { kind: "tip", text: "Unit economics — what a customer costs vs. earns you — drive long-term profitability more than growth alone." },
 ];
 
 function ShortViewportStyles() {
@@ -127,31 +145,62 @@ function StatCard({ card }: { card: StatCardData }) {
   );
 }
 
+// Real report structure, not fabricated data -- these are the actual tab
+// labels ReportView.jsx renders (FRAMEWORK_LABELS + the Overview tab),
+// kept as a plain string list here since LoadingScreen has no reason to
+// import from ReportView just for four label strings.
+const REPORT_TAB_PREVIEW = ["Overview", "PESTEL", "SWOT", "TAM", "BMC"];
+
+function TipSlideContent({ slide }: { slide: TipSlide }) {
+  if (slide.kind === "preview") {
+    return (
+      <div className="flex flex-col gap-1 flex-1 min-w-0">
+        <span className="text-[10px] font-semibold uppercase tracking-widest text-[#a78bfa]">What You'll Get</span>
+        <div className="flex flex-wrap gap-1 mt-0.5">
+          {REPORT_TAB_PREVIEW.map((label) => (
+            <span key={label} className="text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+              style={{ border: "1px solid rgba(167,139,250,0.35)", color: "#a78bfa", opacity: 0.8 }}>
+              {label}
+            </span>
+          ))}
+        </div>
+        <p className="text-[11px] mt-1 text-[#7a8aaa] leading-snug">A verdict, {REPORT_TAB_PREVIEW.length - 1} analysis tabs, and real cited sources for each.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-1 flex-1 min-w-0">
+      <span className="text-[10px] font-semibold uppercase tracking-widest text-[#a78bfa]">Pro Tip</span>
+      <p className="text-sm font-medium text-white leading-snug">{slide.text}</p>
+    </div>
+  );
+}
+
 function ProTipCard() {
   const [idx, setIdx] = useState(0);
+  const slide = TIP_SLIDES[idx];
   return (
     <div className="ls-card flex-1 min-w-[185px] flex flex-col gap-3 p-2.5 rounded-2xl"
       style={{ background: "rgba(10,20,40,0.92)", border: "1px solid rgba(99,140,255,0.13)", boxShadow: "0 4px 28px rgba(0,0,0,0.35)" }}>
       <div className="flex items-start gap-3">
         <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: "rgba(124,58,237,0.25)" }}>
-          <Lightbulb size={18} className="text-[#a78bfa]" strokeWidth={1.8} />
+          {slide.kind === "preview"
+            ? <LayoutGrid size={18} className="text-[#a78bfa]" strokeWidth={1.8} />
+            : <Lightbulb size={18} className="text-[#a78bfa]" strokeWidth={1.8} />}
         </div>
-        <div className="flex flex-col gap-1 flex-1 min-w-0">
-          <span className="text-[10px] font-semibold uppercase tracking-widest text-[#a78bfa]">Pro Tip</span>
-          <p className="text-sm font-medium text-white leading-snug">{PRO_TIPS[idx]}</p>
-        </div>
+        <TipSlideContent slide={slide} />
       </div>
       <div className="flex items-center justify-between mt-auto">
-        <button onClick={() => setIdx((i) => (i - 1 + PRO_TIPS.length) % PRO_TIPS.length)} className="text-[#7a8aaa] hover:text-white transition-colors p-1">
+        <button onClick={() => setIdx((i) => (i - 1 + TIP_SLIDES.length) % TIP_SLIDES.length)} className="text-[#7a8aaa] hover:text-white transition-colors p-1">
           <ChevronLeft size={16} />
         </button>
         <div className="flex gap-1.5">
-          {PRO_TIPS.map((_, i) => (
+          {TIP_SLIDES.map((_, i) => (
             <button key={i} onClick={() => setIdx(i)} className="rounded-full transition-all duration-200"
               style={{ width: i === idx ? 16 : 6, height: 6, background: i === idx ? "#4a8fff" : "rgba(255,255,255,0.2)" }} />
           ))}
         </div>
-        <button onClick={() => setIdx((i) => (i + 1) % PRO_TIPS.length)} className="text-[#7a8aaa] hover:text-white transition-colors p-1">
+        <button onClick={() => setIdx((i) => (i + 1) % TIP_SLIDES.length)} className="text-[#7a8aaa] hover:text-white transition-colors p-1">
           <ChevronRight size={16} />
         </button>
       </div>
