@@ -38,12 +38,18 @@ Create a sample file `data/raw/test_market.txt` with a real paragraph of market 
 ```bash
 cd ..   # back to repo root, so 'agents' package resolves correctly
 python -m agents.ingest --file backend/../data/raw/test_market.txt \\
-    --title "Test Market Snippet" \\
-    --url "https://example.com/source" \\
+    --title "REPLACE-WITH-REAL-SOURCE-TITLE" \\
+    --url "REPLACE-WITH-REAL-SOURCE-URL" \\
     --framework tam
 ```
 
-Expected output: `Ingested N chunk(s) from 'Test Market Snippet' tagged as 'tam'.`
+Replace `--title`/`--url` with the actual source's title/URL before running --
+the CLI now refuses to ingest anything that still says "REPLACE-WITH" (see
+docs/PHASE_4_SPEC.md A2: an earlier version of this exact snippet used a
+literal `"Test Market Snippet"` placeholder that someone ran unedited,
+permanently polluting the production tam corpus).
+
+Expected output: `Ingested N chunk(s) from '<your title>' tagged as 'tam'.`
 
 ## 5. Test Retrieval + Generation Directly (Python shell)
 

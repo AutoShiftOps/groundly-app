@@ -4,10 +4,19 @@ in the pgvector `sources` table.
 
 Run from the REPO ROOT (not from inside backend/ or agents/), e.g.:
 
-  python -m agents.ingest --file data/raw/test_market.txt \\
-      --title "Test Market Snippet" \\
-      --url "https://example.com/source" \\
+  python -m agents.ingest --file data/raw/your_source.txt \\
+      --title "REPLACE-WITH-REAL-SOURCE-TITLE" \\
+      --url "REPLACE-WITH-REAL-SOURCE-URL" \\
       --framework tam
+
+This is a template, not real data -- replace both --title and --url with
+the source's actual title/URL before running. (docs/PHASE_4_SPEC.md A2: an
+earlier version of this docstring used a literal "Test Market Snippet"
+example that someone ran verbatim, permanently writing an unrelated
+hair-salon-market snippet into the production tam corpus under a title
+that gave no indication it was a placeholder. ingest_content() below now
+refuses to ingest anything whose title/url still contains "REPLACE-WITH"
+so that specific mistake can't happen silently again.)
 
 Requires backend/.env to contain OPENAI_API_KEY and DATABASE_URL
 (copy from backend/.env.example if you haven't already).
@@ -51,6 +60,14 @@ def embed_batch(texts: list[str]):
     return [item.embedding for item in response.data]
 
 
+# docs/PHASE_4_SPEC.md A2 process guard: matches this module's docstring
+# template above. Deliberately narrow (not a general "example.com" check --
+# the legitimately-seeded EV-charging demo corpus uses example.com URLs on
+# purpose with real, descriptive titles) so it can't false-positive on real
+# data, only on someone running the documented example verbatim.
+_PLACEHOLDER_MARKER = "REPLACE-WITH"
+
+
 def ingest_content(text: str, title: str, url: str, framework_tag: str,
                     source_date: date | None = None, confidence_score: float = 0.8) -> int:
     """
@@ -63,6 +80,14 @@ def ingest_content(text: str, title: str, url: str, framework_tag: str,
     that only care about the four required params (e.g. web_retrieval.py)
     can call this with just text/title/url/framework_tag.
     """
+    if (title and _PLACEHOLDER_MARKER in title) or (url and _PLACEHOLDER_MARKER in url):
+        raise ValueError(
+            f"Refusing to ingest: title/url still contains the module docstring's "
+            f"placeholder marker ({_PLACEHOLDER_MARKER!r}). Replace --title/--url with "
+            f"the source's real title/URL before running -- see agents/ingest.py's "
+            f"module docstring (docs/PHASE_4_SPEC.md A2)."
+        )
+
     chunks = chunk_text(text)
     if not chunks:
         return 0
