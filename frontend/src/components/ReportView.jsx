@@ -421,21 +421,23 @@ const MARKET_TIER_META = {
 // a percentage of", not 0%.
 const PARENT_TIER_KEY = { sam: "tam", som: "sam" };
 
-// One entry per tier actually present in market_sizing (API already omits
-// tiers the CONTEXT didn't support -- null in, nothing rendered for that
-// tier, same "don't show what wasn't grounded" discipline as before).
+// docs/MARKET_SIZING_MISSING_TIER_UI.md: always return all 3 tiers (tam,
+// sam, som), each flagged present: true|false, instead of filtering nulls
+// out. A missing tier must be visibly marked as "no data found", not
+// silently omitted -- same convention StructuredItemList and the Phase 2
+// business-metric cards already use for missing grounded data.
 function marketTiersFromApi(marketSizing) {
   if (!marketSizing) return [];
-  return Object.entries(MARKET_TIER_META)
-    .map(([key, meta]) => {
-      const tier = marketSizing[key];
-      if (!tier) return null;
-      return {
-        key, label: meta.label, color: meta.color, value: tier.value_usd, displayValue: tier.label,
-        citationIndex: tier.citation_index, cagrPct: tier.cagr_pct ?? null,
-      };
-    })
-    .filter(Boolean);
+  return Object.entries(MARKET_TIER_META).map(([key, meta]) => {
+    const tier = marketSizing[key];
+    if (!tier) {
+      return { key, label: meta.label, color: meta.color, present: false, value: null, displayValue: null, citationIndex: null, cagrPct: null };
+    }
+    return {
+      key, label: meta.label, color: meta.color, present: true, value: tier.value_usd, displayValue: tier.label,
+      citationIndex: tier.citation_index, cagrPct: tier.cagr_pct ?? null,
+    };
+  });
 }
 
 function MarketSizingPanel({ frameworkKey, result }) {
@@ -443,15 +445,22 @@ function MarketSizingPanel({ frameworkKey, result }) {
     () => (frameworkKey === "tam" ? marketTiersFromApi(result?.market_sizing) : []),
     [frameworkKey, result]
   );
+  // items is only [] when market_sizing itself is absent (not tam, or the
+  // API never attempted it) -- marketTiersFromApi() always returns all 3
+  // tiers once market_sizing exists, even if every tier came back null, so
+  // this panel now renders (with explicit "no data found" tiers) instead
+  // of silently disappearing whenever nothing was grounded.
   if (items.length === 0) return null;
 
-  // Every item here came from a real, present tier in market_sizing -- no
-  // more "tagged but couldn't parse a number out of it" ambiguous state,
-  // since the API guarantees value_usd is a real number whenever a tier is
-  // non-null. A tier the CONTEXT didn't support is just absent from items.
-  const maxOuter = 78, minRadius = 22;
-  const maxValue = Math.max(...items.map((it) => it.value));
-  const radii = items.map((it) => Math.max(minRadius, maxOuter * Math.sqrt(it.value / maxValue)));
+  const presentItems = items.filter((it) => it.present);
+  const maxOuter = 78, minRadius = 22, ghostRadius = 34;
+  const maxValue = presentItems.length ? Math.max(...presentItems.map((it) => it.value)) : 0;
+  // Present tiers size by sqrt-scaled value, same as before. Absent tiers
+  // get a fixed placeholder radius -- there's no value to size them by,
+  // and faking one would fabricate a number this file has never fabricated
+  // anywhere else. The sequential nesting clamp still applies uniformly so
+  // a ghost ring never looks bigger than a real circle before it.
+  const radii = items.map((it) => (it.present ? Math.max(minRadius, maxOuter * Math.sqrt(it.value / maxValue)) : ghostRadius));
   for (let i = 1; i < radii.length; i++) radii[i] = Math.min(radii[i], Math.max(minRadius, radii[i - 1] - 10));
   const size = maxOuter * 2 + 16;
   const cx = size / 2, cy = size / 2;
@@ -467,16 +476,26 @@ function MarketSizingPanel({ frameworkKey, result }) {
 
       <div className="flex items-center gap-6 flex-wrap">
         <svg width={size} height={size} className="shrink-0">
-          {items.map((item, i) => (
-            <circle key={item.key} cx={cx} cy={cy} r={radii[i]} fill={`${item.color}22`} stroke={item.color} strokeWidth={2} />
-          ))}
+          {items.map((item, i) =>
+            item.present ? (
+              <circle key={item.key} cx={cx} cy={cy} r={radii[i]} fill={`${item.color}22`} stroke={item.color} strokeWidth={2} />
+            ) : (
+              <g key={item.key}>
+                <circle cx={cx} cy={cy} r={radii[i]} fill="none" stroke={PALETTE.textMuted} strokeWidth={1.5} strokeDasharray="4 3" opacity={0.6} />
+                <text x={cx} y={cy - radii[i] + 9} textAnchor="middle" fontSize="7" fill={PALETTE.textMuted}>No data found</text>
+              </g>
+            )
+          )}
         </svg>
         <div className="flex flex-col gap-2">
           {items.map((item) => (
             <div key={item.key} className="flex items-center gap-2 text-xs">
-              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: item.color }} />
+              <span className="w-2.5 h-2.5 rounded-full shrink-0"
+                style={item.present ? { background: item.color } : { border: `1.5px dashed ${PALETTE.textMuted}` }} />
               <span className="font-semibold text-white w-9">{item.label}</span>
-              <span style={{ color: PALETTE.textSecondary }}>{item.displayValue}</span>
+              {item.present
+                ? <span style={{ color: PALETTE.textSecondary }}>{item.displayValue}</span>
+                : <span style={{ color: PALETTE.textMuted, fontStyle: "italic" }}>No data found</span>}
             </div>
           ))}
         </div>
@@ -495,11 +514,13 @@ function MarketSizingPanel({ frameworkKey, result }) {
         <tbody>
           {items.map((item) => {
             const parent = byKey[PARENT_TIER_KEY[item.key]];
-            const pctOfParent = parent ? Math.round((item.value / parent.value) * 1000) / 10 : null;
+            const pctOfParent = item.present && parent?.present ? Math.round((item.value / parent.value) * 1000) / 10 : null;
             return (
               <tr key={item.key} style={{ borderTop: `1px solid ${PALETTE.border}` }}>
                 <td className="py-1.5 font-semibold" style={{ color: item.color }}>{item.label}</td>
-                <td className="py-1.5 text-white">{item.displayValue}</td>
+                <td className="py-1.5" style={item.present ? { color: "#fff" } : { color: PALETTE.textMuted, fontStyle: "italic" }}>
+                  {item.present ? item.displayValue : "No data found"}
+                </td>
                 <td className="py-1.5" style={{ color: PALETTE.textSecondary }}>{pctOfParent != null ? `${pctOfParent}%` : "—"}</td>
                 <td className="py-1.5" style={{ color: item.cagrPct != null ? PALETTE.teal : PALETTE.textSecondary }}>{item.cagrPct != null ? `${item.cagrPct}%` : "—"}</td>
                 <td className="py-1.5" style={{ color: PALETTE.textSecondary }}>{item.citationIndex ? `[${item.citationIndex}]` : "—"}</td>
