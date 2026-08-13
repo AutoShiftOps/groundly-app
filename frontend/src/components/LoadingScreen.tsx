@@ -17,7 +17,7 @@ import Sidebar from "./Sidebar";
 import TrainScene from "./TrainScene";
 
 interface StatCardData {
-  icon: React.ReactNode; iconBg: string; value: string;
+  icon: React.ReactNode; iconBg: string; value: React.ReactNode;
   label: string; subtext?: string;
   sparkData?: { v: number }[]; sparkColor?: string;
 }
@@ -159,16 +159,31 @@ function ProTipCard() {
   );
 }
 
-function StatsGrid({ sourceCount }: { sourceCount: number }) {
-  const sparkUp = [2, 3, 2, 4, 3, 5, 4, 6, 5, 7, 6, Math.max(8, sourceCount)].map((v) => ({ v }));
-  const sparkFlat = [5, 6, 5, 7, 6, 7, 6, 8, 7, 8, 7, 9].map((v) => ({ v }));
+// docs/PHASE_4_SPEC.md A1(b): /api/analyze is a single blocking call with no
+// streaming, so `report` (and therefore any real source count) is null for
+// the entire time this screen is mounted -- "N sources scanned" could
+// mathematically never show anything but 0. Rather than fake a number that
+// isn't real (option (a) would need real backend streaming to fix
+// honestly), these two tiles now show an animated "in progress" indicator
+// and make no numeric claim at all.
+function LoadingDots({ color }: { color: string }) {
+  return (
+    <div className="flex items-center gap-1.5" style={{ height: 26 }}>
+      {[0, 1, 2].map((i) => (
+        <span key={i} className="rounded-full animate-pulse" style={{ width: 8, height: 8, background: color, animationDelay: `${i * 0.2}s` }} />
+      ))}
+    </div>
+  );
+}
+
+function StatsGrid() {
   const cards: StatCardData[] = [
     { icon: <Search size={18} className="text-[#4a8fff]" strokeWidth={1.8} />, iconBg: "rgba(74,143,255,0.18)",
-      value: String(sourceCount), label: "sources scanned", subtext: sourceCount > 0 ? "Live from this analysis" : "Waiting for sources", sparkData: sparkUp, sparkColor: "#4a8fff" },
+      value: <LoadingDots color="#4a8fff" />, label: "Gathering sources", subtext: "Retrieving grounded data…" },
     { icon: <Globe size={18} className="text-[#2dd4bf]" strokeWidth={1.8} />, iconBg: "rgba(45,212,191,0.15)",
       value: "4", label: "frameworks analyzed", subtext: "PESTEL, SWOT, TAM, BMC" },
     { icon: <BarChart2 size={18} className="text-[#a78bfa]" strokeWidth={1.8} />, iconBg: "rgba(167,139,250,0.18)",
-      value: String(sourceCount * 40), label: "data points processed", subtext: "Crunching numbers for deeper insights", sparkData: sparkFlat, sparkColor: "#a78bfa" },
+      value: <LoadingDots color="#a78bfa" />, label: "Synthesizing analysis", subtext: "Crunching numbers for deeper insights" },
   ];
   return (
     <div className="flex-none px-8 pb-2.5">
@@ -185,7 +200,10 @@ interface LoadingScreenProps {
   sourceCount: number;
 }
 
-export default function LoadingScreen({ activeStageIndex, sourceCount }: LoadingScreenProps) {
+// sourceCount stays in the prop contract (App.tsx passes real data,
+// untouched here per that constraint) but is intentionally no longer
+// displayed -- see StatsGrid/LoadingDots above for why.
+export default function LoadingScreen({ activeStageIndex, sourceCount: _sourceCount }: LoadingScreenProps) {
   const [activeNav, setActiveNav] = useState("Analyze");
   const progressPct = Math.min(100, Math.round(((activeStageIndex + 1) / STAGE_LABELS.length) * 100));
 
@@ -202,7 +220,7 @@ export default function LoadingScreen({ activeStageIndex, sourceCount }: Loading
             <TrainScene activeStageIndex={activeStageIndex} />
           </div>
           <OverallProgress value={progressPct} />
-          <StatsGrid sourceCount={sourceCount} />
+          <StatsGrid />
           <div className="flex flex-none items-center justify-center gap-2 py-2 text-[#5a6a8a] text-xs">
             <Lock size={12} strokeWidth={2} />
             <span>Your data is encrypted and secure</span>
