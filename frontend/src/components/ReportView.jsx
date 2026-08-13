@@ -19,6 +19,8 @@ import {
   ShieldCheck, ShieldAlert, CheckCircle2, AlertTriangle, Lock,
   Share2, Download, Sparkles, MessageSquare, GitCompare, Layers, ChevronLeft,
   Info, ChevronUp, ChevronDown, LayoutGrid,
+  Landmark, Users, Cpu, Leaf, Scale, Zap, Target, Gift, Truck, Heart,
+  DollarSign, Boxes, Handshake, Receipt,
 } from "lucide-react";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 
@@ -569,44 +571,66 @@ function StructuredItemList({ items }) {
   );
 }
 
+// docs/PHASE_5_SPEC.md B: icons per category + layout, not photography --
+// stock imagery would misrepresent a report whose whole discipline is
+// "every number is real". Icon dims to 0.35 opacity when its category is
+// empty (StructuredItemList already shows "No grounded points..." for
+// that case; the icon shouldn't visually pretend the block is as "full"
+// as one with real content).
+function CategoryIcon({ Icon, color, isEmpty }) {
+  return <Icon size={14} style={{ color, opacity: isEmpty ? 0.35 : 1 }} className="shrink-0" />;
+}
+
 const PESTEL_BLOCKS = [
-  { key: "political", label: "Political", color: PALETTE.blue },
-  { key: "economic", label: "Economic", color: PALETTE.teal },
-  { key: "social", label: "Social", color: PALETTE.purple },
-  { key: "technological", label: "Technological", color: PALETTE.purpleLight },
-  { key: "environmental", label: "Environmental", color: PALETTE.amber },
-  { key: "legal", label: "Legal", color: PALETTE.red },
+  { key: "political", label: "Political", color: PALETTE.blue, Icon: Landmark },
+  { key: "economic", label: "Economic", color: PALETTE.teal, Icon: TrendingUp },
+  { key: "social", label: "Social", color: PALETTE.purple, Icon: Users },
+  { key: "technological", label: "Technological", color: PALETTE.purpleLight, Icon: Cpu },
+  { key: "environmental", label: "Environmental", color: PALETTE.amber, Icon: Leaf },
+  { key: "legal", label: "Legal", color: PALETTE.red, Icon: Scale },
 ];
 
 function PestelBlocks({ pestelAnalysis }) {
   return (
     <div className="flex flex-col gap-4">
-      {PESTEL_BLOCKS.map((b) => (
-        <div key={b.key}>
-          <div className="text-xs font-bold uppercase tracking-wide mb-1.5" style={{ color: b.color }}>{b.label}</div>
-          <StructuredItemList items={pestelAnalysis[b.key]} />
-        </div>
-      ))}
+      {PESTEL_BLOCKS.map((b) => {
+        const items = pestelAnalysis[b.key];
+        return (
+          <div key={b.key}>
+            <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide mb-1.5" style={{ color: b.color }}>
+              <CategoryIcon Icon={b.Icon} color={b.color} isEmpty={!items || items.length === 0} />
+              {b.label}
+            </div>
+            <StructuredItemList items={items} />
+          </div>
+        );
+      })}
     </div>
   );
 }
 
 const SWOT_QUADRANTS = [
-  { key: "strengths", label: "Strengths", color: PALETTE.teal },
-  { key: "weaknesses", label: "Weaknesses", color: PALETTE.red },
-  { key: "opportunities", label: "Opportunities", color: PALETTE.blue },
-  { key: "threats", label: "Threats", color: PALETTE.amber },
+  { key: "strengths", label: "Strengths", color: PALETTE.teal, Icon: Zap },
+  { key: "weaknesses", label: "Weaknesses", color: PALETTE.red, Icon: AlertTriangle },
+  { key: "opportunities", label: "Opportunities", color: PALETTE.blue, Icon: Target },
+  { key: "threats", label: "Threats", color: PALETTE.amber, Icon: ShieldAlert },
 ];
 
 function SwotGrid({ swotAnalysis }) {
   return (
     <div className="grid grid-cols-2 gap-3">
-      {SWOT_QUADRANTS.map((q) => (
-        <div key={q.key} className="rounded-xl p-3" style={{ background: PALETTE.bgPanel, border: `1px solid ${q.color}33` }}>
-          <div className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: q.color }}>{q.label}</div>
-          <StructuredItemList items={swotAnalysis[q.key]} />
-        </div>
-      ))}
+      {SWOT_QUADRANTS.map((q) => {
+        const items = swotAnalysis[q.key];
+        return (
+          <div key={q.key} className="rounded-xl p-3" style={{ background: PALETTE.bgPanel, border: `1px solid ${q.color}33` }}>
+            <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide mb-2" style={{ color: q.color }}>
+              <CategoryIcon Icon={q.Icon} color={q.color} isEmpty={!items || items.length === 0} />
+              {q.label}
+            </div>
+            <StructuredItemList items={items} />
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -615,39 +639,43 @@ function SwotGrid({ swotAnalysis }) {
 // their own distinguished bottom row -- a "3x3-ish" reading of the
 // canonical BMC layout (spec's own hedge) sized for this panel's actual
 // width, rather than the full 5-column poster layout, which wouldn't fit
-// this narrower report column.
+// this narrower report column. Each block gets both an icon and its own
+// accent color now, not just the two-tier operational/financial split.
 const BMC_BLOCKS = [
-  { key: "key_partners", label: "Key Partners" },
-  { key: "key_activities", label: "Key Activities" },
-  { key: "value_propositions", label: "Value Propositions" },
-  { key: "key_resources", label: "Key Resources" },
-  { key: "customer_relationships", label: "Customer Relationships" },
-  { key: "customer_segments", label: "Customer Segments" },
-  { key: "channels", label: "Channels" },
+  { key: "key_partners", label: "Key Partners", color: PALETTE.purpleLight, Icon: Handshake },
+  { key: "key_activities", label: "Key Activities", color: PALETTE.amber, Icon: Zap },
+  { key: "value_propositions", label: "Value Propositions", color: PALETTE.teal, Icon: Gift },
+  { key: "key_resources", label: "Key Resources", color: PALETTE.purple, Icon: Boxes },
+  { key: "customer_relationships", label: "Customer Relationships", color: PALETTE.red, Icon: Heart },
+  { key: "customer_segments", label: "Customer Segments", color: PALETTE.blue, Icon: Users },
+  { key: "channels", label: "Channels", color: PALETTE.purpleLight, Icon: Truck },
 ];
 const BMC_FINANCIAL_BLOCKS = [
-  { key: "cost_structure", label: "Cost Structure" },
-  { key: "revenue_streams", label: "Revenue Streams" },
+  { key: "cost_structure", label: "Cost Structure", color: PALETTE.blue, Icon: Receipt },
+  { key: "revenue_streams", label: "Revenue Streams", color: PALETTE.blue, Icon: DollarSign },
 ];
+
+function BmcBlock({ block, items }) {
+  const isEmpty = !items || items.length === 0;
+  return (
+    <div className="rounded-xl p-3" style={{ background: PALETTE.bgPanel, border: `1px solid ${block.color}33` }}>
+      <div className="flex items-center gap-1.5 text-xs font-bold mb-1.5" style={{ color: block.color }}>
+        <CategoryIcon Icon={block.Icon} color={block.color} isEmpty={isEmpty} />
+        {block.label}
+      </div>
+      <StructuredItemList items={items} />
+    </div>
+  );
+}
 
 function BmcCanvas({ bmcCanvas }) {
   return (
     <div className="flex flex-col gap-3">
       <div className="grid grid-cols-3 gap-3">
-        {BMC_BLOCKS.map((b) => (
-          <div key={b.key} className="rounded-xl p-3" style={{ background: PALETTE.bgPanel, border: `1px solid ${PALETTE.border}` }}>
-            <div className="text-xs font-bold text-white mb-1.5">{b.label}</div>
-            <StructuredItemList items={bmcCanvas[b.key]} />
-          </div>
-        ))}
+        {BMC_BLOCKS.map((b) => <BmcBlock key={b.key} block={b} items={bmcCanvas[b.key]} />)}
       </div>
       <div className="grid grid-cols-2 gap-3">
-        {BMC_FINANCIAL_BLOCKS.map((b) => (
-          <div key={b.key} className="rounded-xl p-3" style={{ background: PALETTE.bgPanel, border: `1px solid ${PALETTE.blue}44` }}>
-            <div className="text-xs font-bold mb-1.5" style={{ color: PALETTE.blue }}>{b.label}</div>
-            <StructuredItemList items={bmcCanvas[b.key]} />
-          </div>
-        ))}
+        {BMC_FINANCIAL_BLOCKS.map((b) => <BmcBlock key={b.key} block={b} items={bmcCanvas[b.key]} />)}
       </div>
     </div>
   );
