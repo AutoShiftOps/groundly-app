@@ -268,11 +268,20 @@ function BusinessMetricCard({ meta, metric, report }) {
   const score = computeEvidenceScore(metric, report);
   const tone = score == null ? null : score >= 7 ? "teal" : score >= 4 ? "amber" : "red";
   const color = tone ? ToneColor(tone) : PALETTE.blue;
+  // docs/PHASE_4_SPEC.md B2: a single synthesized value has no real time
+  // series -- this isn't a repeated measurement, so any variance in the
+  // spark would be an invented trend implying change over time that never
+  // happened. Flat line (every point == the one real computed score) is
+  // the only non-fabricated way to give these a spark visual: purely
+  // decorative, cosmetic parity with the mock, asserts nothing untrue.
+  const sparkData = score != null ? Array.from({ length: 6 }, () => ({ v: score })) : undefined;
 
   return (
     <MetricCard
       label={meta.label}
       value={metric.label}
+      sparkData={sparkData}
+      sparkColor={color}
       sub={
         <div className="flex flex-col items-start gap-1">
           <span>{metric.rationale}</span>
