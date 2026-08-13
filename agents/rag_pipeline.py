@@ -93,6 +93,12 @@ populate the market_sizing object:
   one for that specific tier, otherwise null. Do not estimate or infer a
   CAGR that isn't stated -- null is the correct, expected result when the
   source material doesn't give a growth rate for that tier.
+- "tier_description" is a short (3-8 word) phrase describing what this
+  specific tier represents for THIS idea's actual market, e.g. "Global
+  sustainable packaging market" for TAM, drawn from what the CONTEXT
+  actually says about it -- not a generic definition of what TAM/SAM/SOM
+  means in the abstract. Only fill it in if the CONTEXT supports a
+  specific description for that tier; otherwise null.
 """
 
 MARKET_SIZING_SCHEMA = {
@@ -114,8 +120,9 @@ MARKET_SIZING_SCHEMA = {
                                 "label": {"type": "string"},
                                 "citation_index": {"type": ["integer", "null"]},
                                 "cagr_pct": {"type": ["number", "null"]},
+                                "tier_description": {"type": ["string", "null"]},
                             },
-                            "required": ["value_usd", "label", "citation_index", "cagr_pct"],
+                            "required": ["value_usd", "label", "citation_index", "cagr_pct", "tier_description"],
                             "additionalProperties": False,
                         },
                         {"type": "null"},
