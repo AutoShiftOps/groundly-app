@@ -553,6 +553,48 @@ function SwotGrid({ swotAnalysis }) {
   );
 }
 
+// 7 operational blocks in a 3-wide grid + Cost Structure/Revenue Streams as
+// their own distinguished bottom row -- a "3x3-ish" reading of the
+// canonical BMC layout (spec's own hedge) sized for this panel's actual
+// width, rather than the full 5-column poster layout, which wouldn't fit
+// this narrower report column.
+const BMC_BLOCKS = [
+  { key: "key_partners", label: "Key Partners" },
+  { key: "key_activities", label: "Key Activities" },
+  { key: "value_propositions", label: "Value Propositions" },
+  { key: "key_resources", label: "Key Resources" },
+  { key: "customer_relationships", label: "Customer Relationships" },
+  { key: "customer_segments", label: "Customer Segments" },
+  { key: "channels", label: "Channels" },
+];
+const BMC_FINANCIAL_BLOCKS = [
+  { key: "cost_structure", label: "Cost Structure" },
+  { key: "revenue_streams", label: "Revenue Streams" },
+];
+
+function BmcCanvas({ bmcCanvas }) {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="grid grid-cols-3 gap-3">
+        {BMC_BLOCKS.map((b) => (
+          <div key={b.key} className="rounded-xl p-3" style={{ background: PALETTE.bgPanel, border: `1px solid ${PALETTE.border}` }}>
+            <div className="text-xs font-bold text-white mb-1.5">{b.label}</div>
+            <StructuredItemList items={bmcCanvas[b.key]} />
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        {BMC_FINANCIAL_BLOCKS.map((b) => (
+          <div key={b.key} className="rounded-xl p-3" style={{ background: PALETTE.bgPanel, border: `1px solid ${PALETTE.blue}44` }}>
+            <div className="text-xs font-bold mb-1.5" style={{ color: PALETTE.blue }}>{b.label}</div>
+            <StructuredItemList items={bmcCanvas[b.key]} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // Dispatches to a framework's structured visual treatment when available;
 // falls back to the plain prose paragraph otherwise (missing field, older
 // cached report, or a framework Phase 3 hasn't migrated yet) -- same
@@ -563,6 +605,9 @@ function FrameworkBody({ frameworkKey, result }) {
   }
   if (frameworkKey === "swot" && result.swot_analysis) {
     return <SwotGrid swotAnalysis={result.swot_analysis} />;
+  }
+  if (frameworkKey === "bmc" && result.bmc_canvas) {
+    return <BmcCanvas bmcCanvas={result.bmc_canvas} />;
   }
   const isInsufficient = result.text?.trim() === "Insufficient grounded data available for this section.";
   return (
