@@ -257,6 +257,20 @@ function stripMarketTags(text) {
   return text ? text.replace(/\[(TAM|SAM|SOM)\]\s*/gi, "") : text;
 }
 
+// GROUNDING_SYSTEM_PROMPT never asks the model for markdown, but gpt-4o-mini
+// reliably emits **bold** for section labels (e.g. "**Political:**") anyway.
+// That's the one markdown construct that shows up in practice, so a small
+// regex split covers it without pulling in a full markdown-rendering
+// dependency for a single pattern.
+function renderBoldText(text) {
+  if (!text) return text;
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
+    part.startsWith("**") && part.endsWith("**") && part.length > 4
+      ? <strong key={i} className="font-bold text-white">{part.slice(2, -2)}</strong>
+      : part
+  );
+}
+
 const MARKET_TIERS = [
   { key: "TAM", label: "TAM", color: PALETTE.blue },
   { key: "SAM", label: "SAM", color: PALETTE.purple },
@@ -408,7 +422,7 @@ function FrameworkPanel({ frameworkKey, result, verification }) {
       </div>
 
       <p className="text-sm leading-relaxed" style={{ color: isInsufficient ? PALETTE.textMuted : "#e4e9f5", fontStyle: isInsufficient ? "italic" : "normal" }}>
-        {stripMarketTags(result.text)}
+        {renderBoldText(stripMarketTags(result.text))}
       </p>
 
       {verification?.unsupported_claims?.length > 0 && (
