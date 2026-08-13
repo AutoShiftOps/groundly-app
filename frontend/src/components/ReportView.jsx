@@ -421,7 +421,10 @@ function marketTiersFromApi(marketSizing) {
     .map(([key, meta]) => {
       const tier = marketSizing[key];
       if (!tier) return null;
-      return { key, label: meta.label, color: meta.color, value: tier.value_usd, displayValue: tier.label, citationIndex: tier.citation_index };
+      return {
+        key, label: meta.label, color: meta.color, value: tier.value_usd, displayValue: tier.label,
+        citationIndex: tier.citation_index, cagrPct: tier.cagr_pct ?? null,
+      };
     })
     .filter(Boolean);
 }
@@ -476,6 +479,7 @@ function MarketSizingPanel({ frameworkKey, result }) {
             <th className="text-left font-medium pb-1.5">Label</th>
             <th className="text-left font-medium pb-1.5">Value</th>
             <th className="text-left font-medium pb-1.5">% of Parent</th>
+            <th className="text-left font-medium pb-1.5">CAGR</th>
             <th className="text-left font-medium pb-1.5">Source</th>
           </tr>
         </thead>
@@ -488,6 +492,7 @@ function MarketSizingPanel({ frameworkKey, result }) {
                 <td className="py-1.5 font-semibold" style={{ color: item.color }}>{item.label}</td>
                 <td className="py-1.5 text-white">{item.displayValue}</td>
                 <td className="py-1.5" style={{ color: PALETTE.textSecondary }}>{pctOfParent != null ? `${pctOfParent}%` : "—"}</td>
+                <td className="py-1.5" style={{ color: item.cagrPct != null ? PALETTE.teal : PALETTE.textSecondary }}>{item.cagrPct != null ? `${item.cagrPct}%` : "—"}</td>
                 <td className="py-1.5" style={{ color: PALETTE.textSecondary }}>{item.citationIndex ? `[${item.citationIndex}]` : "—"}</td>
               </tr>
             );
