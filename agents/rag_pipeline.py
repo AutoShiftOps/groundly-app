@@ -26,16 +26,31 @@ CHAT_MODEL = "gpt-4o-mini"
 # query) should not silently prevent the live web-retrieval safety net from
 # running just because *something* technically came back. Local retrieval
 # only counts as "good enough" here if its best match clears this bar.
-LIVE_RETRIEVAL_TRIGGER_THRESHOLD = 0.5
+#
+# Matches MIN_CONTEXT_SIMILARITY (0.54) below, not 0.5 -- previously left at
+# 0.5 while MIN_CONTEXT_SIMILARITY was calibrated to 0.54, which opened a
+# dead zone: a best-local-similarity in [0.50, 0.54) cleared this trigger
+# bar (so web retrieval was never attempted) but still failed the
+# downstream usability floor (so the content got discarded anyway) --
+# confirmed live on the solar-village case itself (0.53 similarity, cited
+# "PESTEL: EV Charging Market"), which the MIN_CONTEXT_SIMILARITY comment
+# below already documented as "never even triggered web retrieval since
+# 0.53 already clears 0.5". Raising this to 0.54 closes that gap: anything
+# that would ultimately fail the usability floor now gets a real shot at
+# live web retrieval first, instead of bailing without ever trying.
+LIVE_RETRIEVAL_TRIGGER_THRESHOLD = 0.54
 
 # docs/PHASE_5_SPEC.md C2. Neither MIN_SIMILARITY (0.35) nor
-# LIVE_RETRIEVAL_TRIGGER_THRESHOLD (0.5, only ever decided whether to
-# ATTEMPT web retrieval) stopped a chunk that technically cleared 0.35 from
-# being used as real context if the web-retrieval attempt didn't improve
-# things -- confirmed live: a "Solar panel based electric grid for
+# LIVE_RETRIEVAL_TRIGGER_THRESHOLD stopped a chunk that technically cleared
+# 0.35 from being used as real context if the web-retrieval attempt didn't
+# improve things -- confirmed live: a "Solar panel based electric grid for
 # villages" PESTEL report cited "PESTEL: EV Charging Market" at 0.53
-# similarity, which never even triggered web retrieval since 0.53 already
-# clears 0.5.
+# similarity. (At the time LIVE_RETRIEVAL_TRIGGER_THRESHOLD was still 0.5,
+# this case didn't even trigger web retrieval, since 0.53 cleared 0.5
+# outright -- that dead zone was closed separately by raising
+# LIVE_RETRIEVAL_TRIGGER_THRESHOLD to match this constant, see its comment
+# above. This constant's own job is unchanged either way: even content that
+# DOES reach generation must still clear this bar.)
 #
 # The spec's own suggestion was to reuse 0.5 for this too -- verified that
 # does NOT work: 0.53 (the confirmed bad case) clears 0.5 outright. Instead
@@ -47,9 +62,11 @@ LIVE_RETRIEVAL_TRIGGER_THRESHOLD = 0.5
 # confirmed-bad case (0.53) and the lowest confirmed-good case (0.5468).
 #
 # Applied as a hard floor on whatever run_pipeline() ends up with AFTER any
-# web-retrieval attempt (not a trigger -- LIVE_RETRIEVAL_TRIGGER_THRESHOLD
-# still owns that decision, unchanged) -- if nothing clears this bar, don't
-# generate from it.
+# web-retrieval attempt -- if nothing clears this bar, don't generate from
+# it. LIVE_RETRIEVAL_TRIGGER_THRESHOLD now sits at the same value, so in
+# practice anything failing this floor already got a web-retrieval attempt
+# first; this floor is what stops it from reaching generation if that
+# attempt didn't produce anything better.
 MIN_CONTEXT_SIMILARITY = 0.54
 
 GROUNDING_SYSTEM_PROMPT = """You are a grounded business-analysis assistant.
