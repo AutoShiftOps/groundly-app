@@ -4,6 +4,10 @@ frontend/dist/
 frontend/.env
 frontend/.env.local
 npm-debug.log*
+frontend/tests/.generated/
+
+# Python test artifacts
+.pytest_cache/
 
 # Python
 */__pycache__

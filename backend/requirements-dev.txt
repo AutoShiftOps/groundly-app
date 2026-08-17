@@ -1,0 +1,7 @@
+# Dev-only dependencies for running the test suite in tests/backend/.
+# Kept separate from requirements.txt (production deps) on purpose.
+#
+# No pytest-asyncio: async pipeline calls are wrapped with asyncio.run()
+# inside plain sync test functions instead, to avoid an extra dependency
+# for what's a one-line wrapper.
+pytest==9.1.1
