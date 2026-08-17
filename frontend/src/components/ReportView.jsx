@@ -949,25 +949,31 @@ export default function ReportView({ report, idea, onReset }) {
             const NavIcon = FRAMEWORK_NAV_ICONS[fw] || FileText;
             return (
               <button key={fw} onClick={() => setActiveFramework(fw)}
-                className="flex items-center justify-between gap-2 text-sm px-3 py-2.5 rounded-xl transition-colors"
+                className="flex items-start justify-between gap-2 text-sm px-3 py-2.5 rounded-xl transition-colors text-left"
                 style={{ background: active ? `${PALETTE.blue}1f` : "transparent", color: active ? "#fff" : PALETTE.textSecondary,
                   boxShadow: active ? `inset 0 0 0 1.5px ${PALETTE.blue}` : "none" }}>
-                <span className="flex items-center gap-2 min-w-0">
-                  <NavIcon size={15} style={{ color: active ? PALETTE.blue : PALETTE.textMuted }} className="shrink-0" />
-                  <span className="truncate">{FRAMEWORK_LABELS[fw] || fw.toUpperCase()}</span>
+                <span className="flex items-start gap-2 min-w-0">
+                  <NavIcon size={15} style={{ color: active ? PALETTE.blue : PALETTE.textMuted }} className="shrink-0 mt-0.5" />
+                  {/* Wraps instead of truncating (matches the mock's own
+                      treatment of "Business Model Canvas" -- it wraps to a
+                      2nd line there too, at this same sidebar width,
+                      rather than clipping with an ellipsis). */}
+                  <span className="leading-snug">{FRAMEWORK_LABELS[fw] || fw.toUpperCase()}</span>
                 </span>
-                {verified ? <CheckCircle2 size={14} style={{ color: PALETTE.teal }} className="shrink-0" /> : <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: PALETTE.textMuted }} />}
+                {verified
+                  ? <CheckCircle2 size={14} style={{ color: PALETTE.teal }} className="shrink-0 mt-0.5" />
+                  : <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-2" style={{ background: PALETTE.textMuted }} />}
               </button>
             );
           })}
 
           {LOCKED_FRAMEWORKS.map(({ label, icon: LockedIcon }) => (
-            <button key={label} disabled className="flex items-center justify-between gap-2 text-sm px-3 py-2.5 rounded-xl opacity-40 cursor-not-allowed" style={{ color: PALETTE.textSecondary }}>
-              <span className="flex items-center gap-2 min-w-0">
-                <LockedIcon size={15} className="shrink-0" />
-                <span className="truncate">{label}</span>
+            <button key={label} disabled className="flex items-start justify-between gap-2 text-sm px-3 py-2.5 rounded-xl opacity-40 cursor-not-allowed text-left" style={{ color: PALETTE.textSecondary }}>
+              <span className="flex items-start gap-2 min-w-0">
+                <LockedIcon size={15} className="shrink-0 mt-0.5" />
+                <span className="leading-snug">{label}</span>
               </span>
-              <Lock size={12} className="shrink-0" />
+              <Lock size={12} className="shrink-0 mt-0.5" />
             </button>
           ))}
         </div>
