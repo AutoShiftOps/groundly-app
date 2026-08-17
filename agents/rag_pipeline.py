@@ -380,13 +380,35 @@ async def run_pipeline(query: str, framework_tag: str | None = None):
     # earlier. This is what actually stops a technically-above-0.35 but
     # topically-wrong chunk (e.g. EV-charging content in a solar report)
     # from reaching generation.
-    if chunks and max(c["similarity"] for c in chunks) < MIN_CONTEXT_SIMILARITY:
-        logger.info(
-            "run_pipeline: best available similarity for framework=%r still below "
-            "MIN_CONTEXT_SIMILARITY (%.4f < %.2f) after retrieval -- discarding as unusable context.",
-            framework_tag, max(c["similarity"] for c in chunks), MIN_CONTEXT_SIMILARITY,
-        )
-        chunks = []
+    if chunks:
+        best_similarity = max(c["similarity"] for c in chunks)
+        if best_similarity < MIN_CONTEXT_SIMILARITY:
+            logger.info(
+                "run_pipeline: best available similarity for framework=%r still below "
+                "MIN_CONTEXT_SIMILARITY (%.4f < %.2f) after retrieval -- discarding as unusable context.",
+                framework_tag, best_similarity, MIN_CONTEXT_SIMILARITY,
+            )
+            chunks = []
+        else:
+            # Follow-up fix: the floor above only ever checked the BEST
+            # similarity in the batch -- once that cleared, every chunk in
+            # the list was kept as-is and passed to the LLM together,
+            # including individual chunks well below the floor. A report
+            # could end up with one genuinely relevant citation plus
+            # several weak/off-topic ones reaching generation alongside
+            # it. Filter at the individual-chunk level now: the "is this
+            # topic covered at all" gate above stays list-level (at least
+            # one real match), but only chunks that themselves clear the
+            # floor actually reach the LLM as context.
+            below_floor = [c for c in chunks if c["similarity"] < MIN_CONTEXT_SIMILARITY]
+            if below_floor:
+                logger.info(
+                    "run_pipeline: dropping %d/%d chunk(s) below MIN_CONTEXT_SIMILARITY for "
+                    "framework=%r (best=%.4f clears the floor; dropped similarities=%s).",
+                    len(below_floor), len(chunks), framework_tag, best_similarity,
+                    [round(c["similarity"], 4) for c in below_floor],
+                )
+            chunks = [c for c in chunks if c["similarity"] >= MIN_CONTEXT_SIMILARITY]
 
     result = await generate_with_citations(query, chunks, framework_tag=framework_tag)
     verification = verify_claims(result["text"], result["citations"])
