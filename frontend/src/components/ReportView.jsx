@@ -26,7 +26,15 @@ import {
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 
 const PALETTE = {
-  bgOuter: "radial-gradient(ellipse 80% 60% at 75% 5%, rgba(90,60,180,0.18) 0%, #050c1a 55%)",
+  // Sampled directly from assets/images/report-ux-mock.png's own
+  // background (pixel-read via a small script, card-free regions only:
+  // corners, sidebar/content margin gap, top strip): a flat vertical
+  // gradient, near-black navy at the top (#00071b) to a very slightly
+  // richer navy at the bottom (#010e25) -- no purple tint at all (R stayed
+  // ~0 everywhere sampled) and no horizontal variation between left/right,
+  // so no radial glow either. Replaces the earlier hand-guessed radial
+  // purple-glow-at-top-right treatment, which didn't match.
+  bgOuter: "linear-gradient(180deg, #00071b 0%, #010e25 100%)",
   bgSidebar: "#080f1e",
   bgCard: "rgba(10,20,40,0.92)",
   bgPanel: "#0b1428",
