@@ -21,7 +21,7 @@ import {
   Info, ChevronUp, ChevronDown, LayoutGrid,
   Landmark, Users, Cpu, Leaf, Scale, Zap, Target, Gift, Truck, Heart,
   DollarSign, Boxes, Handshake, Receipt,
-  Globe, Grid3X3, Shield, Link2, Gauge,
+  Globe, Grid3X3, Shield, Link2, Gauge, Image,
 } from "lucide-react";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 
@@ -50,29 +50,45 @@ const PALETTE = {
   red: "#f87171",
 };
 
-// Sidebar-nav sync: tam/bmc read the mock's spelled-out labels. This is the
-// single source of truth also used by OverviewFrameworkLinks and the
-// citation-source tags (showFrameworkSource) -- changing it here keeps all
-// three consistent automatically instead of patching each usage.
-const FRAMEWORK_LABELS = { pestel: "PESTEL", swot: "SWOT", tam: "TAM SAM SOM", bmc: "Business Model Canvas" };
-
-// Per-framework nav icon, matching the mock's icon language. Real,
-// unlocked frameworks only -- FREE_FRAMEWORKS in
-// backend/routers/analysis.py is PESTEL/SWOT/TAM/BMC; this map doesn't
-// decide what's locked, it just labels the nav row once a framework is
-// actually rendered as a real tab.
-const FRAMEWORK_NAV_ICONS = { pestel: Globe, swot: Grid3X3, tam: Target, bmc: LayoutGrid };
-
-// Locked placeholders: the mock's icon language applied to this app's real
-// lock/unlock set, not the mock's own (which unlocks Porter's/STP and
-// locks BMC -- those don't match FREE_FRAMEWORKS, so intentionally not
-// copied). Only the icons/labels are borrowed from the mock here.
-const LOCKED_FRAMEWORKS = [
-  { label: "Porter's Five Forces", icon: Shield },
-  { label: "BCG Matrix", icon: Users },
-  { label: "Value Chain", icon: Link2 },
-  { label: "Balanced Scorecard", icon: Gauge },
+// Single source of truth for the sidebar's framework nav list: exact
+// order, exact labels, exact icons -- matches report-ux-mock.png's own
+// fixed order (PESTEL, Porter's Five Forces, SWOT, TAM SAM SOM, STP, BCG
+// Matrix, Value Chain, Business Model Canvas, Balanced Scorecard),
+// interleaving real and locked-placeholder rows exactly as the mock does,
+// not grouped into "unlocked first, then locked". `key: null` marks a
+// locked placeholder with no backing framework; a non-null `key` is
+// rendered unlocked only once `report.results[key]` actually exists (see
+// the render loop below) -- this list itself doesn't decide what's
+// locked, FREE_FRAMEWORKS (backend/routers/analysis.py) still does.
+//
+// Icons: SWOT and BCG Matrix intentionally share the same grid icon --
+// that's the mock's own choice, not a bug (confirmed against
+// assets/images/report-ux-mock.png). Business Model Canvas gets its own
+// distinct framed-image icon instead of also reusing that grid, since
+// three-way icon reuse was the actual visual-parity gap being closed.
+const SIDEBAR_FRAMEWORK_NAV = [
+  { key: "pestel", label: "PESTEL", icon: Globe },
+  { key: null, label: "Porter's Five Forces", icon: Shield },
+  { key: "swot", label: "SWOT", icon: Grid3X3 },
+  { key: "tam", label: "TAM SAM SOM", icon: Target },
+  { key: null, label: "STP", icon: Users },
+  { key: null, label: "BCG Matrix", icon: Grid3X3 },
+  { key: null, label: "Value Chain", icon: Link2 },
+  { key: "bmc", label: "Business Model Canvas", icon: Image },
+  { key: null, label: "Balanced Scorecard", icon: Gauge },
 ];
+
+// Derived, not hand-duplicated: FRAMEWORK_LABELS is still the thing
+// OverviewFrameworkLinks, the citation-source tags (showFrameworkSource),
+// and FrameworkPanel's header read from -- keeping it derived from
+// SIDEBAR_FRAMEWORK_NAV means there's exactly one place that knows tam's
+// label is "TAM SAM SOM", not two that could drift apart.
+const FRAMEWORK_LABELS = Object.fromEntries(
+  SIDEBAR_FRAMEWORK_NAV.filter((item) => item.key).map((item) => [item.key, item.label])
+);
+const FRAMEWORK_NAV_ICONS = Object.fromEntries(
+  SIDEBAR_FRAMEWORK_NAV.filter((item) => item.key).map((item) => [item.key, item.icon])
+);
 const SIDE_NAV = [
   { icon: TrendingUp, label: "Analyze" },
   { icon: FolderOpen, label: "Projects" },
@@ -918,12 +934,25 @@ export default function ReportView({ report, idea, onReset }) {
     <div className="flex min-h-screen w-full overflow-hidden" style={{ background: PALETTE.bgOuter, fontFamily: "'Inter', sans-serif" }}>
       <aside className="flex flex-col w-[250px] min-h-screen py-5 px-3 shrink-0" style={{ background: PALETTE.bgSidebar, borderRight: `1px solid ${PALETTE.border}` }}>
         <div className="flex items-center gap-2 px-2 mb-6">
-          <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: `linear-gradient(135deg, ${PALETTE.blue}, ${PALETTE.purple})` }}>
-            {/* Hexagonal "G" mark, matching the mock -- asset swap only,
-                same gradient tile it sits in as before. */}
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <path d="M12 2L21 7V17L12 22L3 17V7L12 2Z" fill="white" fillOpacity="0.9" />
-              <text x="12" y="16" textAnchor="middle" fontSize="11" fontWeight="700" fill={PALETTE.blue} fontFamily="'Inter', sans-serif">G</text>
+          {/* Hexagonal "G" mark matching the mock: an outlined (not
+              filled) hexagon with a blue->purple gradient stroke, and an
+              open-ring "G" glyph inside built the same way -- a dashed
+              circle with one gap (not an arc path, to avoid guessing
+              large-arc/sweep flags for a shape this project can't
+              currently screenshot-verify pixel-by-pixel) plus a short bar
+              closing the gap toward center, echoing the mock's monogram. */}
+          <div className="w-8 h-8 flex items-center justify-center shrink-0">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
+              <defs>
+                <linearGradient id="groundlyLogoGrad" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stopColor={PALETTE.blue} />
+                  <stop offset="100%" stopColor={PALETTE.purpleLight} />
+                </linearGradient>
+              </defs>
+              <path d="M12 2L21 7V17L12 22L3 17V7L12 2Z" stroke="url(#groundlyLogoGrad)" strokeWidth="1.6" strokeLinejoin="round" />
+              <circle cx="12" cy="12" r="6.5" stroke="url(#groundlyLogoGrad)" strokeWidth="1.8" strokeLinecap="round"
+                strokeDasharray="35.17 5.67" strokeDashoffset="-2.84" />
+              <line x1="12.5" y1="12" x2="18" y2="12" stroke="url(#groundlyLogoGrad)" strokeWidth="1.8" strokeLinecap="round" />
             </svg>
           </div>
           <div>
@@ -943,39 +972,55 @@ export default function ReportView({ report, idea, onReset }) {
         <div className="text-[10px] uppercase tracking-wider px-2 mb-1" style={{ color: PALETTE.textMuted }}>Frameworks</div>
 
         <div className="flex flex-col gap-0.5">
-          {stats.frameworks.map((fw) => {
-            const verified = report.verification?.[fw]?.verified;
-            const active = activeFramework === fw;
-            const NavIcon = FRAMEWORK_NAV_ICONS[fw] || FileText;
+          {/* One fixed-order list, real and locked rows interleaved exactly
+              as report-ux-mock.png shows them -- not grouped into
+              "unlocked first, then locked". A `key` entry only renders
+              unlocked if report.results actually has that framework (same
+              condition stats.frameworks encoded before); otherwise it
+              falls through to the same locked treatment as a `key: null`
+              placeholder, which keeps this safe even for the edge case of
+              a supported framework whose data didn't come back on this
+              particular report. */}
+          {SIDEBAR_FRAMEWORK_NAV.map((item) => {
+            const isUnlocked = item.key && stats.frameworks.includes(item.key);
+            const NavIcon = item.icon;
+
+            if (isUnlocked) {
+              const verified = report.verification?.[item.key]?.verified;
+              const active = activeFramework === item.key;
+              return (
+                <button key={item.label} onClick={() => setActiveFramework(item.key)}
+                  className="flex items-start justify-between gap-2 text-sm px-3 py-2.5 rounded-xl transition-colors text-left"
+                  style={{ background: active ? `${PALETTE.blue}1f` : "transparent", color: active ? "#fff" : PALETTE.textSecondary,
+                    boxShadow: active ? `inset 0 0 0 1.5px ${PALETTE.blue}` : "none" }}>
+                  <span className="flex items-start gap-2 min-w-0">
+                    <NavIcon size={15} style={{ color: active ? PALETTE.blue : PALETTE.textMuted }} className="shrink-0 mt-0.5" />
+                    {/* Wraps instead of truncating (matches the mock's own
+                        treatment of "Business Model Canvas" -- it wraps to
+                        a 2nd line there too, at this same sidebar width,
+                        rather than clipping with an ellipsis). */}
+                    <span className="leading-snug">{item.label}</span>
+                  </span>
+                  {/* Intentional, confirmed: checkmark = a strong grounded
+                      result; gray dot = the framework ran but came back
+                      weak/insufficient. Not a uniform "ran" indicator. */}
+                  {verified
+                    ? <CheckCircle2 size={14} style={{ color: PALETTE.teal }} className="shrink-0 mt-0.5" />
+                    : <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-2" style={{ background: PALETTE.textMuted }} />}
+                </button>
+              );
+            }
+
             return (
-              <button key={fw} onClick={() => setActiveFramework(fw)}
-                className="flex items-start justify-between gap-2 text-sm px-3 py-2.5 rounded-xl transition-colors text-left"
-                style={{ background: active ? `${PALETTE.blue}1f` : "transparent", color: active ? "#fff" : PALETTE.textSecondary,
-                  boxShadow: active ? `inset 0 0 0 1.5px ${PALETTE.blue}` : "none" }}>
+              <button key={item.label} disabled className="flex items-start justify-between gap-2 text-sm px-3 py-2.5 rounded-xl opacity-40 cursor-not-allowed text-left" style={{ color: PALETTE.textSecondary }}>
                 <span className="flex items-start gap-2 min-w-0">
-                  <NavIcon size={15} style={{ color: active ? PALETTE.blue : PALETTE.textMuted }} className="shrink-0 mt-0.5" />
-                  {/* Wraps instead of truncating (matches the mock's own
-                      treatment of "Business Model Canvas" -- it wraps to a
-                      2nd line there too, at this same sidebar width,
-                      rather than clipping with an ellipsis). */}
-                  <span className="leading-snug">{FRAMEWORK_LABELS[fw] || fw.toUpperCase()}</span>
+                  <NavIcon size={15} className="shrink-0 mt-0.5" />
+                  <span className="leading-snug">{item.label}</span>
                 </span>
-                {verified
-                  ? <CheckCircle2 size={14} style={{ color: PALETTE.teal }} className="shrink-0 mt-0.5" />
-                  : <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-2" style={{ background: PALETTE.textMuted }} />}
+                <Lock size={12} className="shrink-0 mt-0.5" />
               </button>
             );
           })}
-
-          {LOCKED_FRAMEWORKS.map(({ label, icon: LockedIcon }) => (
-            <button key={label} disabled className="flex items-start justify-between gap-2 text-sm px-3 py-2.5 rounded-xl opacity-40 cursor-not-allowed text-left" style={{ color: PALETTE.textSecondary }}>
-              <span className="flex items-start gap-2 min-w-0">
-                <LockedIcon size={15} className="shrink-0 mt-0.5" />
-                <span className="leading-snug">{label}</span>
-              </span>
-              <Lock size={12} className="shrink-0 mt-0.5" />
-            </button>
-          ))}
         </div>
 
         <div className="mt-auto flex flex-col gap-2">
