@@ -1114,7 +1114,22 @@ export default function ReportView({ report, idea, onReset }) {
             <div className="rounded-2xl p-4" style={{ background: PALETTE.bgCard, border: `1px solid ${PALETTE.border}` }}>
               <div className="flex items-center justify-between text-sm font-bold text-white mb-3">
                 <span>Sources & Citations</span>
-                <span className="text-[11px] font-medium" style={{ color: PALETTE.blue }}>View all ({stats.totalCitations})</span>
+                {/* Was always stats.totalCitations (the report-wide dedup
+                    count across every framework), even on a single-
+                    framework tab whose list below only ever showed that
+                    framework's own citations -- a tab with e.g. 0
+                    citations of its own could still show "View all (3)"
+                    from an unrelated framework's total. Header count now
+                    tracks whichever set CitationList actually renders:
+                    the same allCitations/activeResult switch as the list
+                    itself, deduped by source_url the same way
+                    CitationList and stats.totalCitations both already do
+                    -- otherwise a framework whose citations happen to
+                    share a source_url across chunks would still show a
+                    header count higher than the list underneath it. */}
+                <span className="text-[11px] font-medium" style={{ color: PALETTE.blue }}>
+                  View all ({isOverview ? stats.totalCitations : dedupeCitations(activeResult?.citations).length})
+                </span>
               </div>
               <CitationList citations={isOverview ? allCitations : activeResult?.citations} showFrameworkSource={isOverview} />
             </div>
