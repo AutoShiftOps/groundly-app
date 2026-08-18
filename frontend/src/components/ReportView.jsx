@@ -66,16 +66,24 @@ const PALETTE = {
 // assets/images/report-ux-mock.png). Business Model Canvas gets its own
 // distinct framed-image icon instead of also reusing that grid, since
 // three-way icon reuse was the actual visual-parity gap being closed.
+//
+// `color`: the icon's color WHEN this row renders unlocked -- every entry
+// gets one (not just the 4 real frameworks) so a distinct hue is already
+// defined if the locked set ever changes, even though today only
+// pestel/swot/tam/bmc actually render unlocked and show it. Locked rows
+// ignore this entirely (they always render muted/gray, see the render
+// loop below) -- this is NOT a lock-state signal, just per-framework
+// icon color once a row IS unlocked.
 const SIDEBAR_FRAMEWORK_NAV = [
-  { key: "pestel", label: "PESTEL", icon: Globe },
-  { key: null, label: "Porter's Five Forces", icon: Shield },
-  { key: "swot", label: "SWOT", icon: Grid3X3 },
-  { key: "tam", label: "TAM SAM SOM", icon: Target },
-  { key: null, label: "STP", icon: Users },
-  { key: null, label: "BCG Matrix", icon: Grid3X3 },
-  { key: null, label: "Value Chain", icon: Link2 },
-  { key: "bmc", label: "Business Model Canvas", icon: Image },
-  { key: null, label: "Balanced Scorecard", icon: Gauge },
+  { key: "pestel", label: "PESTEL", icon: Globe, color: PALETTE.blue },
+  { key: null, label: "Porter's Five Forces", icon: Shield, color: PALETTE.red },
+  { key: "swot", label: "SWOT", icon: Grid3X3, color: PALETTE.purple },
+  { key: "tam", label: "TAM SAM SOM", icon: Target, color: PALETTE.teal },
+  { key: null, label: "STP", icon: Users, color: PALETTE.purpleLight },
+  { key: null, label: "BCG Matrix", icon: Grid3X3, color: PALETTE.purple },
+  { key: null, label: "Value Chain", icon: Link2, color: PALETTE.red },
+  { key: "bmc", label: "Business Model Canvas", icon: Image, color: PALETTE.amber },
+  { key: null, label: "Balanced Scorecard", icon: Gauge, color: PALETTE.amber },
 ];
 
 // Derived, not hand-duplicated: FRAMEWORK_LABELS is still the thing
@@ -988,13 +996,21 @@ export default function ReportView({ report, idea, onReset }) {
             if (isUnlocked) {
               const verified = report.verification?.[item.key]?.verified;
               const active = activeFramework === item.key;
+              // Two independent signals, deliberately not conflated:
+              // brightness/color here is driven ONLY by lock state (this
+              // row is unlocked, full stop) -- verified/weak-data status
+              // never dims a row or grays out its icon. That status only
+              // ever shows up in the checkmark-vs-dot indicator below.
+              // Without this, an unlocked-but-weak-data framework reads
+              // as visually indistinguishable from a genuinely locked
+              // one, which is exactly the bug this fixes.
               return (
                 <button key={item.label} onClick={() => setActiveFramework(item.key)}
                   className="flex items-start justify-between gap-2 text-sm px-3 py-2.5 rounded-xl transition-colors text-left"
-                  style={{ background: active ? `${PALETTE.blue}1f` : "transparent", color: active ? "#fff" : PALETTE.textSecondary,
+                  style={{ background: active ? `${PALETTE.blue}1f` : "transparent", color: "#fff",
                     boxShadow: active ? `inset 0 0 0 1.5px ${PALETTE.blue}` : "none" }}>
                   <span className="flex items-start gap-2 min-w-0">
-                    <NavIcon size={15} style={{ color: active ? PALETTE.blue : PALETTE.textMuted }} className="shrink-0 mt-0.5" />
+                    <NavIcon size={15} style={{ color: active ? PALETTE.blue : item.color }} className="shrink-0 mt-0.5" />
                     {/* Wraps instead of truncating (matches the mock's own
                         treatment of "Business Model Canvas" -- it wraps to
                         a 2nd line there too, at this same sidebar width,
@@ -1003,7 +1019,10 @@ export default function ReportView({ report, idea, onReset }) {
                   </span>
                   {/* Intentional, confirmed: checkmark = a strong grounded
                       result; gray dot = the framework ran but came back
-                      weak/insufficient. Not a uniform "ran" indicator. */}
+                      weak/insufficient. Not a uniform "ran" indicator, and
+                      NOT a brightness/lock signal either -- a weak-data
+                      framework still looks fully available above, it just
+                      gets a dot here instead of a checkmark. */}
                   {verified
                     ? <CheckCircle2 size={14} style={{ color: PALETTE.teal }} className="shrink-0 mt-0.5" />
                     : <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-2" style={{ background: PALETTE.textMuted }} />}
