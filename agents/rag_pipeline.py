@@ -5,6 +5,7 @@ RAG grounding pipeline: retrieve -> generate with citations -> verify claims -> 
 import asyncio
 import json
 import logging
+import re
 
 from agents import config  # noqa: F401  side-effect: loads backend/.env reliably
 from openai import AsyncOpenAI
@@ -68,6 +69,69 @@ LIVE_RETRIEVAL_TRIGGER_THRESHOLD = 0.54
 # first; this floor is what stops it from reaching generation if that
 # attempt didn't produce anything better.
 MIN_CONTEXT_SIMILARITY = 0.54
+
+# Follow-up, tam-specific: paywalled market-research aggregator pages
+# (confirmed live, twice -- researchandmarkets.com and dataintelo.com)
+# scrape into a table-of-contents layer, dense with exactly the right
+# vocabulary ("Total Addressable Market", "Market Size", "Growth Rate")
+# but containing zero actual dollar figures or percentages -- the real
+# numbers stay behind the paywall. A chunk like that can score above
+# MIN_CONTEXT_SIMILARITY on vocabulary alone (confirmed: 0.62 on one real
+# case) while having nothing to ground an actual tam/sam/som value with.
+#
+# Deliberately a cheap regex check, not another LLM call -- and applied
+# to tam only (see _null_out_unsupported_tam_tiers below): PESTEL/SWOT/
+# BMC's payload is legitimately qualitative text, a chunk with no dollar
+# figure there is normal and not a signal of anything wrong.
+_DOLLAR_FIGURE_PATTERN = re.compile(
+    r"\$\s?[\d,]+(?:\.\d+)?\s*(?:billion|million|trillion|bn|mn|tn|B|M|T)?\b", re.IGNORECASE
+)
+_PERCENTAGE_PATTERN = re.compile(r"\d+(?:\.\d+)?\s?%")
+
+
+def _chunk_has_numeric_market_figure(chunk_text: str) -> bool:
+    return bool(_DOLLAR_FIGURE_PATTERN.search(chunk_text) or _PERCENTAGE_PATTERN.search(chunk_text))
+
+
+def _null_out_unsupported_tam_tiers(market_sizing: dict, context_chunks: list) -> dict:
+    """
+    Deterministic backstop, not a rewrite of the model's own reasoning:
+    for each tam/sam/som tier the model populated, confirm the chunk it
+    cited as citation_index actually contains a real dollar figure or
+    percentage. If it doesn't, null the whole tier out -- same
+    null-when-ungrounded discipline as everywhere else in this schema.
+
+    Citations themselves and the narrative text are untouched by this: a
+    numeric-free chunk can still be real, legitimate supporting context
+    for the prose (e.g. explaining what a market covers), it's just not a
+    valid basis for a specific tam/sam/som dollar value. A tier whose
+    citation_index is null (the model legitimately couldn't attribute the
+    figure to one specific chunk -- an existing, separate allowance in
+    this schema, see TAM_STRUCTURED_SUFFIX) is left as-is; this check only
+    concerns itself with tiers that DO point at a specific chunk.
+    """
+    validated = {}
+    for tier in ("tam", "sam", "som"):
+        tier_value = market_sizing.get(tier)
+        if tier_value is None:
+            validated[tier] = None
+            continue
+        citation_index = tier_value.get("citation_index")
+        if not citation_index or not (1 <= citation_index <= len(context_chunks)):
+            validated[tier] = tier_value
+            continue
+        chunk_text = context_chunks[citation_index - 1].get("chunk_text") or ""
+        if _chunk_has_numeric_market_figure(chunk_text):
+            validated[tier] = tier_value
+        else:
+            logger.info(
+                "generate_with_citations: tam tier=%r cited chunk %d with no numeric market figure "
+                "(dollar amount/percentage) -- nulling out as unsupported (was: %r).",
+                tier, citation_index, tier_value,
+            )
+            validated[tier] = None
+    return validated
+
 
 GROUNDING_SYSTEM_PROMPT = """You are a grounded business-analysis assistant.
 
@@ -302,6 +366,10 @@ async def generate_with_citations(query: str, context_chunks: list, framework_ta
             logger.exception("generate_with_citations: failed to parse structured %r response, raw=%r", framework_tag, raw)
             text = raw
             extra_value = None
+
+        if framework_tag == "tam" and extra_value:
+            extra_value = _null_out_unsupported_tam_tiers(extra_value, context_chunks)
+
         return {"text": text, "citations": citations, field_name: extra_value}
 
     completion = await client.chat.completions.create(
