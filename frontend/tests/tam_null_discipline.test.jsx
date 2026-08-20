@@ -60,11 +60,12 @@ check("TAM: not marked 'No data found'", (() => {
 check("SAM: real dollar value shown ($850M)", html.includes("$850M"));
 check("SAM's table row (Value/%-of-Parent/CAGR cells, in order) shows its real % of Parent then an em-dash for CAGR, not a fabricated percentage", (() => {
   // Table row order is Metric, Value (USD), % of Parent, CAGR, Source --
-  // find SAM's table-row "$850M" (the second occurrence: legend renders
-  // before the table) and check the CAGR cell specifically, not just
-  // "an em-dash exists somewhere in the whole document".
-  const occurrences = [...html.matchAll(/\$850M/g)].map((m) => m.index);
-  const tableRowIdx = occurrences.length >= 2 ? occurrences[1] : occurrences[0];
+  // find SAM's "$850M" specifically inside the <table> markup (not the
+  // circle diagram's inline label or the legend, both of which also
+  // render "$850M" earlier in the DOM) and check the CAGR cell from
+  // there, not just "an em-dash exists somewhere in the whole document".
+  const tableStart = html.indexOf("<table");
+  const tableRowIdx = html.indexOf("$850M", tableStart);
   const row = html.slice(tableRowIdx, tableRowIdx + 400);
   const expectedPct = Math.round((850000000 / 12400000000) * 1000) / 10;
   const pctIdx = row.indexOf(`${expectedPct}%`);

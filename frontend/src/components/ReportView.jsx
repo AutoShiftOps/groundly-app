@@ -740,13 +740,41 @@ function TamSizingCard({ result, verification, ideaTitle }) {
   const verified = verification?.verified ?? false;
 
   const presentItems = items.filter((it) => it.present);
-  const maxOuter = 78, minRadius = 22, ghostRadius = 34;
+  const maxOuter = 92, minRadius = 24, ringGap = 18, ghostRadius = 34;
   const maxValue = presentItems.length ? Math.max(...presentItems.map((it) => it.value)) : 0;
-  const radii = items.map((it) => (it.present ? Math.max(minRadius, maxOuter * Math.sqrt(it.value / maxValue)) : ghostRadius));
-  for (let i = 1; i < radii.length; i++) radii[i] = Math.min(radii[i], Math.max(minRadius, radii[i - 1] - 10));
+  // Real-world tier ratios are far more skewed than sqrt-scaling alone can
+  // stay legible at: a real case (TAM $6.1B / SAM $330M / SOM $8M, SAM at
+  // 5.4% of TAM vs. the mock's own ~27%) made the old independent
+  // `Math.max(minRadius, ...)` floor push SAM and SOM to the exact SAME
+  // radius (both naturally computed below minRadius), rendering as one
+  // ring instead of two -- SAM effectively invisible underneath SOM.
+  //
+  // Fixed by guaranteeing separation, not just a shared floor: walk
+  // present tiers outer-to-inner (tam -> sam -> som, the same nesting
+  // order this diagram has always assumed) and require each one's radius
+  // to be at least `ringGap` smaller than the tier just outside it, with
+  // the innermost present tier still floored at `minRadius`. Tiers whose
+  // natural sqrt-scaled size already clears its guaranteed minimum keep
+  // that proportional size (see the mock-like-ratio case in this
+  // function's test coverage) -- this only kicks in once ratios get
+  // skewed enough that proportional sizing alone would collapse two
+  // rings together.
+  const presentIndices = items.map((it, i) => (it.present ? i : null)).filter((i) => i !== null);
+  const radii = new Array(items.length).fill(ghostRadius);
+  let prevRadius = maxOuter + ringGap; // virtual outer ceiling so the largest present tier can still reach maxOuter
+  presentIndices.forEach((idx, rank) => {
+    const remainingSmallerTiers = presentIndices.length - 1 - rank;
+    const guaranteedFloor = minRadius + ringGap * remainingSmallerTiers;
+    const natural = maxOuter * Math.sqrt(items[idx].value / maxValue);
+    const ceiling = Math.max(prevRadius - ringGap, guaranteedFloor);
+    const r = Math.min(Math.max(natural, guaranteedFloor), ceiling);
+    radii[idx] = r;
+    prevRadius = r;
+  });
   const size = maxOuter * 2 + 16;
   const cx = size / 2, cy = size / 2;
   const byKey = Object.fromEntries(items.map((it) => [it.key, it]));
+  const innermostPresentIndex = presentIndices.length ? presentIndices[presentIndices.length - 1] : null;
 
   const isInsufficient = result.text?.trim() === "Insufficient grounded data available for this section.";
 
@@ -785,16 +813,38 @@ function TamSizingCard({ result, verification, ideaTitle }) {
 
       <div className="flex items-center gap-6 flex-wrap">
         <svg width={size} height={size} className="shrink-0">
-          {items.map((item, i) =>
-            item.present ? (
-              <circle key={item.key} cx={cx} cy={cy} r={radii[i]} fill={`${item.color}22`} stroke={item.color} strokeWidth={2} />
-            ) : (
+          {items.map((item, i) => {
+            if (!item.present) {
+              // Unchanged: dashed ghost ring for an absent tier.
+              return (
+                <g key={item.key}>
+                  <circle cx={cx} cy={cy} r={radii[i]} fill="none" stroke={PALETTE.textMuted} strokeWidth={1.5} strokeDasharray="4 3" opacity={0.6} />
+                  <text x={cx} y={cy - radii[i] + 9} textAnchor="middle" fontSize="7" fill={PALETTE.textMuted}>No data found</text>
+                </g>
+              );
+            }
+            // Solid filled band, matching the mock -- each smaller present
+            // tier is drawn after (so painted over the center of) the
+            // larger one, leaving each ring's own color visible as a band
+            // around it rather than a hollow outline. Value written
+            // directly on the visible band/circle, not just in the side
+            // legend: positioned at the vertical midpoint of this tier's
+            // own visible band (between its own radius and the next
+            // smaller present tier's radius), or dead center for the
+            // innermost present tier, which has no inner neighbor to
+            // avoid.
+            const rankInPresent = presentIndices.indexOf(i);
+            const isInnermost = i === innermostPresentIndex;
+            const innerBoundary = isInnermost ? 0 : radii[presentIndices[rankInPresent + 1]];
+            const textY = isInnermost ? cy : cy - (radii[i] + innerBoundary) / 2;
+            return (
               <g key={item.key}>
-                <circle cx={cx} cy={cy} r={radii[i]} fill="none" stroke={PALETTE.textMuted} strokeWidth={1.5} strokeDasharray="4 3" opacity={0.6} />
-                <text x={cx} y={cy - radii[i] + 9} textAnchor="middle" fontSize="7" fill={PALETTE.textMuted}>No data found</text>
+                <circle cx={cx} cy={cy} r={radii[i]} fill={`${item.color}59`} stroke={item.color} strokeWidth={2} />
+                <text x={cx} y={textY - 3} textAnchor="middle" fontSize="8" fontWeight="600" fill="#fff">{item.label}</text>
+                <text x={cx} y={textY + 9} textAnchor="middle" fontSize="9" fontWeight="700" fill="#fff">{item.displayValue}</text>
               </g>
-            )
-          )}
+            );
+          })}
         </svg>
         <div className="flex flex-col gap-2.5">
           {items.map((item) => (
