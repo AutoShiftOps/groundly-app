@@ -17,6 +17,36 @@ router = APIRouter()
 
 FREE_FRAMEWORKS = {"pestel", "swot", "tam", "bmc"}
 
+# tam's query label is "TAM/SAM/SOM", not bare "TAM" -- confirmed live:
+# the bare "TAM analysis" wording (sent as both the retrieval embedding
+# query AND the LLM's user-turn QUESTION text) anchored the model on TAM
+# alone, causing it to skip sam/som in market_sizing even when the
+# CONTEXT contained clean, unambiguous, well-attributed dollar figures
+# for both (confirmed via a real EV-charging call: one retrieved chunk
+# contained both a "$330-$670 million" SAM figure and an "$8-15 million"
+# SOM figure in full, yet the raw model response returned
+# "sam":null,"som":null). Changing this one word fixed it 3/3 in real
+# re-tests, with retrieval quality improving rather than degrading (top
+# similarity 0.655 -> 0.6661) since the corpus's own seed content is
+# titled "TAM/SAM/SOM Analysis Source". Every other framework's wording
+# is unchanged.
+QUERY_FRAMEWORK_LABELS = {"tam": "TAM/SAM/SOM"}
+
+
+def build_analysis_query(idea: str, framework: str, industry: str | None = None, geography: str | None = None) -> str:
+    # docs/PHASE_5_SPEC.md C1: previously led with the framework name
+    # ("PESTEL analysis for: <idea>"), which biased both local embedding
+    # retrieval and the Tavily fallback toward generic framework-
+    # methodology content instead of the actual idea topic. Idea leads
+    # now; framework is trailing context, not the dominant term.
+    label = QUERY_FRAMEWORK_LABELS.get(framework, framework.upper())
+    query = f"{idea} — {label} analysis"
+    if industry:
+        query += f" | industry: {industry}"
+    if geography:
+        query += f" | geography: {geography}"
+    return query
+
 
 class AnalysisRequest(BaseModel):
     idea: str
@@ -47,17 +77,7 @@ async def analyze(req: AnalysisRequest):
     verification = {}
 
     def build_query(framework: str) -> str:
-        # docs/PHASE_5_SPEC.md C1: previously led with the framework name
-        # ("PESTEL analysis for: <idea>"), which biased both local embedding
-        # retrieval and the Tavily fallback toward generic framework-
-        # methodology content instead of the actual idea topic. Idea leads
-        # now; framework is trailing context, not the dominant term.
-        query = f"{req.idea} — {framework.upper()} analysis"
-        if req.industry:
-            query += f" | industry: {req.industry}"
-        if req.geography:
-            query += f" | geography: {req.geography}"
-        return query
+        return build_analysis_query(req.idea, framework, req.industry, req.geography)
 
     # Run every requested framework's pipeline concurrently instead of
     # blocking on 4 serial OpenAI calls.
