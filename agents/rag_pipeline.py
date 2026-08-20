@@ -162,6 +162,15 @@ populate the market_sizing object:
   dollar figure for that specific tier. Leave it null if the CONTEXT
   doesn't support it -- do not invent SAM or SOM if the context only
   supports TAM.
+- If the CONTEXT states MORE THAN ONE dollar figure for the SAME tier at
+  different points in time (e.g. a current/present-day figure alongside a
+  separate future-year projection or forecast), prefer the CURRENT,
+  present-day figure for "value_usd"/"label" -- not the future
+  projection. Only use a future projection when the CONTEXT gives no
+  current-year figure at all for that tier; a real projection still beats
+  leaving the tier null, but when you do this, make "tier_description"
+  say so (e.g. "Projected 2030 home charging market", not just "Home
+  charging market") so it reads as a forecast, not today's market size.
 - "label" must be the abbreviated dollar form, e.g. "$68.3B", "$1.9M",
   "$2.1T" -- never spell out "billion"/"million"/"trillion" as words.
 - "value_usd" must be that same figure as a plain number of dollars
@@ -179,7 +188,8 @@ populate the market_sizing object:
   sustainable packaging market" for TAM, drawn from what the CONTEXT
   actually says about it -- not a generic definition of what TAM/SAM/SOM
   means in the abstract. Only fill it in if the CONTEXT supports a
-  specific description for that tier; otherwise null.
+  specific description for that tier; otherwise null. Note whether a
+  figure is a future projection per the rule above.
 """
 
 MARKET_SIZING_SCHEMA = {
