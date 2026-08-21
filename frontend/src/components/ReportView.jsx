@@ -179,22 +179,32 @@ function useMetricTrends(report) {
   }, [report]);
 }
 
+// Was a fixed 64x28px box squeezed into the same flex row as the card's
+// value/label text (`items-end justify-between`) -- confirmed live this
+// rendered as a collapsed few-pixel fragment instead of a visible chart:
+// recharts' ResponsiveContainer measures its immediate DOM parent via
+// getBoundingClientRect/ResizeObserver, and a fixed-px box living inside
+// a `justify-between` flex row (competing for space with a `min-width:
+// auto` sibling) doesn't reliably give it a stable, real box before that
+// first measurement fires. No longer the component's job to size itself
+// at all -- it now fills whatever container the caller gives it
+// (MetricCard below provides a full-width, explicit-height block), which
+// is both a more robust fix and what actually makes it "span most of the
+// card's bottom area" as intended, instead of a small side element.
 function Sparkline({ data, color }) {
   const id = color.replace(/[^a-z0-9]/gi, "");
   return (
-    <div style={{ width: 64, height: 28 }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data} margin={{ top: 2, right: 0, bottom: 0, left: 0 }}>
-          <defs>
-            <linearGradient id={`rvsg${id}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={color} stopOpacity={0.3} />
-              <stop offset="100%" stopColor={color} stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          <Area type="monotone" dataKey="v" stroke={color} strokeWidth={1.5} fill={`url(#rvsg${id})`} dot={false} isAnimationActive={false} />
-        </AreaChart>
-      </ResponsiveContainer>
-    </div>
+    <ResponsiveContainer width="100%" height="100%">
+      <AreaChart data={data} margin={{ top: 2, right: 2, bottom: 0, left: 2 }}>
+        <defs>
+          <linearGradient id={`rvsg${id}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity={0.35} />
+            <stop offset="100%" stopColor={color} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <Area type="monotone" dataKey="v" stroke={color} strokeWidth={1.5} fill={`url(#rvsg${id})`} dot={false} isAnimationActive={false} />
+      </AreaChart>
+    </ResponsiveContainer>
   );
 }
 
@@ -259,14 +269,19 @@ function MetricCard({ label, value, sub, tone, sparkData, sparkColor }) {
   const showSpark = sparkData && sparkData.length > 1;
   return (
     <div className="rounded-2xl p-4" style={{ background: PALETTE.bgCard, border: `1px solid ${tone ? color + "55" : PALETTE.border}` }}>
-      <div className="flex items-end justify-between gap-2">
-        <div>
-          <div className="text-xl font-extrabold text-white">{value}</div>
-          <div className="text-xs mt-1" style={{ color: PALETTE.textSecondary }}>{label}</div>
-          {sub && <div className="text-[10px] mt-1" style={{ color: PALETTE.textMuted }}>{sub}</div>}
-        </div>
-        {showSpark && <Sparkline data={sparkData} color={sparkColor} />}
+      <div>
+        <div className="text-xl font-extrabold text-white">{value}</div>
+        <div className="text-xs mt-1" style={{ color: PALETTE.textSecondary }}>{label}</div>
+        {sub && <div className="text-[10px] mt-1" style={{ color: PALETTE.textMuted }}>{sub}</div>}
       </div>
+      {/* Full-width strip along the card's bottom, not a small box
+          squeezed beside the text -- see Sparkline's own comment for why
+          that previously collapsed instead of rendering. */}
+      {showSpark && (
+        <div className="w-full mt-3" style={{ height: 32 }}>
+          <Sparkline data={sparkData} color={sparkColor} />
+        </div>
+      )}
     </div>
   );
 }
@@ -837,11 +852,23 @@ function TamSizingCard({ result, verification, ideaTitle }) {
             const isInnermost = i === innermostPresentIndex;
             const innerBoundary = isInnermost ? 0 : radii[presentIndices[rankInPresent + 1]];
             const textY = isInnermost ? cy : cy - (radii[i] + innerBoundary) / 2;
+            // Fill opacity bumped from the original 0x59 (~35%, read as
+            // faint/washed-out next to the mock's bold, near-opaque
+            // bands) to 0xD9 (~85%) -- confirmed against a real
+            // screenshot comparison. At that opacity the fill itself IS
+            // the dominant color under the text now, not a light tint
+            // over the dark card background, so the inline label/value
+            // text gets a dark halo (stroke painted behind the fill via
+            // paintOrder) rather than relying on plain white-on-color
+            // contrast, which isn't reliably legible against every tier
+            // color (teal in particular).
             return (
               <g key={item.key}>
-                <circle cx={cx} cy={cy} r={radii[i]} fill={`${item.color}59`} stroke={item.color} strokeWidth={2} />
-                <text x={cx} y={textY - 3} textAnchor="middle" fontSize="8" fontWeight="600" fill="#fff">{item.label}</text>
-                <text x={cx} y={textY + 9} textAnchor="middle" fontSize="9" fontWeight="700" fill="#fff">{item.displayValue}</text>
+                <circle cx={cx} cy={cy} r={radii[i]} fill={`${item.color}D9`} stroke={item.color} strokeWidth={2} />
+                <text x={cx} y={textY - 3} textAnchor="middle" fontSize="8" fontWeight="700" fill="#fff"
+                  stroke="rgba(0,0,0,0.55)" strokeWidth="2.5" strokeLinejoin="round" paintOrder="stroke">{item.label}</text>
+                <text x={cx} y={textY + 9} textAnchor="middle" fontSize="9" fontWeight="800" fill="#fff"
+                  stroke="rgba(0,0,0,0.55)" strokeWidth="2.5" strokeLinejoin="round" paintOrder="stroke">{item.displayValue}</text>
               </g>
             );
           })}

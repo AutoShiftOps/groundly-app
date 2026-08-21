@@ -34,8 +34,10 @@ function fixtureWithMarketSizing(marketSizing) {
 }
 
 // Extract the <circle> elements that belong to PRESENT tiers -- i.e. ones
-// with a fill containing "59" (this component's solid-band opacity
-// suffix), not the dashed ghost-ring circles (fill="none").
+// with a solid 8-hex-digit fill (6-digit color + 2-digit alpha, whatever
+// the current opacity constant is -- not hardcoded, so a future opacity
+// tweak doesn't need this test updated too), not the dashed ghost-ring
+// circles (fill="none").
 function extractDiagramSvg(html) {
   // There are two <svg> elements on the page: the sidebar logo mark
   // (width="30") and the TAM SAM SOM circle diagram (width={size}, size
@@ -49,7 +51,7 @@ function extractDiagramSvg(html) {
 
 function extractPresentCircleRadii(html) {
   const svg = extractDiagramSvg(html);
-  const matches = [...svg.matchAll(/<circle cx="[\d.]+" cy="[\d.]+" r="([\d.]+)" fill="#[0-9a-fA-F]{6}59"/g)];
+  const matches = [...svg.matchAll(/<circle cx="[\d.]+" cy="[\d.]+" r="([\d.]+)" fill="#[0-9a-fA-F]{8}"/g)];
   return matches.map((m) => Number(m[1]));
 }
 
@@ -82,9 +84,15 @@ check("Mock-like-ratio case: all 3 radii distinct", new Set(mockLikeRadii).size 
 check("Mock-like-ratio case: correct nesting order (TAM > SAM > SOM)", mockLikeRadii[0] > mockLikeRadii[1] && mockLikeRadii[1] > mockLikeRadii[2]);
 check("Mock-like-ratio case: SAM's radius reflects its real proportional size (not floor-snapped like the extreme case) -- meaningfully bigger than the extreme case's SAM radius", mockLikeRadii[1] > extremeRadii[1] + 5);
 
-// --- Filled-band style: solid fill + inline label/value text, not hollow outline ---
-check("Present tiers use a solid semi-transparent fill (not the old near-invisible 0x22 outline-only style)", extremeHtml.includes('fill="#4a8fff59"') || extremeHtml.includes('fill="#7c3aed59"') || extremeHtml.includes('fill="#2dd4bf59"'));
-check("Old hollow/outline-only fill opacity (0x22 suffix) is gone from present-tier circles", !/fill="#[0-9a-fA-F]{6}22" stroke="#[0-9a-fA-F]{6}" strokeWidth="2"/.test(extremeHtml));
+// --- Filled-band style: solid, BOLD fill + inline label/value text, not hollow outline or faint tint ---
+check("Present tiers use an 8-digit hex fill (color + alpha), not the old near-invisible 0x22 outline-only style", /fill="#[0-9a-fA-F]{6}22" stroke="#[0-9a-fA-F]{6}" strokeWidth="2"/.test(extremeHtml) === false);
+check("Fill opacity reads as bold/vivid (75-90% range), not faint -- checked against TAM's actual rendered alpha byte", (() => {
+  const diagramSvg = extractDiagramSvg(extremeHtml);
+  const match = diagramSvg.match(/fill="#4a8fff([0-9a-fA-F]{2})"/);
+  if (!match) return false;
+  const alphaFraction = parseInt(match[1], 16) / 255;
+  return alphaFraction >= 0.75 && alphaFraction <= 0.90;
+})());
 check("Inline abbreviation label ('TAM') rendered inside the SVG diagram itself, not just the legend", extractDiagramSvg(extremeHtml).includes(">TAM<"));
 check("Inline dollar value ('$330M') rendered inside the SVG diagram itself for SAM", extractDiagramSvg(extremeHtml).includes("$330M"));
 
