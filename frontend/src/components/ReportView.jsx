@@ -21,7 +21,7 @@ import {
   Info, ChevronUp, ChevronDown, LayoutGrid,
   Landmark, Users, Cpu, Leaf, Scale, Zap, Target, Gift, Truck, Heart,
   DollarSign, Boxes, Handshake, Receipt,
-  Globe, Grid3X3, Shield, Link2, Gauge, Image,
+  Globe, Grid3X3, Shield, Link2, Gauge, Image, Puzzle, BookOpen,
 } from "lucide-react";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 
@@ -159,9 +159,17 @@ function ToneColor(tone) {
 function useMetricTrends(report) {
   return useMemo(() => {
     const frameworks = Object.keys(report?.results || {});
-    let cumulativeCitations = 0;
+    let cumulativeCitations = 0, cumulativeVerified = 0, cumulativeUnverified = 0;
     const citationTrend = [];
     const similarityTrend = [];
+    // "Frameworks verified" and "Unverified sections" previously had no
+    // spark at all (never passed sparkData) -- real, non-fabricated
+    // trends for them too: cumulative verified/unverified count as you
+    // go through each framework, same derivation discipline as
+    // citationTrend/similarityTrend above (real per-framework data, not
+    // an invented shape).
+    const verifiedTrend = [];
+    const unverifiedTrend = [];
 
     frameworks.forEach((fw) => {
       const citations = report.results[fw]?.citations || [];
@@ -173,9 +181,14 @@ function useMetricTrends(report) {
       });
       citationTrend.push({ v: cumulativeCitations });
       similarityTrend.push({ v: citations.length ? Math.round((simSum / citations.length) * 100) : 0 });
+
+      if (report.verification?.[fw]?.verified) cumulativeVerified += 1;
+      else cumulativeUnverified += 1;
+      verifiedTrend.push({ v: cumulativeVerified });
+      unverifiedTrend.push({ v: cumulativeUnverified });
     });
 
-    return { citationTrend, similarityTrend };
+    return { citationTrend, similarityTrend, verifiedTrend, unverifiedTrend };
   }, [report]);
 }
 
@@ -242,9 +255,12 @@ function VerdictBanner({ stats }) {
     <div className="flex items-center justify-between gap-6 rounded-2xl p-6 mb-4"
       style={{ background: `linear-gradient(135deg, ${color}14, ${PALETTE.bgCard})`, border: `1px solid ${color}55` }}>
       <div className="flex items-start gap-4">
+        {/* Mock's badge measures roughly 90px -- ours was 44px, visibly
+            smaller/lighter-weight next to the same-scale verdict text.
+            Bumped closer to that proportion (64px circle, 28px icon). */}
         <div className="flex items-center justify-center rounded-full shrink-0"
-          style={{ width: 44, height: 44, background: `${color}22`, color }}>
-          <ToneIcon size={22} />
+          style={{ width: 64, height: 64, background: `${color}22`, color, border: `1px solid ${color}55` }}>
+          <ToneIcon size={28} />
         </div>
         <div>
           <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: PALETTE.textMuted }}>Overall Strategic Verdict</div>
@@ -255,8 +271,14 @@ function VerdictBanner({ stats }) {
       </div>
       <div className="flex items-center gap-5 shrink-0">
         <ConfidenceRing pct={stats.confidencePct} tone={stats.tone} />
-        <div className="flex items-center gap-2 text-sm max-w-[130px]" style={{ color: PALETTE.textSecondary }}>
-          <Layers size={16} style={{ color: PALETTE.blue }} />
+        {/* Mock puts this icon in its own circular badge too (matching
+            the verdict badge on the left), not a bare icon -- was missing
+            here. */}
+        <div className="flex items-center gap-3 text-sm max-w-[150px]" style={{ color: PALETTE.textSecondary }}>
+          <div className="flex items-center justify-center rounded-full shrink-0"
+            style={{ width: 44, height: 44, background: PALETTE.bgPanel, border: `1px solid ${PALETTE.border}`, color: PALETTE.blue }}>
+            <FileText size={18} />
+          </div>
           <span>Based on <strong className="text-white">{stats.totalCitations}</strong> grounded sources</span>
         </div>
       </div>
@@ -264,14 +286,28 @@ function VerdictBanner({ stats }) {
   );
 }
 
-function MetricCard({ label, value, sub, tone, sparkData, sparkColor }) {
+// icon: matches the mock's small colored icon badge next to each metric
+// card's label (previously missing entirely from this component -- the
+// mock's 5 business-metric cards each have one, e.g. a bar-chart icon for
+// Market Size, a shield for Competitive Pressure). Optional so a caller
+// without a natural icon can omit it without leaving an empty gap.
+function MetricCard({ label, value, sub, tone, sparkData, sparkColor, icon: Icon }) {
   const color = tone ? ToneColor(tone) : PALETTE.border;
+  const iconColor = tone ? ToneColor(tone) : PALETTE.blue;
   const showSpark = sparkData && sparkData.length > 1;
   return (
     <div className="rounded-2xl p-4" style={{ background: PALETTE.bgCard, border: `1px solid ${tone ? color + "55" : PALETTE.border}` }}>
       <div>
+        {Icon && (
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <div className="flex items-center justify-center rounded-full shrink-0" style={{ width: 26, height: 26, background: `${iconColor}22`, color: iconColor }}>
+              <Icon size={13} />
+            </div>
+            <span className="text-xs" style={{ color: PALETTE.textSecondary }}>{label}</span>
+          </div>
+        )}
         <div className="text-xl font-extrabold text-white">{value}</div>
-        <div className="text-xs mt-1" style={{ color: PALETTE.textSecondary }}>{label}</div>
+        {!Icon && <div className="text-xs mt-1" style={{ color: PALETTE.textSecondary }}>{label}</div>}
         {sub && <div className="text-[10px] mt-1" style={{ color: PALETTE.textMuted }}>{sub}</div>}
       </div>
       {/* Full-width strip along the card's bottom, not a small box
@@ -287,13 +323,13 @@ function MetricCard({ label, value, sub, tone, sparkData, sparkColor }) {
 }
 
 function MetricRow({ report, stats }) {
-  const { citationTrend, similarityTrend } = useMetricTrends(report);
+  const { citationTrend, similarityTrend, verifiedTrend, unverifiedTrend } = useMetricTrends(report);
   return (
     <div className="grid grid-cols-4 gap-3 mb-5">
-      <MetricCard label="Frameworks verified" value={`${stats.verifiedCount}/${stats.totalFrameworks}`} sub="Passed citation check" tone={stats.verifiedCount === stats.totalFrameworks ? "teal" : "amber"} />
-      <MetricCard label="Grounded sources" value={stats.totalCitations} sub="Unique citations used" sparkData={citationTrend} sparkColor={PALETTE.blue} />
-      <MetricCard label="Avg source match" value={`${stats.avgSimilarity}%`} sub="Semantic similarity" sparkData={similarityTrend} sparkColor={PALETTE.purpleLight} />
-      <MetricCard label="Unverified sections" value={stats.unverifiedCount} sub={stats.unverifiedCount > 0 ? "Needs more sources" : "All clear"} tone={stats.unverifiedCount > 0 ? "amber" : "teal"} />
+      <MetricCard icon={CheckCircle2} label="Frameworks verified" value={`${stats.verifiedCount}/${stats.totalFrameworks}`} sub="Passed citation check" tone={stats.verifiedCount === stats.totalFrameworks ? "teal" : "amber"} sparkData={verifiedTrend} sparkColor={ToneColor(stats.verifiedCount === stats.totalFrameworks ? "teal" : "amber")} />
+      <MetricCard icon={BookOpen} label="Grounded sources" value={stats.totalCitations} sub="Unique citations used" sparkData={citationTrend} sparkColor={PALETTE.blue} />
+      <MetricCard icon={Target} label="Avg source match" value={`${stats.avgSimilarity}%`} sub="Semantic similarity" sparkData={similarityTrend} sparkColor={PALETTE.purpleLight} />
+      <MetricCard icon={AlertTriangle} label="Unverified sections" value={stats.unverifiedCount} sub={stats.unverifiedCount > 0 ? "Needs more sources" : "All clear"} tone={stats.unverifiedCount > 0 ? "amber" : "teal"} sparkData={unverifiedTrend} sparkColor={ToneColor(stats.unverifiedCount > 0 ? "amber" : "teal")} />
     </div>
   );
 }
@@ -302,11 +338,11 @@ function MetricRow({ report, stats }) {
 // mirrors agents/synthesis.py's CARD_FRAMEWORK_MAP exactly (market_size
 // requires tam specifically, per the spec: "none -- this card requires TAM").
 const BUSINESS_METRIC_CARDS = [
-  { key: "market_size", label: "Market Size", requires: "TAM" },
-  { key: "competitive_pressure", label: "Competitive Pressure", requires: "PESTEL", fallback: "SWOT" },
-  { key: "customer_segment", label: "Best Customer Segment", requires: "BMC", fallback: "SWOT" },
-  { key: "business_model_fit", label: "Business Model Fit", requires: "BMC" },
-  { key: "risk_flags", label: "Risk Flags", requires: "SWOT", fallback: "PESTEL" },
+  { key: "market_size", label: "Market Size", requires: "TAM", icon: BarChart2 },
+  { key: "competitive_pressure", label: "Competitive Pressure", requires: "PESTEL", fallback: "SWOT", icon: Shield },
+  { key: "customer_segment", label: "Best Customer Segment", requires: "BMC", fallback: "SWOT", icon: Users },
+  { key: "business_model_fit", label: "Business Model Fit", requires: "BMC", icon: Puzzle },
+  { key: "risk_flags", label: "Risk Flags", requires: "SWOT", fallback: "PESTEL", icon: AlertTriangle },
 ];
 
 // Confirmed decision: the /10 meter is computed here from real similarity
@@ -349,6 +385,7 @@ function BusinessMetricCard({ meta, metric, report }) {
 
   return (
     <MetricCard
+      icon={meta.icon}
       label={meta.label}
       value={metric.label}
       sparkData={sparkData}
