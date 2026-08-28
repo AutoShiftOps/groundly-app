@@ -43,7 +43,11 @@ CHAT_MODEL = "gpt-4o-mini"
 # pestel/swot stay as fallbacks for reports that didn't request porter.
 CARD_FRAMEWORK_MAP = {
     "competitive_pressure": ("porter", "pestel", "swot"),
-    "customer_segment": ("bmc", "swot"),
+    # GitHub issue #12: same reasoning as competitive_pressure above --
+    # STP's segmentation/targeting categories are literally about
+    # customer segments, more direct than BMC's own customer_segments
+    # block. Leads now that it's real; bmc/swot stay as fallbacks.
+    "customer_segment": ("stp", "bmc", "swot"),
     "business_model_fit": ("bmc",),
     "risk_flags": ("swot", "pestel"),
 }

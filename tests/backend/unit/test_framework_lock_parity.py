@@ -105,17 +105,19 @@ def test_locked_frameworks_are_not_in_free_frameworks_keyspace():
         assert key not in locked_labels, f"Backend framework key {key!r} found among locked labels."
 
 
-def test_stp_present_as_a_locked_placeholder():
-    # docs/TEST_COVERAGE_SPEC.md follow-up: STP was missing from the nav
-    # entirely (not even shown locked) until this round -- lock in that it
-    # stays present and locked, same treatment as the other unsupported
-    # frameworks, rather than silently disappearing again in a future edit.
+def test_stp_present_and_now_unlocked():
+    # docs/TEST_COVERAGE_SPEC.md follow-up, updated for GitHub issue #12:
+    # STP was originally missing from the nav entirely, then added as a
+    # locked placeholder, and is now a real, working framework (matches
+    # FREE_FRAMEWORKS via test_free_frameworks_matches_sidebar_nav_icon_keys
+    # above). This just locks in that it's still present at all -- the
+    # unlock itself is covered by the FREE_FRAMEWORKS parity test.
     source = _report_view_source()
     entries = _extract_sidebar_nav_entries(source)
     stp_entries = [(key, label) for key, label in entries if label == "STP"]
     assert stp_entries, "STP is missing from SIDEBAR_FRAMEWORK_NAV entirely."
     key, _label = stp_entries[0]
-    assert key is None, f"STP should be a locked placeholder (key: null), found key={key!r}."
+    assert key == "stp", f"STP should be unlocked (key: 'stp') per GitHub issue #12, found key={key!r}."
 
 
 def test_sidebar_nav_order_matches_the_mock_exactly():

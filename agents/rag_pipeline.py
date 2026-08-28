@@ -288,11 +288,15 @@ PORTER_CATEGORIES = (
     "competitive_rivalry", "threat_of_new_entrants", "bargaining_power_of_suppliers",
     "bargaining_power_of_buyers", "threat_of_substitutes",
 )
+# GitHub issue #12. Segmentation/Targeting/Positioning -- same generic
+# qualitative-category pattern again.
+STP_CATEGORIES = ("segmentation", "targeting", "positioning")
 
 SWOT_SCHEMA = _category_breakdown_schema("swot_analysis", SWOT_CATEGORIES)
 PESTEL_SCHEMA = _category_breakdown_schema("pestel_analysis", PESTEL_CATEGORIES)
 BMC_SCHEMA = _category_breakdown_schema("bmc_canvas", BMC_CATEGORIES)
 PORTER_SCHEMA = _category_breakdown_schema("porter_forces", PORTER_CATEGORIES)
+STP_SCHEMA = _category_breakdown_schema("stp_analysis", STP_CATEGORIES)
 
 # framework_tag -> (extra suffix appended to GROUNDING_SYSTEM_PROMPT, the
 # extra field name in the parsed response, the json_schema name sent to
@@ -315,6 +319,10 @@ STRUCTURED_FRAMEWORKS = {
     "porter": (
         _category_instruction_suffix("Porter's Five Forces", "porter_forces", PORTER_CATEGORIES),
         "porter_forces", "grounded_porter_analysis", PORTER_SCHEMA,
+    ),
+    "stp": (
+        _category_instruction_suffix("Segmentation/Targeting/Positioning (STP)", "stp_analysis", STP_CATEGORIES),
+        "stp_analysis", "grounded_stp_analysis", STP_SCHEMA,
     ),
 }
 

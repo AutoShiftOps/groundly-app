@@ -22,7 +22,7 @@ router = APIRouter()
 # verified framework goes in this set rather than sitting fully working
 # but permanently unreachable behind a gate that doesn't exist. Revisit
 # once real tier/billing logic exists.
-FREE_FRAMEWORKS = {"pestel", "swot", "tam", "bmc", "porter"}
+FREE_FRAMEWORKS = {"pestel", "swot", "tam", "bmc", "porter", "stp"}
 
 # Extra structured-output fields (agents/rag_pipeline.py's
 # STRUCTURED_FRAMEWORKS, Phase 1 for market_sizing + Phase 3 for the
@@ -76,7 +76,7 @@ class AnalysisRequest(BaseModel):
     idea: str
     industry: str | None = None
     geography: str | None = None
-    frameworks: list[str] = ["pestel", "swot", "tam", "bmc", "porter"]
+    frameworks: list[str] = ["pestel", "swot", "tam", "bmc", "porter", "stp"]
     tier: str = "free"  # "free" or "paid"
 
 
@@ -143,9 +143,15 @@ async def analyze(req: AnalysisRequest):
 
 @router.get("/frameworks")
 def list_frameworks():
+    # Not called by the frontend anywhere yet (checked) -- but was stale
+    # and actively wrong (listed porter/stp as paid, plus several
+    # never-planned names) at the point Porter's Five Forces/STP moved
+    # into FREE_FRAMEWORKS. Fixed while touching this file for that same
+    # change rather than leaving a second silently-drifting list, same
+    # concern as STRUCTURED_RESULT_KEYS above. "paid" reflects the
+    # remaining GitHub-tracked M6 frameworks (issues #13-16) not yet
+    # built, using the same short-key convention as the ones that are.
     return {
         "free": sorted(FREE_FRAMEWORKS),
-        "paid": ["porter_five_forces", "vrio", "sam_som", "competitive_benchmarking",
-                 "stp_targeting", "stp_positioning", "bcg", "ansoff",
-                 "value_chain", "balanced_scorecard", "decision_recommendation"],
+        "paid": ["bcg", "ansoff", "value_chain", "balanced_scorecard"],
     }
