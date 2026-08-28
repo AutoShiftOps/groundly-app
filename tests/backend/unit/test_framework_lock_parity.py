@@ -120,6 +120,18 @@ def test_stp_present_and_now_unlocked():
     assert key == "stp", f"STP should be unlocked (key: 'stp') per GitHub issue #12, found key={key!r}."
 
 
+def test_value_chain_present_and_now_unlocked():
+    # GitHub issue #14: same treatment as test_stp_present_and_now_unlocked
+    # above -- Value Chain moves from a locked placeholder to a real,
+    # working framework.
+    source = _report_view_source()
+    entries = _extract_sidebar_nav_entries(source)
+    vc_entries = [(key, label) for key, label in entries if label == "Value Chain"]
+    assert vc_entries, "Value Chain is missing from SIDEBAR_FRAMEWORK_NAV entirely."
+    key, _label = vc_entries[0]
+    assert key == "value_chain", f"Value Chain should be unlocked (key: 'value_chain') per GitHub issue #14, found key={key!r}."
+
+
 def test_sidebar_nav_order_matches_the_mock_exactly():
     # docs/TEST_COVERAGE_SPEC.md follow-up: the mock interleaves real and
     # locked entries in a fixed order rather than grouping "unlocked

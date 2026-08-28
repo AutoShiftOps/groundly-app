@@ -379,12 +379,24 @@ PORTER_CATEGORIES = (
 # GitHub issue #12. Segmentation/Targeting/Positioning -- same generic
 # qualitative-category pattern again.
 STP_CATEGORIES = ("segmentation", "targeting", "positioning")
+# GitHub issue #14. Porter's Value Chain -- 9 categories (5 primary + 4
+# support activities), same generic qualitative-category pattern. The
+# frontend renders this as a horizontal chain, not a grid, but the
+# backend schema/prompt shape is identical to PESTEL/SWOT/BMC/Porter/STP.
+VALUE_CHAIN_PRIMARY_CATEGORIES = (
+    "inbound_logistics", "operations", "outbound_logistics", "marketing_and_sales", "service",
+)
+VALUE_CHAIN_SUPPORT_CATEGORIES = (
+    "firm_infrastructure", "human_resource_management", "technology_development", "procurement",
+)
+VALUE_CHAIN_CATEGORIES = VALUE_CHAIN_PRIMARY_CATEGORIES + VALUE_CHAIN_SUPPORT_CATEGORIES
 
 SWOT_SCHEMA = _category_breakdown_schema("swot_analysis", SWOT_CATEGORIES)
 PESTEL_SCHEMA = _category_breakdown_schema("pestel_analysis", PESTEL_CATEGORIES)
 BMC_SCHEMA = _category_breakdown_schema("bmc_canvas", BMC_CATEGORIES)
 PORTER_SCHEMA = _category_breakdown_schema("porter_forces", PORTER_CATEGORIES)
 STP_SCHEMA = _category_breakdown_schema("stp_analysis", STP_CATEGORIES)
+VALUE_CHAIN_SCHEMA = _category_breakdown_schema("value_chain", VALUE_CHAIN_CATEGORIES)
 
 # framework_tag -> (extra suffix appended to GROUNDING_SYSTEM_PROMPT, the
 # extra field name in the parsed response, the json_schema name sent to
@@ -413,6 +425,10 @@ STRUCTURED_FRAMEWORKS = {
         "stp_analysis", "grounded_stp_analysis", STP_SCHEMA,
     ),
     "bcg": (BCG_STRUCTURED_SUFFIX, "bcg_matrix", "grounded_bcg_analysis", BCG_MATRIX_SCHEMA),
+    "value_chain": (
+        _category_instruction_suffix("Porter's Value Chain", "value_chain", VALUE_CHAIN_CATEGORIES),
+        "value_chain", "grounded_value_chain_analysis", VALUE_CHAIN_SCHEMA,
+    ),
 }
 
 

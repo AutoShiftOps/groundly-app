@@ -48,7 +48,11 @@ CARD_FRAMEWORK_MAP = {
     # customer segments, more direct than BMC's own customer_segments
     # block. Leads now that it's real; bmc/swot stay as fallbacks.
     "customer_segment": ("stp", "bmc", "swot"),
-    "business_model_fit": ("bmc",),
+    # GitHub issue #14: Value Chain's operations/procurement/etc.
+    # categories are a reasonable fallback for business model fit when
+    # BMC itself didn't come back usable -- added as fallback only, BMC
+    # still leads since it's the more direct fit.
+    "business_model_fit": ("bmc", "value_chain"),
     "risk_flags": ("swot", "pestel"),
 }
 

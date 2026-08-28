@@ -23,6 +23,7 @@ import {
   DollarSign, Boxes, Handshake, Receipt,
   Globe, Grid3X3, Shield, Link2, Gauge, Image, Puzzle, BookOpen,
   Swords, DoorOpen, Shuffle, MapPin, Grid2X2,
+  Warehouse, Cog, Megaphone, Headset, Building2, UserCog, FlaskConical, ShoppingCart,
 } from "lucide-react";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 
@@ -103,7 +104,9 @@ const SIDEBAR_FRAMEWORK_NAV = [
   // also just fits a 2x2 quadrant matrix thematically.
   { key: "bcg", label: "BCG Matrix", icon: Grid2X2, color: PALETTE.purple },
   { key: null, label: "Ansoff Matrix", icon: TrendingUp, color: PALETTE.teal },
-  { key: null, label: "Value Chain", icon: Link2, color: PALETTE.red },
+  // GitHub issue #14: unlocked, same treatment as Porter's Five
+  // Forces/STP/BCG Matrix above.
+  { key: "value_chain", label: "Value Chain", icon: Link2, color: PALETTE.red },
   { key: "bmc", label: "Business Model Canvas", icon: Image, color: PALETTE.amber },
   { key: null, label: "Balanced Scorecard", icon: Gauge, color: PALETTE.amber },
 ];
@@ -834,6 +837,65 @@ function BcgQuadrantChart({ bcgMatrix }) {
   );
 }
 
+// GitHub issue #14. Porter's Value Chain -- 5 primary activities flow
+// left-to-right (the classic horizontal-chain diagram every value-chain
+// reference uses), with the 4 support activities as a row above them
+// since they cut across all 5 rather than sequencing with them. Not a
+// grid like BMC/STP -- the whole point of a value chain is the sequence.
+const VALUE_CHAIN_PRIMARY_BLOCKS = [
+  { key: "inbound_logistics", label: "Inbound Logistics", Icon: Warehouse },
+  { key: "operations", label: "Operations", Icon: Cog },
+  { key: "outbound_logistics", label: "Outbound Logistics", Icon: Truck },
+  { key: "marketing_and_sales", label: "Marketing & Sales", Icon: Megaphone },
+  { key: "service", label: "Service", Icon: Headset },
+];
+const VALUE_CHAIN_SUPPORT_BLOCKS = [
+  { key: "firm_infrastructure", label: "Firm Infrastructure", Icon: Building2 },
+  { key: "human_resource_management", label: "HR Management", Icon: UserCog },
+  { key: "technology_development", label: "Technology Development", Icon: FlaskConical },
+  { key: "procurement", label: "Procurement", Icon: ShoppingCart },
+];
+
+function ValueChainBlock({ block, items, color }) {
+  const isEmpty = !items || items.length === 0;
+  return (
+    <div className="rounded-xl p-3 flex-1 min-w-0" style={{ background: PALETTE.bgPanel, border: `1px solid ${color}33` }}>
+      <div className="flex items-center gap-1.5 text-xs font-bold mb-1.5" style={{ color }}>
+        <CategoryIcon Icon={block.Icon} color={color} isEmpty={isEmpty} />
+        <span className="truncate">{block.label}</span>
+      </div>
+      <StructuredItemList items={items} />
+    </div>
+  );
+}
+
+function ValueChain({ valueChain }) {
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <div className="text-[10px] font-bold uppercase tracking-wide mb-2" style={{ color: PALETTE.textMuted }}>
+          Support Activities
+        </div>
+        <div className="flex flex-wrap gap-3">
+          {VALUE_CHAIN_SUPPORT_BLOCKS.map((b) => (
+            <ValueChainBlock key={b.key} block={b} items={valueChain[b.key]} color={PALETTE.purpleLight} />
+          ))}
+        </div>
+      </div>
+      <div>
+        <div className="text-[10px] font-bold uppercase tracking-wide mb-2" style={{ color: PALETTE.textMuted }}>
+          Primary Activities
+        </div>
+        <div className="flex flex-wrap gap-3">
+          {VALUE_CHAIN_PRIMARY_BLOCKS.map((b) => (
+            <ValueChainBlock key={b.key} block={b} items={valueChain[b.key]} color={PALETTE.red} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Dispatches to a framework's structured visual treatment when available;
 // falls back to the plain prose paragraph otherwise (missing field, older
 // cached report, or a framework Phase 3 hasn't migrated yet) -- same
@@ -860,6 +922,9 @@ function FrameworkBody({ frameworkKey, result }) {
   }
   if (frameworkKey === "bcg" && result.bcg_matrix) {
     return <BcgQuadrantChart bcgMatrix={result.bcg_matrix} />;
+  }
+  if (frameworkKey === "value_chain" && result.value_chain) {
+    return <ValueChain valueChain={result.value_chain} />;
   }
   const isInsufficient = result.text?.trim() === "Insufficient grounded data available for this section.";
   return (
