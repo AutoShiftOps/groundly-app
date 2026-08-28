@@ -22,6 +22,7 @@ import {
   Landmark, Users, Cpu, Leaf, Scale, Zap, Target, Gift, Truck, Heart,
   DollarSign, Boxes, Handshake, Receipt,
   Globe, Grid3X3, Shield, Link2, Gauge, Image, Puzzle, BookOpen,
+  Swords, DoorOpen, Shuffle,
 } from "lucide-react";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 
@@ -80,7 +81,11 @@ const PALETTE = {
 // icon color once a row IS unlocked.
 const SIDEBAR_FRAMEWORK_NAV = [
   { key: "pestel", label: "PESTEL", icon: Globe, color: PALETTE.blue },
-  { key: null, label: "Porter's Five Forces", icon: Shield, color: PALETTE.red },
+  // GitHub issue #11: unlocked -- real, working framework now, not a
+  // placeholder. Only FREE_FRAMEWORKS (backend/routers/analysis.py) and
+  // App.tsx's requested-frameworks array (the two places that actually
+  // gate/request it) are the real switches; this list just reflects that.
+  { key: "porter", label: "Porter's Five Forces", icon: Shield, color: PALETTE.red },
   { key: "swot", label: "SWOT", icon: Grid3X3, color: PALETTE.purple },
   { key: "tam", label: "TAM SAM SOM", icon: Target, color: PALETTE.teal },
   { key: null, label: "STP", icon: Users, color: PALETTE.purpleLight },
@@ -344,7 +349,7 @@ function MetricRow({ report, stats }) {
 // requires tam specifically, per the spec: "none -- this card requires TAM").
 const BUSINESS_METRIC_CARDS = [
   { key: "market_size", label: "Market Size", requires: "TAM", icon: BarChart2 },
-  { key: "competitive_pressure", label: "Competitive Pressure", requires: "PESTEL", fallback: "SWOT", icon: Shield },
+  { key: "competitive_pressure", label: "Competitive Pressure", requires: "Porter's Five Forces", fallback: "PESTEL or SWOT", icon: Shield },
   { key: "customer_segment", label: "Best Customer Segment", requires: "BMC", fallback: "SWOT", icon: Users },
   { key: "business_model_fit", label: "Business Model Fit", requires: "BMC", icon: Puzzle },
   { key: "risk_flags", label: "Risk Flags", requires: "SWOT", fallback: "PESTEL", icon: AlertTriangle },
@@ -704,6 +709,36 @@ function BmcCanvas({ bmcCanvas }) {
   );
 }
 
+// GitHub issue #11. Vertical stack like PestelBlocks (not a grid --
+// 5 categories doesn't divide evenly the way SWOT's 4 or BMC's paired
+// layout do).
+const PORTER_FORCES_BLOCKS = [
+  { key: "competitive_rivalry", label: "Competitive Rivalry", color: PALETTE.red, Icon: Swords },
+  { key: "threat_of_new_entrants", label: "Threat of New Entrants", color: PALETTE.amber, Icon: DoorOpen },
+  { key: "bargaining_power_of_suppliers", label: "Bargaining Power of Suppliers", color: PALETTE.purple, Icon: Truck },
+  { key: "bargaining_power_of_buyers", label: "Bargaining Power of Buyers", color: PALETTE.blue, Icon: Users },
+  { key: "threat_of_substitutes", label: "Threat of Substitutes", color: PALETTE.teal, Icon: Shuffle },
+];
+
+function PorterForcesBlocks({ porterForces }) {
+  return (
+    <div className="flex flex-col gap-4">
+      {PORTER_FORCES_BLOCKS.map((b) => {
+        const items = porterForces[b.key];
+        return (
+          <div key={b.key}>
+            <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide mb-1.5" style={{ color: b.color }}>
+              <CategoryIcon Icon={b.Icon} color={b.color} isEmpty={!items || items.length === 0} />
+              {b.label}
+            </div>
+            <StructuredItemList items={items} />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // Dispatches to a framework's structured visual treatment when available;
 // falls back to the plain prose paragraph otherwise (missing field, older
 // cached report, or a framework Phase 3 hasn't migrated yet) -- same
@@ -717,6 +752,9 @@ function FrameworkBody({ frameworkKey, result }) {
   }
   if (frameworkKey === "bmc" && result.bmc_canvas) {
     return <BmcCanvas bmcCanvas={result.bmc_canvas} />;
+  }
+  if (frameworkKey === "porter" && result.porter_forces) {
+    return <PorterForcesBlocks porterForces={result.porter_forces} />;
   }
   const isInsufficient = result.text?.trim() === "Insufficient grounded data available for this section.";
   return (

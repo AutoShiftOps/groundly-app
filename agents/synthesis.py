@@ -32,13 +32,19 @@ client = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
 
 CHAT_MODEL = "gpt-4o-mini"
 
-# card -> (primary framework, fallback framework or None), per the spec's
-# suggested mapping table. market_size is deliberately absent here -- it's
+# card -> ordered tuple of candidate frameworks, tried in priority order
+# until one is usable. market_size is deliberately absent here -- it's
 # handled separately below, not synthesized by the LLM.
+#
+# GitHub issue #11: competitive_pressure's original (pestel, swot) pair
+# predates Porter's Five Forces existing at all -- now that it's a real
+# framework, it's the more direct source for competitive pressure
+# specifically (that's the entire framework's subject), so it leads;
+# pestel/swot stay as fallbacks for reports that didn't request porter.
 CARD_FRAMEWORK_MAP = {
-    "competitive_pressure": ("pestel", "swot"),
+    "competitive_pressure": ("porter", "pestel", "swot"),
     "customer_segment": ("bmc", "swot"),
-    "business_model_fit": ("bmc", None),
+    "business_model_fit": ("bmc",),
     "risk_flags": ("swot", "pestel"),
 }
 
@@ -90,13 +96,11 @@ def _empty_result() -> dict:
 
 async def synthesize_business_metrics(idea: str, results: dict, allowed: list[str]) -> dict:
     card_framework = {}
-    for card, (primary, fallback) in CARD_FRAMEWORK_MAP.items():
-        if _usable(primary, results, allowed):
-            card_framework[card] = primary
-        elif _usable(fallback, results, allowed):
-            card_framework[card] = fallback
-        else:
-            card_framework[card] = None  # neither primary nor fallback usable -> missing-data, no LLM call for this card
+    for card, candidates in CARD_FRAMEWORK_MAP.items():
+        card_framework[card] = next(
+            (fw for fw in candidates if _usable(fw, results, allowed)),
+            None,  # no candidate usable -> missing-data, no LLM call for this card
+        )
 
     business_metrics = _empty_result()
     business_metrics["market_size"] = _derive_market_size(results, allowed)

@@ -10,12 +10,36 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from agents.rag_pipeline import run_pipeline  # noqa: E402
+from agents.rag_pipeline import run_pipeline, STRUCTURED_FRAMEWORKS  # noqa: E402
 from agents.synthesis import synthesize_business_metrics  # noqa: E402
 
 router = APIRouter()
 
-FREE_FRAMEWORKS = {"pestel", "swot", "tam", "bmc"}
+# GitHub issue #11: Porter's Five Forces added here as a real, working
+# framework. There's no actual paid-tier billing/gating infrastructure in
+# this codebase yet (req.tier is just an unchecked string) -- "free" here
+# really means "the set of frameworks that actually work", so a built and
+# verified framework goes in this set rather than sitting fully working
+# but permanently unreachable behind a gate that doesn't exist. Revisit
+# once real tier/billing logic exists.
+FREE_FRAMEWORKS = {"pestel", "swot", "tam", "bmc", "porter"}
+
+# Extra structured-output fields (agents/rag_pipeline.py's
+# STRUCTURED_FRAMEWORKS, Phase 1 for market_sizing + Phase 3 for the
+# rest) that get forwarded into each framework's result -- each only
+# present on a pipeline_output for its own framework_tag.
+#
+# Derived from STRUCTURED_FRAMEWORKS itself (each entry's field_name,
+# index 1) rather than hand-duplicated as a separate hardcoded tuple --
+# that duplication is exactly what silently dropped porter_forces from
+# every response after Porter's Five Forces was added to
+# STRUCTURED_FRAMEWORKS but this tuple wasn't updated to match (GitHub
+# issue #11's real-call verification caught it: porter_forces came back
+# null in the API response even though the model generated it correctly
+# -- see tests/backend/unit/test_structured_result_keys.py). Deriving it
+# means the next framework added to STRUCTURED_FRAMEWORKS can't
+# reintroduce the same class of bug by forgetting a second list.
+STRUCTURED_RESULT_KEYS = tuple(field_name for _suffix, field_name, _schema_name, _schema in STRUCTURED_FRAMEWORKS.values())
 
 # tam's query label is "TAM/SAM/SOM", not bare "TAM" -- confirmed live:
 # the bare "TAM analysis" wording (sent as both the retrieval embedding
@@ -52,7 +76,7 @@ class AnalysisRequest(BaseModel):
     idea: str
     industry: str | None = None
     geography: str | None = None
-    frameworks: list[str] = ["pestel", "swot", "tam", "bmc"]
+    frameworks: list[str] = ["pestel", "swot", "tam", "bmc", "porter"]
     tier: str = "free"  # "free" or "paid"
 
 
@@ -84,13 +108,6 @@ async def analyze(req: AnalysisRequest):
     pipeline_outputs = await asyncio.gather(
         *(run_pipeline(build_query(framework), framework_tag=framework) for framework in allowed)
     )
-
-    # Extra structured-output fields (agents/rag_pipeline.py's
-    # STRUCTURED_FRAMEWORKS, Phase 1 for market_sizing + Phase 3 for the
-    # other three), each only present on pipeline_output for its own
-    # framework_tag -- forwarded here the same way, generalized instead of
-    # one `if "market_sizing" in ...` per framework.
-    STRUCTURED_RESULT_KEYS = ("market_sizing", "pestel_analysis", "swot_analysis", "bmc_canvas")
 
     for framework, pipeline_output in zip(allowed, pipeline_outputs):
         results[framework] = {

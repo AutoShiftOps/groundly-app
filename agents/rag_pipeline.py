@@ -280,10 +280,19 @@ BMC_CATEGORIES = (
     "customer_segments", "value_propositions", "channels", "customer_relationships",
     "revenue_streams", "key_resources", "key_activities", "key_partners", "cost_structure",
 )
+# GitHub issue #11. Porter's Five Forces -- same qualitative
+# {text, citation_index}-per-category shape as SWOT/PESTEL/BMC, not a
+# numeric framework like TAM, so it reuses the exact same generic
+# builders rather than needing its own schema design.
+PORTER_CATEGORIES = (
+    "competitive_rivalry", "threat_of_new_entrants", "bargaining_power_of_suppliers",
+    "bargaining_power_of_buyers", "threat_of_substitutes",
+)
 
 SWOT_SCHEMA = _category_breakdown_schema("swot_analysis", SWOT_CATEGORIES)
 PESTEL_SCHEMA = _category_breakdown_schema("pestel_analysis", PESTEL_CATEGORIES)
 BMC_SCHEMA = _category_breakdown_schema("bmc_canvas", BMC_CATEGORIES)
+PORTER_SCHEMA = _category_breakdown_schema("porter_forces", PORTER_CATEGORIES)
 
 # framework_tag -> (extra suffix appended to GROUNDING_SYSTEM_PROMPT, the
 # extra field name in the parsed response, the json_schema name sent to
@@ -302,6 +311,10 @@ STRUCTURED_FRAMEWORKS = {
     "bmc": (
         _category_instruction_suffix("Business Model Canvas", "bmc_canvas", BMC_CATEGORIES),
         "bmc_canvas", "grounded_bmc_analysis", BMC_SCHEMA,
+    ),
+    "porter": (
+        _category_instruction_suffix("Porter's Five Forces", "porter_forces", PORTER_CATEGORIES),
+        "porter_forces", "grounded_porter_analysis", PORTER_SCHEMA,
     ),
 }
 
