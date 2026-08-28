@@ -229,6 +229,94 @@ MARKET_SIZING_SCHEMA = {
     "additionalProperties": False,
 }
 
+# GitHub issue #13. BCG Matrix classifies into one of 4 quadrants based on
+# real market-growth-rate and relative-market-share figures -- unlike
+# Porter's Five Forces/STP (qualitative categories), this needs the same
+# numeric-grounding discipline as market_sizing: don't let the model
+# guess a quadrant without real supporting figures. Closer to
+# MARKET_SIZING_SCHEMA's shape than the generic category builder.
+BCG_QUADRANTS = ("star", "cash_cow", "question_mark", "dog")
+
+BCG_STRUCTURED_SUFFIX = """
+Additionally, since this is a BCG Growth-Share Matrix analysis, also
+populate the bcg_matrix object:
+- Only assign a quadrant (star / cash_cow / question_mark / dog) if the
+  CONTEXT explicitly supports BOTH a real market growth rate AND a real
+  description of this business's competitive/market-share position. If
+  either is missing, set bcg_matrix to null entirely -- do not guess a
+  quadrant from partial or absent numeric grounding. A market growth rate
+  alone, with no sense of competitive position, is not enough to place a
+  quadrant, and vice versa.
+- "market_growth_rate_pct" is the market's growth rate as a plain
+  percentage number (e.g. 12.5 for 12.5%) ONLY if the CONTEXT explicitly
+  states one, otherwise null.
+- "market_share_position" is a short (5-15 word) grounded description of
+  this business's relative competitive/market-share position, drawn from
+  what the CONTEXT actually says (e.g. "Market leader with an estimated
+  35% share" or "Fragmented market, no dominant incumbent") -- not a
+  fabricated precise ratio. Null if the CONTEXT doesn't describe this
+  idea's relative position at all.
+- "citation_index" is the number of the CONTEXT chunk that most directly
+  supports the quadrant assignment, or null if you can't attribute it to
+  one specific chunk.
+- "rationale" is a short (1-2 sentence) explanation of why this quadrant
+  fits, referencing the real growth rate and market position above --
+  never invent a justification not grounded in those two fields.
+"""
+
+BCG_MATRIX_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "narrative": {
+            "type": "string",
+            "description": "The full grounded analysis, same rules as ungrounded prose output: cite every factual sentence with [N] markers.",
+        },
+        "bcg_matrix": {
+            "anyOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "quadrant": {"type": "string", "enum": list(BCG_QUADRANTS)},
+                        "market_growth_rate_pct": {"type": ["number", "null"]},
+                        "market_share_position": {"type": ["string", "null"]},
+                        "citation_index": {"type": ["integer", "null"]},
+                        "rationale": {"type": "string"},
+                    },
+                    "required": ["quadrant", "market_growth_rate_pct", "market_share_position", "citation_index", "rationale"],
+                    "additionalProperties": False,
+                },
+                {"type": "null"},
+            ]
+        },
+    },
+    "required": ["narrative", "bcg_matrix"],
+    "additionalProperties": False,
+}
+
+
+def _null_out_unsupported_bcg_quadrant(bcg_matrix: dict | None) -> dict | None:
+    """
+    Deterministic backstop, same philosophy as
+    _null_out_unsupported_tam_tiers(): don't trust the model's own
+    judgment alone on "is this quadrant actually grounded" -- verify it.
+    A quadrant assignment is only kept if BOTH market_growth_rate_pct is
+    a real number and market_share_position is a real, non-empty string;
+    otherwise the whole result is nulled, per this framework's explicit
+    "don't guess a quadrant without real supporting numbers" requirement.
+    """
+    if bcg_matrix is None:
+        return None
+    has_growth_rate = isinstance(bcg_matrix.get("market_growth_rate_pct"), (int, float))
+    has_position = bool((bcg_matrix.get("market_share_position") or "").strip())
+    if has_growth_rate and has_position:
+        return bcg_matrix
+    logger.info(
+        "generate_with_citations: bcg_matrix quadrant=%r lacked real growth-rate/market-position "
+        "grounding (growth_rate=%r, position=%r) -- nulling out as unsupported.",
+        bcg_matrix.get("quadrant"), bcg_matrix.get("market_growth_rate_pct"), bcg_matrix.get("market_share_position"),
+    )
+    return None
+
 # Phase 3: SWOT/PESTEL/BMC all reduce to the same shape -- a narrative plus
 # N named categories, each an array of { text, citation_index } points.
 # Built generically instead of writing the same schema 3x with different
@@ -324,6 +412,7 @@ STRUCTURED_FRAMEWORKS = {
         _category_instruction_suffix("Segmentation/Targeting/Positioning (STP)", "stp_analysis", STP_CATEGORIES),
         "stp_analysis", "grounded_stp_analysis", STP_SCHEMA,
     ),
+    "bcg": (BCG_STRUCTURED_SUFFIX, "bcg_matrix", "grounded_bcg_analysis", BCG_MATRIX_SCHEMA),
 }
 
 
@@ -400,6 +489,8 @@ async def generate_with_citations(query: str, context_chunks: list, framework_ta
 
         if framework_tag == "tam" and extra_value:
             extra_value = _null_out_unsupported_tam_tiers(extra_value, context_chunks)
+        elif framework_tag == "bcg" and extra_value:
+            extra_value = _null_out_unsupported_bcg_quadrant(extra_value)
 
         return {"text": text, "citations": citations, field_name: extra_value}
 

@@ -22,7 +22,7 @@ import {
   Landmark, Users, Cpu, Leaf, Scale, Zap, Target, Gift, Truck, Heart,
   DollarSign, Boxes, Handshake, Receipt,
   Globe, Grid3X3, Shield, Link2, Gauge, Image, Puzzle, BookOpen,
-  Swords, DoorOpen, Shuffle, MapPin,
+  Swords, DoorOpen, Shuffle, MapPin, Grid2X2,
 } from "lucide-react";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 
@@ -66,10 +66,15 @@ const PALETTE = {
 // addition to the paid-tier roadmap (GitHub issue #16), placed next to
 // BCG Matrix since both are 2x2 strategic-positioning tools.
 //
-// Icons: SWOT and BCG Matrix intentionally share the same grid icon --
-// that's the mock's own choice, not a bug (confirmed against
-// assets/images/report-ux-mock.png). Business Model Canvas gets its own
-// distinct framed-image icon instead of also reusing that grid, since
+// Icons: SWOT and BCG Matrix shared the same grid icon while BCG Matrix
+// was a locked placeholder -- that was the mock's own choice, not a bug
+// (confirmed against assets/images/report-ux-mock.png), and harmless
+// when one of the two isn't clickable. GitHub issue #13 unlocked BCG
+// Matrix as a real tab, so it now gets its own distinct grid variant
+// (Grid2X2) -- two real, active tabs sharing one icon is a genuine
+// usability problem the mock's original locked-placeholder context never
+// had to account for. Business Model Canvas already got its own distinct
+// framed-image icon for the same reason, since
 // three-way icon reuse was the actual visual-parity gap being closed.
 //
 // `color`: the icon's color WHEN this row renders unlocked -- every entry
@@ -90,7 +95,13 @@ const SIDEBAR_FRAMEWORK_NAV = [
   { key: "tam", label: "TAM SAM SOM", icon: Target, color: PALETTE.teal },
   // GitHub issue #12: unlocked, same treatment as Porter's Five Forces.
   { key: "stp", label: "STP", icon: Users, color: PALETTE.purpleLight },
-  { key: null, label: "BCG Matrix", icon: Grid3X3, color: PALETTE.purple },
+  // GitHub issue #13: unlocked. Icon swapped from the shared Grid3X3
+  // (fine for a locked placeholder sitting next to SWOT, per the mock)
+  // to its own Grid2X2 -- a real, clickable tab reusing another real
+  // tab's exact icon would actually confuse users trying to tell two
+  // active frameworks apart, unlike two disabled placeholders. Grid2X2
+  // also just fits a 2x2 quadrant matrix thematically.
+  { key: "bcg", label: "BCG Matrix", icon: Grid2X2, color: PALETTE.purple },
   { key: null, label: "Ansoff Matrix", icon: TrendingUp, color: PALETTE.teal },
   { key: null, label: "Value Chain", icon: Link2, color: PALETTE.red },
   { key: "bmc", label: "Business Model Canvas", icon: Image, color: PALETTE.amber },
@@ -768,10 +779,69 @@ function StpGrid({ stpAnalysis }) {
   );
 }
 
+// GitHub issue #13. 2x2 grid at fixed BCG-convention positions (growth
+// rate on the vertical axis, market-share position on the horizontal --
+// standard quadrant placement), not derived from the data itself since
+// there are always exactly 4 named quadrants. Only the ASSIGNED quadrant
+// (result.bcg_matrix.quadrant) gets the bold filled treatment; the other
+// 3 get the same dashed-ghost muted styling TamSizingCard uses for an
+// absent tier -- consistent "this wasn't the real answer" visual
+// language across the app, not a new one invented for this framework.
+const BCG_QUADRANT_LAYOUT = [
+  { key: "question_mark", label: "Question Mark", color: PALETTE.amber },
+  { key: "star", label: "Star", color: PALETTE.teal },
+  { key: "dog", label: "Dog", color: PALETTE.red },
+  { key: "cash_cow", label: "Cash Cow", color: PALETTE.blue },
+];
+
+function BcgQuadrantChart({ bcgMatrix }) {
+  return (
+    <div>
+      <div className="grid grid-cols-2 gap-2" style={{ maxWidth: 360 }}>
+        {BCG_QUADRANT_LAYOUT.map((q) => {
+          const isAssigned = q.key === bcgMatrix.quadrant;
+          return (
+            <div key={q.key} className="rounded-xl p-3 flex items-center justify-center text-center"
+              style={isAssigned
+                ? { background: `${q.color}22`, border: `1.5px solid ${q.color}`, minHeight: 72 }
+                : { border: `1.5px dashed ${PALETTE.textMuted}`, opacity: 0.5, minHeight: 72 }}>
+              <span className="text-xs font-bold uppercase tracking-wide" style={{ color: isAssigned ? q.color : PALETTE.textMuted }}>
+                {q.label}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-3 text-[10px] flex items-center justify-between" style={{ color: PALETTE.textMuted, maxWidth: 360 }}>
+        <span>← Low market share</span>
+        <span>High market share →</span>
+      </div>
+      <div className="mt-4 flex flex-col gap-1.5 text-xs">
+        <div>
+          <span className="font-semibold" style={{ color: PALETTE.textSecondary }}>Market growth: </span>
+          <span className="text-white">{bcgMatrix.market_growth_rate_pct}%</span>
+        </div>
+        <div>
+          <span className="font-semibold" style={{ color: PALETTE.textSecondary }}>Market position: </span>
+          <span className="text-white">{bcgMatrix.market_share_position}</span>
+        </div>
+        <p className="mt-1 leading-relaxed" style={{ color: "#e4e9f5" }}>
+          {bcgMatrix.rationale}
+          {bcgMatrix.citation_index != null && <span className="ml-1" style={{ color: PALETTE.blue }}>[{bcgMatrix.citation_index}]</span>}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // Dispatches to a framework's structured visual treatment when available;
 // falls back to the plain prose paragraph otherwise (missing field, older
 // cached report, or a framework Phase 3 hasn't migrated yet) -- same
-// graceful-degradation pattern as MarketSizingPanel.
+// graceful-degradation pattern as MarketSizingPanel. bcg_matrix being
+// null (the model couldn't ground both a growth rate and a market
+// position, see _null_out_unsupported_bcg_quadrant) deliberately falls
+// through to this same plain-paragraph path -- the narrative itself
+// explains what's missing, same honesty as every other ungrounded case.
 function FrameworkBody({ frameworkKey, result }) {
   if (frameworkKey === "pestel" && result.pestel_analysis) {
     return <PestelBlocks pestelAnalysis={result.pestel_analysis} />;
@@ -787,6 +857,9 @@ function FrameworkBody({ frameworkKey, result }) {
   }
   if (frameworkKey === "porter" && result.porter_forces) {
     return <PorterForcesBlocks porterForces={result.porter_forces} />;
+  }
+  if (frameworkKey === "bcg" && result.bcg_matrix) {
+    return <BcgQuadrantChart bcgMatrix={result.bcg_matrix} />;
   }
   const isInsufficient = result.text?.trim() === "Insufficient grounded data available for this section.";
   return (

@@ -22,7 +22,7 @@ router = APIRouter()
 # verified framework goes in this set rather than sitting fully working
 # but permanently unreachable behind a gate that doesn't exist. Revisit
 # once real tier/billing logic exists.
-FREE_FRAMEWORKS = {"pestel", "swot", "tam", "bmc", "porter", "stp"}
+FREE_FRAMEWORKS = {"pestel", "swot", "tam", "bmc", "porter", "stp", "bcg"}
 
 # Extra structured-output fields (agents/rag_pipeline.py's
 # STRUCTURED_FRAMEWORKS, Phase 1 for market_sizing + Phase 3 for the
@@ -76,7 +76,7 @@ class AnalysisRequest(BaseModel):
     idea: str
     industry: str | None = None
     geography: str | None = None
-    frameworks: list[str] = ["pestel", "swot", "tam", "bmc", "porter", "stp"]
+    frameworks: list[str] = ["pestel", "swot", "tam", "bmc", "porter", "stp", "bcg"]
     tier: str = "free"  # "free" or "paid"
 
 
@@ -153,5 +153,5 @@ def list_frameworks():
     # built, using the same short-key convention as the ones that are.
     return {
         "free": sorted(FREE_FRAMEWORKS),
-        "paid": ["bcg", "ansoff", "value_chain", "balanced_scorecard"],
+        "paid": ["ansoff", "value_chain", "balanced_scorecard"],
     }
