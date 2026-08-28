@@ -329,6 +329,90 @@ _CATEGORY_ITEM_SCHEMA = {
 }
 
 
+# GitHub issue #15 (Balanced Scorecard). Same {text, citation_index}
+# point shape as _CATEGORY_ITEM_SCHEMA, but each point can ALSO carry an
+# optional grounded metric (a named number with an optional target) --
+# the issue flagged this as "closer to market_sizing's numeric
+# discipline than pure qualitative text" but, unlike BCG Matrix's single
+# forced-choice quadrant, a scorecard perspective is naturally an array
+# of independent points -- some purely qualitative, some with a real
+# number attached -- so there's no single all-or-nothing field that
+# risks the model always guessing something. Decision: metric_name/
+# metric_value/target_value default to null (pure qualitative point,
+# same as every other framework's items) and are populated ONLY when
+# the CONTEXT gives a specific number for that specific point -- never
+# invented to fill the slot. _null_out_ungrounded_scorecard_metrics()
+# below is the deterministic backstop enforcing metric_name and
+# metric_value can only both be non-null together (never one without
+# the other -- a metric name with no value, or a bare number with no
+# name, is not a usable grounded metric either way).
+_METRIC_CATEGORY_ITEM_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "text": {"type": "string"},
+        "citation_index": {"type": ["integer", "null"]},
+        "metric_name": {
+            "type": ["string", "null"],
+            "description": "Short label for a specific real metric this point cites, e.g. 'Customer retention rate' -- null if this point isn't tied to one specific number.",
+        },
+        "metric_value": {
+            "type": ["string", "null"],
+            "description": "The metric's real, CONTEXT-supported current value as stated, e.g. '87%' or '$4.2M ARR' -- null if metric_name is null, or if the CONTEXT doesn't state an actual value.",
+        },
+        "target_value": {
+            "type": ["string", "null"],
+            "description": "The metric's real, CONTEXT-supported target/goal value if one is explicitly stated -- null if no target is given, even when metric_value is present.",
+        },
+    },
+    "required": ["text", "citation_index", "metric_name", "metric_value", "target_value"],
+    "additionalProperties": False,
+}
+
+
+def _metric_category_breakdown_schema(field_name: str, categories: tuple[str, ...]) -> dict:
+    return {
+        "type": "object",
+        "properties": {
+            "narrative": {
+                "type": "string",
+                "description": "The full grounded analysis, same rules as ungrounded prose output: cite every factual sentence with [N] markers.",
+            },
+            field_name: {
+                "type": "object",
+                "properties": {c: {"type": "array", "items": _METRIC_CATEGORY_ITEM_SCHEMA} for c in categories},
+                "required": list(categories),
+                "additionalProperties": False,
+            },
+        },
+        "required": ["narrative", field_name],
+        "additionalProperties": False,
+    }
+
+
+def _null_out_ungrounded_scorecard_metrics(balanced_scorecard: dict | None) -> dict | None:
+    # Deterministic backstop, same philosophy as
+    # _null_out_unsupported_tam_tiers/_null_out_unsupported_bcg_quadrant:
+    # don't trust the LLM's own null-discipline alone. A "grounded
+    # metric" requires BOTH metric_name AND metric_value to be real,
+    # non-empty strings -- a name with no value, or a value with no
+    # name, isn't a usable metric either way and gets nulled back out
+    # (target_value alone never counts -- it's only meaningful attached
+    # to a real metric_value).
+    if balanced_scorecard is None:
+        return None
+    for _perspective, items in balanced_scorecard.items():
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            has_name = bool((item.get("metric_name") or "").strip())
+            has_value = bool((item.get("metric_value") or "").strip())
+            if not (has_name and has_value):
+                item["metric_name"] = None
+                item["metric_value"] = None
+                item["target_value"] = None
+    return balanced_scorecard
+
+
 def _category_breakdown_schema(field_name: str, categories: tuple[str, ...]) -> dict:
     return {
         "type": "object",
@@ -390,6 +474,8 @@ VALUE_CHAIN_SUPPORT_CATEGORIES = (
     "firm_infrastructure", "human_resource_management", "technology_development", "procurement",
 )
 VALUE_CHAIN_CATEGORIES = VALUE_CHAIN_PRIMARY_CATEGORIES + VALUE_CHAIN_SUPPORT_CATEGORIES
+# GitHub issue #15. Balanced Scorecard's 4 standard perspectives.
+BALANCED_SCORECARD_CATEGORIES = ("financial", "customer", "internal_process", "learning_and_growth")
 
 SWOT_SCHEMA = _category_breakdown_schema("swot_analysis", SWOT_CATEGORIES)
 PESTEL_SCHEMA = _category_breakdown_schema("pestel_analysis", PESTEL_CATEGORIES)
@@ -397,6 +483,27 @@ BMC_SCHEMA = _category_breakdown_schema("bmc_canvas", BMC_CATEGORIES)
 PORTER_SCHEMA = _category_breakdown_schema("porter_forces", PORTER_CATEGORIES)
 STP_SCHEMA = _category_breakdown_schema("stp_analysis", STP_CATEGORIES)
 VALUE_CHAIN_SCHEMA = _category_breakdown_schema("value_chain", VALUE_CHAIN_CATEGORIES)
+BALANCED_SCORECARD_SCHEMA = _metric_category_breakdown_schema("balanced_scorecard", BALANCED_SCORECARD_CATEGORIES)
+
+BALANCED_SCORECARD_STRUCTURED_SUFFIX = f"""
+Additionally, since this is a Balanced Scorecard analysis, also populate
+the balanced_scorecard object with one array per perspective ({", ".join(BALANCED_SCORECARD_CATEGORIES)}).
+Each item is one specific point: {{ "text": "...", "citation_index": N or
+null, "metric_name": "..." or null, "metric_value": "..." or null,
+"target_value": "..." or null }}. Only include a point if the CONTEXT
+actually supports it -- an empty array for a perspective is fine and
+expected if the CONTEXT doesn't cover it. Most points are purely
+qualitative (leave metric_name/metric_value/target_value all null) --
+only set metric_name AND metric_value together, and only when the
+CONTEXT states a real, specific number for that exact point (e.g. an
+actual revenue figure, retention rate, cycle time, or training hours
+number). Never invent a plausible-sounding metric or target to fill
+these fields -- a point with no real number attached should have all
+three metric fields null, not a fabricated one. citation_index is the
+number of the CONTEXT chunk (matching the [N] citation markers you use
+in narrative) that supports that specific point, or null if you can't
+attribute it to one specific chunk.
+"""
 
 # framework_tag -> (extra suffix appended to GROUNDING_SYSTEM_PROMPT, the
 # extra field name in the parsed response, the json_schema name sent to
@@ -428,6 +535,10 @@ STRUCTURED_FRAMEWORKS = {
     "value_chain": (
         _category_instruction_suffix("Porter's Value Chain", "value_chain", VALUE_CHAIN_CATEGORIES),
         "value_chain", "grounded_value_chain_analysis", VALUE_CHAIN_SCHEMA,
+    ),
+    "balanced_scorecard": (
+        BALANCED_SCORECARD_STRUCTURED_SUFFIX,
+        "balanced_scorecard", "grounded_balanced_scorecard_analysis", BALANCED_SCORECARD_SCHEMA,
     ),
 }
 
@@ -507,6 +618,8 @@ async def generate_with_citations(query: str, context_chunks: list, framework_ta
             extra_value = _null_out_unsupported_tam_tiers(extra_value, context_chunks)
         elif framework_tag == "bcg" and extra_value:
             extra_value = _null_out_unsupported_bcg_quadrant(extra_value)
+        elif framework_tag == "balanced_scorecard" and extra_value:
+            extra_value = _null_out_ungrounded_scorecard_metrics(extra_value)
 
         return {"text": text, "citations": citations, field_name: extra_value}
 

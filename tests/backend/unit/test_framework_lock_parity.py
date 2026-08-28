@@ -132,6 +132,16 @@ def test_value_chain_present_and_now_unlocked():
     assert key == "value_chain", f"Value Chain should be unlocked (key: 'value_chain') per GitHub issue #14, found key={key!r}."
 
 
+def test_balanced_scorecard_present_and_now_unlocked():
+    # GitHub issue #15: same treatment as test_value_chain_present_and_now_unlocked above.
+    source = _report_view_source()
+    entries = _extract_sidebar_nav_entries(source)
+    bsc_entries = [(key, label) for key, label in entries if label == "Balanced Scorecard"]
+    assert bsc_entries, "Balanced Scorecard is missing from SIDEBAR_FRAMEWORK_NAV entirely."
+    key, _label = bsc_entries[0]
+    assert key == "balanced_scorecard", f"Balanced Scorecard should be unlocked (key: 'balanced_scorecard') per GitHub issue #15, found key={key!r}."
+
+
 def test_sidebar_nav_order_matches_the_mock_exactly():
     # docs/TEST_COVERAGE_SPEC.md follow-up: the mock interleaves real and
     # locked entries in a fixed order rather than grouping "unlocked

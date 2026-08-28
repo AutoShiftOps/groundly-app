@@ -50,7 +50,7 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           idea,
-          frameworks: ["pestel", "swot", "tam", "bmc", "porter", "stp", "bcg", "value_chain"],
+          frameworks: ["pestel", "swot", "tam", "bmc", "porter", "stp", "bcg", "value_chain", "balanced_scorecard"],
           tier: "free",
         }),
       });

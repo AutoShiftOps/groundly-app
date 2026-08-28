@@ -24,6 +24,7 @@ import {
   Globe, Grid3X3, Shield, Link2, Gauge, Image, Puzzle, BookOpen,
   Swords, DoorOpen, Shuffle, MapPin, Grid2X2,
   Warehouse, Cog, Megaphone, Headset, Building2, UserCog, FlaskConical, ShoppingCart,
+  Workflow, GraduationCap,
 } from "lucide-react";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 
@@ -108,7 +109,9 @@ const SIDEBAR_FRAMEWORK_NAV = [
   // Forces/STP/BCG Matrix above.
   { key: "value_chain", label: "Value Chain", icon: Link2, color: PALETTE.red },
   { key: "bmc", label: "Business Model Canvas", icon: Image, color: PALETTE.amber },
-  { key: null, label: "Balanced Scorecard", icon: Gauge, color: PALETTE.amber },
+  // GitHub issue #15: unlocked, same treatment as Value Chain/BCG
+  // Matrix/Porter's Five Forces/STP above.
+  { key: "balanced_scorecard", label: "Balanced Scorecard", icon: Gauge, color: PALETTE.amber },
 ];
 
 // Derived, not hand-duplicated: FRAMEWORK_LABELS is still the thing
@@ -614,6 +617,37 @@ function StructuredItemList({ items }) {
   );
 }
 
+// GitHub issue #15 (Balanced Scorecard). Same list treatment as
+// StructuredItemList, plus an inline metric badge (value -> target)
+// when the point carries a grounded metric_name/metric_value --
+// _null_out_ungrounded_scorecard_metrics (agents/rag_pipeline.py)
+// guarantees metric_name/metric_value are only both non-null together,
+// so this only needs to check one of them before rendering the badge.
+function MetricItemList({ items, color }) {
+  if (!items || items.length === 0) {
+    return <p className="text-xs italic" style={{ color: PALETTE.textMuted }}>No grounded points for this perspective.</p>;
+  }
+  return (
+    <ul className="flex flex-col gap-1.5">
+      {items.map((item, i) => (
+        <li key={i} className="text-xs leading-relaxed flex items-start gap-1.5" style={{ color: "#e4e9f5" }}>
+          <span className="mt-1.5 w-1 h-1 rounded-full shrink-0" style={{ background: PALETTE.textMuted }} />
+          <span>
+            {renderBoldText(item.text)}
+            {item.citation_index != null && <span className="ml-1" style={{ color: PALETTE.blue }}>[{item.citation_index}]</span>}
+            {item.metric_value != null && (
+              <span className="ml-1.5 font-bold" style={{ color }}>
+                {item.metric_name}: {item.metric_value}
+                {item.target_value != null && <span style={{ color: PALETTE.textMuted, fontWeight: 400 }}> (target {item.target_value})</span>}
+              </span>
+            )}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 // docs/PHASE_5_SPEC.md B: icons per category + layout, not photography --
 // stock imagery would misrepresent a report whose whole discipline is
 // "every number is real". Icon dims to 0.35 opacity when its category is
@@ -896,6 +930,37 @@ function ValueChain({ valueChain }) {
   );
 }
 
+// GitHub issue #15. 2x2 grid -- the 4 perspectives are independent, not
+// sequential like Value Chain's chain, so a grid fits (same reasoning as
+// SwotGrid/StpGrid). MetricItemList (above) is what actually
+// distinguishes this from a plain qualitative-category block: each
+// point may carry a real, CONTEXT-grounded metric/target pair.
+const BALANCED_SCORECARD_BLOCKS = [
+  { key: "financial", label: "Financial", color: PALETTE.teal, Icon: DollarSign },
+  { key: "customer", label: "Customer", color: PALETTE.blue, Icon: Users },
+  { key: "internal_process", label: "Internal Process", color: PALETTE.purple, Icon: Workflow },
+  { key: "learning_and_growth", label: "Learning & Growth", color: PALETTE.amber, Icon: GraduationCap },
+];
+
+function BalancedScorecard({ balancedScorecard }) {
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      {BALANCED_SCORECARD_BLOCKS.map((b) => {
+        const items = balancedScorecard[b.key];
+        return (
+          <div key={b.key} className="rounded-xl p-3" style={{ background: PALETTE.bgPanel, border: `1px solid ${b.color}33` }}>
+            <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide mb-2" style={{ color: b.color }}>
+              <CategoryIcon Icon={b.Icon} color={b.color} isEmpty={!items || items.length === 0} />
+              {b.label}
+            </div>
+            <MetricItemList items={items} color={b.color} />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // Dispatches to a framework's structured visual treatment when available;
 // falls back to the plain prose paragraph otherwise (missing field, older
 // cached report, or a framework Phase 3 hasn't migrated yet) -- same
@@ -925,6 +990,9 @@ function FrameworkBody({ frameworkKey, result }) {
   }
   if (frameworkKey === "value_chain" && result.value_chain) {
     return <ValueChain valueChain={result.value_chain} />;
+  }
+  if (frameworkKey === "balanced_scorecard" && result.balanced_scorecard) {
+    return <BalancedScorecard balancedScorecard={result.balanced_scorecard} />;
   }
   const isInsufficient = result.text?.trim() === "Insufficient grounded data available for this section.";
   return (
