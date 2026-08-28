@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 import { encodeReportLink } from "../lib/reportLink";
+import "../styles/print.css";
 
 // Same lookup App.tsx uses for /api/analyze -- duplicated here rather
 // than threaded down as a prop since this is the only other real API
@@ -1608,8 +1609,8 @@ export default function ReportView({ report, idea, onReset }) {
   );
 
   return (
-    <div className="flex min-h-screen w-full overflow-hidden" style={{ background: PALETTE.bgOuter, fontFamily: "'Inter', sans-serif" }}>
-      <aside className="flex flex-col w-[250px] min-h-screen py-5 px-3 shrink-0" style={{ background: PALETTE.bgSidebar, borderRight: `1px solid ${PALETTE.border}` }}>
+    <div className="report-view-root flex min-h-screen w-full overflow-hidden" style={{ background: PALETTE.bgOuter, fontFamily: "'Inter', sans-serif" }}>
+      <aside className="report-print-hide flex flex-col w-[250px] min-h-screen py-5 px-3 shrink-0" style={{ background: PALETTE.bgSidebar, borderRight: `1px solid ${PALETTE.border}` }}>
         <div className="flex items-center gap-2 px-2 mb-6">
           {/* Hexagonal "G" mark matching the mock: an outlined (not
               filled) hexagon with a blue->purple gradient stroke, and an
@@ -1728,7 +1729,7 @@ export default function ReportView({ report, idea, onReset }) {
         </div>
       </aside>
 
-      <main className="flex-1 min-h-screen overflow-y-auto px-8 py-7">
+      <main className="report-main-content flex-1 min-h-screen overflow-y-auto px-8 py-7">
         <div className="flex items-start justify-between mb-5 gap-4">
           <div className="flex items-start gap-3">
             <div className="flex items-center justify-center rounded-xl shrink-0" style={{ width: 38, height: 38, background: PALETTE.bgCard, border: `1px solid ${PALETTE.border}`, color: PALETTE.teal }}>
@@ -1739,9 +1740,13 @@ export default function ReportView({ report, idea, onReset }) {
               <div className="text-xs mt-1" style={{ color: PALETTE.textMuted }}>{today} · v1.0 (Latest)</div>
             </div>
           </div>
-          <div className="flex gap-2 shrink-0">
+          <div className="report-print-hide flex gap-2 shrink-0">
             <ShareButton idea={idea} report={report} />
-            <button disabled title="Coming soon" className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-xl opacity-70 text-white"
+            {/* GitHub issue #18: browser print-to-PDF via print.css, no new
+                dependency. Prints exactly the currently active tab (same
+                content the user is looking at), with app chrome hidden and
+                the dark theme flipped to a print-readable light theme. */}
+            <button onClick={() => window.print()} className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-xl transition-opacity hover:opacity-90 text-white"
               style={{ background: `linear-gradient(90deg, ${PALETTE.blue}, ${PALETTE.purple})` }}>
               <Download size={14} /> Export PDF
             </button>
@@ -1800,9 +1805,11 @@ export default function ReportView({ report, idea, onReset }) {
               <CitationList citations={isOverview ? allCitations : activeResult?.citations} showFrameworkSource={isOverview} />
             </div>
 
-            <AskAiPanel idea={idea} results={report.results} frameworksAllowed={report.frameworks_allowed} />
+            <div className="report-print-hide">
+              <AskAiPanel idea={idea} results={report.results} frameworksAllowed={report.frameworks_allowed} />
+            </div>
 
-            <div className="rounded-2xl p-4" style={{ background: PALETTE.bgCard, border: `1px solid ${PALETTE.border}` }}>
+            <div className="report-print-hide rounded-2xl p-4" style={{ background: PALETTE.bgCard, border: `1px solid ${PALETTE.border}` }}>
               <div className="flex items-center justify-between text-sm font-bold text-white">
                 <span className="flex items-center gap-1.5"><GitCompare size={14} style={{ color: PALETTE.blue }} /> Compare Version</span>
                 <span className="text-[10px]" style={{ color: PALETTE.textMuted }}>Coming soon</span>

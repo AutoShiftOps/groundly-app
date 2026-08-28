@@ -1,0 +1,60 @@
+/* GitHub issue #18 (Export PDF). Browser print-to-PDF via a print
+   stylesheet -- no new dependency. The report renders exactly what's
+   on screen (same data, same DOM); only the presentation adapts for
+   the print medium, same as any site's print stylesheet:
+   - App chrome that isn't report content (sidebar nav, the Share/
+     Export PDF buttons themselves, the interactive Ask AI panel, the
+     empty Compare Version stub) is hidden.
+   - The dark theme (near-black background, light text) would either
+     print as a giant black rectangle or, if the browser skips
+     background colors (the common default), as invisible light text
+     on a white page. `filter: invert(1) hue-rotate(180deg)` on the
+     report root flips it to a light background with dark text for
+     print while keeping every element's actual content untouched --
+     a standard technique for adapting a dark UI to print, not a
+     content change.
+   - `overflow`/`max-height` clipping (the app's own scrollable panes)
+     is reset so multi-page content flows across print pages instead
+     of being cut off at one screen's height. */
+
+@media print {
+  html, body {
+    background: #fff !important;
+  }
+
+  .report-print-hide {
+    display: none !important;
+  }
+
+  .report-view-root {
+    filter: invert(1) hue-rotate(180deg);
+    background: #fff !important;
+    overflow: visible !important;
+    height: auto !important;
+    min-height: 0 !important;
+  }
+
+  .report-view-root * {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+
+  .report-main-content {
+    width: 100% !important;
+    min-height: 0 !important;
+  }
+
+  /* The dashboard's multi-column grids (business-metric cards, the
+     framework-list + sources sidebar, category grids inside individual
+     framework panels) are sized for a wide desktop viewport -- print
+     media lays out against the page's width, not the screen's, so a
+     grid built for ~1200px+ clips/truncates text at a page's ~800px.
+     Force every grid inside the report to a single column for print;
+     content still renders in full, just stacked instead of side-by-side. */
+  .report-view-root [class*="grid-cols-"] {
+    display: block !important;
+  }
+  .report-view-root [class*="grid-cols-"] > * {
+    margin-bottom: 12px;
+  }
+}
