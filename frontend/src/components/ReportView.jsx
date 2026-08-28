@@ -13,7 +13,7 @@
 // "61 sources" - every number shown is computed from report.results /
 // report.verification).
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   TrendingUp, FolderOpen, Lightbulb, BarChart2, FileText, Settings,
   ShieldCheck, ShieldAlert, CheckCircle2, AlertTriangle, Lock,
@@ -24,7 +24,7 @@ import {
   Globe, Grid3X3, Shield, Link2, Gauge, Image, Puzzle, BookOpen,
   Swords, DoorOpen, Shuffle, MapPin, Grid2X2,
   Warehouse, Cog, Megaphone, Headset, Building2, UserCog, FlaskConical, ShoppingCart,
-  Workflow, GraduationCap,
+  Workflow, GraduationCap, X, Database, Search, BadgeCheck,
 } from "lucide-react";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 
@@ -1057,8 +1057,103 @@ function FrameworkBody({ frameworkKey, result }) {
   );
 }
 
+// GitHub issue #19. Real, accurate description of this project's own
+// pipeline (agents/rag_pipeline.py) -- not generic RAG boilerplate.
+// Every claim below is checked against the actual implementation:
+// - Retrieval: text-embedding-3-small query embedding, pgvector
+//   similarity search against the ingested corpus, live Tavily web
+//   search as a fallback only when local grounding is empty or weak
+//   (search_and_ingest in agents/web_retrieval.py).
+// - Grounding: gpt-4o-mini generates the analysis from ONLY the
+//   retrieved chunks (never general model knowledge), citing each
+//   factual sentence with a [N] marker tied to a specific chunk.
+// - Verification: verify_claims() is a lightweight structural check --
+//   flags "no grounded sources retrieved" if retrieval came back
+//   empty, or "no inline citation markers found" if the generated text
+//   cited nothing -- not a claim-by-claim fact-check.
+// Per-framework note customizes the last paragraph only; the pipeline
+// description itself is identical for every framework since it really
+// is the same code path.
+const METHODOLOGY_FRAMEWORK_NOTES = {
+  tam: "TAM/SAM/SOM's three tiers are each independently null unless the CONTEXT states a real, specific dollar figure for that exact tier -- a real TAM with no stated SAM never gets a fabricated SAM to fill the gap.",
+  pestel: "PESTEL's 6 categories (political, economic, social, technological, environmental, legal) are populated independently -- a category with no CONTEXT support renders as an empty, explicitly-labeled gap, not an invented point.",
+  swot: "SWOT's 4 categories are populated independently -- a category with no CONTEXT support renders as an empty, explicitly-labeled gap, not an invented point.",
+  bmc: "The Business Model Canvas's 9 blocks are populated independently -- a block with no CONTEXT support renders as an empty, explicitly-labeled gap, not an invented point.",
+  porter: "Porter's Five Forces' 5 categories are populated independently -- a force with no CONTEXT support renders as an empty, explicitly-labeled gap, not an invented point.",
+  stp: "STP's 3 categories (segmentation, targeting, positioning) are populated independently -- a category with no CONTEXT support renders as an empty, explicitly-labeled gap, not an invented point.",
+  bcg: "The BCG quadrant is only assigned when the CONTEXT gives BOTH a real market growth rate AND a real market-share/competitive-position description -- a deterministic check runs after generation and discards the quadrant entirely if either signal is missing, rather than trusting the model's own judgment alone.",
+  value_chain: "Value Chain's 9 activities (5 primary + 4 support) are populated independently -- an activity with no CONTEXT support renders as an empty, explicitly-labeled gap, not an invented point.",
+  balanced_scorecard: "Each Balanced Scorecard point may carry an optional metric (a named number with an optional target), but only when the CONTEXT states a real figure for that exact point -- a deterministic check runs after generation and strips any metric name/value/target that isn't genuinely paired, rather than trusting the model's own judgment alone.",
+  ansoff: "The Ansoff quadrant is only assigned when the CONTEXT lets both the market (existing vs. new) and the product (existing vs. new) be classified -- a deterministic check runs after generation and discards the quadrant entirely if either dimension can't be determined, rather than trusting the model's own judgment alone.",
+};
+
+function MethodologyModal({ frameworkKey, onClose }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const frameworkLabel = FRAMEWORK_LABELS[frameworkKey] || frameworkKey;
+  const note = METHODOLOGY_FRAMEWORK_NOTES[frameworkKey];
+
+  const STEPS = [
+    {
+      Icon: Search,
+      title: "1. Retrieval",
+      body: "Your idea is embedded (text-embedding-3-small) and matched against this project's ingested source corpus by vector similarity. If the local corpus has nothing relevant, or only a weak match, a live web search (Tavily) runs as a fallback and its results are ingested before generation continues.",
+    },
+    {
+      Icon: Database,
+      title: "2. Grounded generation",
+      body: "The model (gpt-4o-mini) writes this section using ONLY the retrieved source chunks above -- never its own general knowledge. Every factual sentence is required to carry a [N] citation marker tied to the specific chunk it came from; anywhere the sources don't support a claim, the model is instructed to say so or leave that field empty rather than fill the gap.",
+    },
+    {
+      Icon: BadgeCheck,
+      title: "3. Verification",
+      body: "A lightweight structural check runs on the output: \"Verified\" means at least one source was retrieved AND the generated text actually contains citation markers. \"Unverified\" flags the specific reason (no sources retrieved, or no citations used) -- it is not a claim-by-claim fact-check against the sources.",
+    },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,4,15,0.7)" }} onClick={onClose}>
+      <div className="rounded-2xl p-6 max-w-lg w-full max-h-[85vh] overflow-y-auto" style={{ background: PALETTE.bgCard, border: `1px solid ${PALETTE.border}` }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between mb-4 gap-3">
+          <div>
+            <div className="text-[10px] uppercase tracking-wider" style={{ color: PALETTE.textMuted }}>Methodology</div>
+            <h2 className="text-lg font-extrabold text-white">{frameworkLabel}</h2>
+          </div>
+          <button onClick={onClose} aria-label="Close" className="flex items-center justify-center rounded-full transition-colors hover:bg-white/5 shrink-0"
+            style={{ width: 28, height: 28, background: PALETTE.bgPanel, border: `1px solid ${PALETTE.border}`, color: PALETTE.textSecondary }}>
+            <X size={14} />
+          </button>
+        </div>
+        <div className="flex flex-col gap-4">
+          {STEPS.map((s) => (
+            <div key={s.title}>
+              <div className="flex items-center gap-1.5 text-xs font-bold mb-1" style={{ color: PALETTE.blue }}>
+                <s.Icon size={13} /> {s.title}
+              </div>
+              <p className="text-xs leading-relaxed" style={{ color: "#e4e9f5" }}>{s.body}</p>
+            </div>
+          ))}
+          {note && (
+            <div className="pt-3" style={{ borderTop: `1px solid ${PALETTE.border}` }}>
+              <div className="flex items-center gap-1.5 text-xs font-bold mb-1" style={{ color: PALETTE.teal }}>
+                <Info size={13} /> This framework
+              </div>
+              <p className="text-xs leading-relaxed" style={{ color: "#e4e9f5" }}>{note}</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function FrameworkPanel({ frameworkKey, result, verification, ideaTitle }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [showMethodology, setShowMethodology] = useState(false);
   const verified = verification?.verified ?? false;
 
   return (
@@ -1080,8 +1175,8 @@ function FrameworkPanel({ frameworkKey, result, verification, ideaTitle }) {
             {verified ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
             {verified ? "Verified" : "Unverified"}
           </span>
-          {/* Visual parity only, not wired up yet -- no methodology content to show. */}
-          <button disabled title="Coming soon" className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full opacity-70"
+          {/* GitHub issue #19: wired to a real modal now. */}
+          <button onClick={() => setShowMethodology(true)} className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full transition-colors hover:bg-white/5"
             style={{ background: PALETTE.bgPanel, border: `1px solid ${PALETTE.border}`, color: PALETTE.textSecondary }}>
             <Info size={12} /> Methodology
           </button>
@@ -1106,6 +1201,7 @@ function FrameworkPanel({ frameworkKey, result, verification, ideaTitle }) {
       )}
 
       <FrameworkStrip result={result} />
+      {showMethodology && <MethodologyModal frameworkKey={frameworkKey} onClose={() => setShowMethodology(false)} />}
     </div>
   );
 }
@@ -1125,6 +1221,7 @@ function TamSizingCard({ result, verification, ideaTitle }) {
   // mock shows first) lead while "why this number" stays one click away
   // instead of disappearing outright.
   const [showNarrative, setShowNarrative] = useState(false);
+  const [showMethodology, setShowMethodology] = useState(false);
   const verified = verification?.verified ?? false;
 
   const presentItems = items.filter((it) => it.present);
@@ -1191,8 +1288,8 @@ function TamSizingCard({ result, verification, ideaTitle }) {
             {verified ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
             {verified ? "Verified" : "Unverified"}
           </span>
-          {/* Visual parity only, not wired up yet -- no methodology content to show. */}
-          <button disabled title="Coming soon" className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full opacity-70"
+          {/* GitHub issue #19: wired to a real modal now. */}
+          <button onClick={() => setShowMethodology(true)} className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full transition-colors hover:bg-white/5"
             style={{ background: PALETTE.bgPanel, border: `1px solid ${PALETTE.border}`, color: PALETTE.textSecondary }}>
             <Info size={12} /> Methodology
           </button>
@@ -1329,6 +1426,7 @@ function TamSizingCard({ result, verification, ideaTitle }) {
       )}
 
       <FrameworkStrip result={result} />
+      {showMethodology && <MethodologyModal frameworkKey="tam" onClose={() => setShowMethodology(false)} />}
     </div>
   );
 }
