@@ -123,12 +123,15 @@ def test_sidebar_nav_order_matches_the_mock_exactly():
     # locked entries in a fixed order rather than grouping "unlocked
     # first, then locked" -- lock in that exact order so a future refactor
     # (e.g. reverting to two separate lists) doesn't silently regroup it.
+    # "Ansoff Matrix" is a deliberate addition beyond the mock's own list
+    # (GitHub issue #16, confirmed by the user) -- placed next to BCG
+    # Matrix since both are 2x2 strategic-positioning tools.
     source = _report_view_source()
     entries = _extract_sidebar_nav_entries(source)
     labels_in_order = [label for _key, label in entries]
     expected_order = [
         "PESTEL", "Porter's Five Forces", "SWOT", "TAM SAM SOM", "STP",
-        "BCG Matrix", "Value Chain", "Business Model Canvas", "Balanced Scorecard",
+        "BCG Matrix", "Ansoff Matrix", "Value Chain", "Business Model Canvas", "Balanced Scorecard",
     ]
     assert labels_in_order == expected_order, (
         f"Sidebar nav order drifted from the mock's fixed order.\n"

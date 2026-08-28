@@ -61,6 +61,10 @@ const PALETTE = {
 // the render loop below) -- this list itself doesn't decide what's
 // locked, FREE_FRAMEWORKS (backend/routers/analysis.py) still does.
 //
+// Ansoff Matrix: not in the mock at all -- confirmed as a genuine new
+// addition to the paid-tier roadmap (GitHub issue #16), placed next to
+// BCG Matrix since both are 2x2 strategic-positioning tools.
+//
 // Icons: SWOT and BCG Matrix intentionally share the same grid icon --
 // that's the mock's own choice, not a bug (confirmed against
 // assets/images/report-ux-mock.png). Business Model Canvas gets its own
@@ -81,6 +85,7 @@ const SIDEBAR_FRAMEWORK_NAV = [
   { key: "tam", label: "TAM SAM SOM", icon: Target, color: PALETTE.teal },
   { key: null, label: "STP", icon: Users, color: PALETTE.purpleLight },
   { key: null, label: "BCG Matrix", icon: Grid3X3, color: PALETTE.purple },
+  { key: null, label: "Ansoff Matrix", icon: TrendingUp, color: PALETTE.teal },
   { key: null, label: "Value Chain", icon: Link2, color: PALETTE.red },
   { key: "bmc", label: "Business Model Canvas", icon: Image, color: PALETTE.amber },
   { key: null, label: "Balanced Scorecard", icon: Gauge, color: PALETTE.amber },
