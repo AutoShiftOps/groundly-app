@@ -28,6 +28,11 @@ import {
 } from "lucide-react";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 
+// Same lookup App.tsx uses for /api/analyze -- duplicated here rather
+// than threaded down as a prop since this is the only other real API
+// call this component makes (GitHub issue #20, Ask AI).
+const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL || "http://localhost:8000";
+
 const PALETTE = {
   // Sampled directly from assets/images/report-ux-mock.png's own
   // background (pixel-read via a small script, card-free regions only:
@@ -1460,6 +1465,86 @@ function OverviewFrameworkLinks({ stats, report, onSelectFramework }) {
   );
 }
 
+// GitHub issue #20 ("Ask AI"). Calls the real /api/ask endpoint
+// (backend/routers/analysis.py -> agents/report_qa.py) with this
+// report's own already-generated results -- no new retrieval happens
+// server-side, same grounding discipline as everything else in this
+// report. A question the report's own text doesn't cover comes back
+// with grounded: false and an honest "doesn't cover that" answer,
+// rendered the same way FrameworkBody renders an insufficient-data
+// section (muted, italic) rather than hidden or styled as a normal
+// answer.
+const ASK_AI_SUGGESTED_QUESTION = "What are the biggest risks in this analysis?";
+
+function AskAiPanel({ idea, results, frameworksAllowed }) {
+  const [question, setQuestion] = useState("");
+  const [status, setStatus] = useState("idle"); // idle | loading | done | error
+  const [response, setResponse] = useState(null);
+
+  const ask = async (q) => {
+    const trimmed = q.trim();
+    if (!trimmed || status === "loading") return;
+    setStatus("loading");
+    setResponse(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/ask`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idea, question: trimmed, results, frameworks_allowed: frameworksAllowed }),
+      });
+      if (!res.ok) throw new Error(`API error: ${res.status}`);
+      const data = await res.json();
+      setResponse(data);
+      setStatus("done");
+    } catch {
+      setStatus("error");
+    }
+  };
+
+  return (
+    <div className="rounded-2xl p-4" style={{ background: PALETTE.bgCard, border: `1px solid ${PALETTE.border}` }}>
+      <div className="flex items-center justify-between text-sm font-bold text-white mb-3">
+        <span className="flex items-center gap-1.5"><Sparkles size={14} style={{ color: PALETTE.purpleLight }} /> Ask AI</span>
+      </div>
+      <button onClick={() => { setQuestion(ASK_AI_SUGGESTED_QUESTION); ask(ASK_AI_SUGGESTED_QUESTION); }}
+        className="flex items-center gap-2 text-xs px-3 py-2.5 rounded-lg mb-2 w-full text-left transition-colors hover:bg-white/5"
+        style={{ background: PALETTE.bgPanel, border: `1px solid ${PALETTE.border}`, color: PALETTE.textSecondary }}>
+        <MessageSquare size={13} className="shrink-0" /> {ASK_AI_SUGGESTED_QUESTION}
+      </button>
+      <form onSubmit={(e) => { e.preventDefault(); ask(question); }} className="flex gap-1.5">
+        <input value={question} onChange={(e) => setQuestion(e.target.value)} disabled={status === "loading"}
+          placeholder="Ask anything about this analysis..." className="w-full text-xs px-3 py-2.5 rounded-lg"
+          style={{ background: PALETTE.bgPanel, border: `1px solid ${PALETTE.border}`, color: PALETTE.textPrimary }} />
+      </form>
+
+      {status === "loading" && (
+        <p className="text-xs mt-3 italic" style={{ color: PALETTE.textMuted }}>Thinking…</p>
+      )}
+      {status === "error" && (
+        <div className="flex items-center gap-2 mt-3 text-xs px-3 py-2 rounded-lg" style={{ color: PALETTE.red, background: `${PALETTE.red}14`, border: `1px solid ${PALETTE.red}44` }}>
+          <AlertTriangle size={13} /> Something went wrong asking that -- please try again.
+        </div>
+      )}
+      {status === "done" && response && (
+        <div className="mt-3">
+          <p className="text-xs leading-relaxed" style={{ color: response.grounded ? "#e4e9f5" : PALETTE.textMuted, fontStyle: response.grounded ? "normal" : "italic" }}>
+            {response.answer}
+          </p>
+          {response.grounded && response.sources.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {response.sources.map((s, i) => (
+                <span key={i} className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ color: PALETTE.blue, border: `1px solid ${PALETTE.blue}44` }}>
+                  {FRAMEWORK_LABELS[s.framework] || s.framework}{s.citation_index != null ? ` [${s.citation_index}]` : ""}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ReportView({ report, idea, onReset }) {
   const stats = useReportStats(report);
   // docs/PHASE_5_SPEC.md A: "overview" is a real selectable state alongside
@@ -1682,17 +1767,7 @@ export default function ReportView({ report, idea, onReset }) {
               <CitationList citations={isOverview ? allCitations : activeResult?.citations} showFrameworkSource={isOverview} />
             </div>
 
-            <div className="rounded-2xl p-4" style={{ background: PALETTE.bgCard, border: `1px solid ${PALETTE.border}` }}>
-              <div className="flex items-center justify-between text-sm font-bold text-white mb-3">
-                <span className="flex items-center gap-1.5"><Sparkles size={14} style={{ color: PALETTE.purpleLight }} /> Ask AI</span>
-                <span className="text-[10px]" style={{ color: PALETTE.textMuted }}>Coming soon</span>
-              </div>
-              <div className="flex items-center gap-2 text-xs px-3 py-2.5 rounded-lg mb-2" style={{ background: PALETTE.bgPanel, border: `1px solid ${PALETTE.border}`, color: PALETTE.textSecondary }}>
-                <MessageSquare size={13} /> What are the biggest risks in this analysis?
-              </div>
-              <input disabled placeholder="Ask anything about this analysis..." className="w-full text-xs px-3 py-2.5 rounded-lg"
-                style={{ background: PALETTE.bgPanel, border: `1px solid ${PALETTE.border}`, color: PALETTE.textMuted }} />
-            </div>
+            <AskAiPanel idea={idea} results={report.results} frameworksAllowed={report.frameworks_allowed} />
 
             <div className="rounded-2xl p-4" style={{ background: PALETTE.bgCard, border: `1px solid ${PALETTE.border}` }}>
               <div className="flex items-center justify-between text-sm font-bold text-white">

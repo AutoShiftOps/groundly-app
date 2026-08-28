@@ -12,6 +12,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from agents.rag_pipeline import run_pipeline, STRUCTURED_FRAMEWORKS  # noqa: E402
 from agents.synthesis import synthesize_business_metrics  # noqa: E402
+from agents.report_qa import answer_report_question  # noqa: E402
 
 router = APIRouter()
 
@@ -161,3 +162,29 @@ def list_frameworks():
         "free": sorted(FREE_FRAMEWORKS),
         "paid": [],
     }
+
+
+# GitHub issue #20 ("Ask AI"). Deliberately takes the report's own
+# already-generated results dict (the same shape AnalysisResponse.results
+# returned from /analyze) rather than a report ID -- there's no report
+# persistence in this codebase yet (see GitHub issue #21, still open),
+# so the frontend is the only thing holding a completed report right
+# now. This endpoint does no new retrieval of its own; it only re-reads
+# the text the /analyze call already produced (see agents/report_qa.py).
+class AskRequest(BaseModel):
+    idea: str
+    question: str
+    results: dict  # same shape as AnalysisResponse.results
+    frameworks_allowed: list[str]  # AnalysisResponse.frameworks_allowed from the same report
+
+
+class AskResponse(BaseModel):
+    answer: str
+    grounded: bool
+    sources: list[dict]  # [{framework, citation_index, source_title, source_url}, ...]
+
+
+@router.post("/ask", response_model=AskResponse)
+async def ask(req: AskRequest):
+    result = await answer_report_question(req.idea, req.results, req.frameworks_allowed, req.question)
+    return AskResponse(**result)
