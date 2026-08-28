@@ -1182,13 +1182,14 @@ function FrameworkPanel({ frameworkKey, result, verification, ideaTitle }) {
             {verified ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
             {verified ? "Verified" : "Unverified"}
           </span>
-          {/* GitHub issue #19: wired to a real modal now. */}
-          <button onClick={() => setShowMethodology(true)} className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full transition-colors hover:bg-white/5"
+          {/* GitHub issue #19: wired to a real modal now. report-print-hide:
+              interactive controls, meaningless on a printed/PDF page. */}
+          <button onClick={() => setShowMethodology(true)} className="report-print-hide flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full transition-colors hover:bg-white/5"
             style={{ background: PALETTE.bgPanel, border: `1px solid ${PALETTE.border}`, color: PALETTE.textSecondary }}>
             <Info size={12} /> Methodology
           </button>
           <button onClick={() => setCollapsed((c) => !c)} aria-label={collapsed ? "Expand section" : "Collapse section"}
-            className="flex items-center justify-center rounded-full transition-colors hover:bg-white/5"
+            className="report-print-hide flex items-center justify-center rounded-full transition-colors hover:bg-white/5"
             style={{ width: 28, height: 28, background: PALETTE.bgPanel, border: `1px solid ${PALETTE.border}`, color: PALETTE.textSecondary }}>
             {collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
           </button>
@@ -1221,13 +1222,19 @@ function FrameworkPanel({ frameworkKey, result, verification, ideaTitle }) {
 // result.market_sizing exists; when it doesn't (older cached report, or
 // tam structured output wasn't attempted), the call site falls back to
 // plain FrameworkPanel since there's nothing to merge into then.
-function TamSizingCard({ result, verification, ideaTitle }) {
+// forceExpanded: GitHub issue #18 follow-up -- PrintableFullReport
+// renders this same component for the print/PDF document, where a
+// click-to-expand toggle can't be interacted with. true always shows
+// the narrative and hides the toggle button entirely; screen usage
+// (FrameworkPanel's TAM tab) doesn't pass this, so its own default
+// collapsed-behind-a-toggle behavior is unchanged.
+function TamSizingCard({ result, verification, ideaTitle, forceExpanded = false }) {
   const items = useMemo(() => marketTiersFromApi(result.market_sizing), [result]);
   // Assumption 1 (confirmed): narrative stays available, not deleted --
   // collapsed behind a toggle, default closed, so circles/table (what the
   // mock shows first) lead while "why this number" stays one click away
   // instead of disappearing outright.
-  const [showNarrative, setShowNarrative] = useState(false);
+  const [showNarrative, setShowNarrative] = useState(forceExpanded);
   const [showMethodology, setShowMethodology] = useState(false);
   const verified = verification?.verified ?? false;
 
@@ -1295,8 +1302,9 @@ function TamSizingCard({ result, verification, ideaTitle }) {
             {verified ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
             {verified ? "Verified" : "Unverified"}
           </span>
-          {/* GitHub issue #19: wired to a real modal now. */}
-          <button onClick={() => setShowMethodology(true)} className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full transition-colors hover:bg-white/5"
+          {/* GitHub issue #19: wired to a real modal now. report-print-hide:
+              interactive control, meaningless on a printed/PDF page. */}
+          <button onClick={() => setShowMethodology(true)} className="report-print-hide flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full transition-colors hover:bg-white/5"
             style={{ background: PALETTE.bgPanel, border: `1px solid ${PALETTE.border}`, color: PALETTE.textSecondary }}>
             <Info size={12} /> Methodology
           </button>
@@ -1413,12 +1421,14 @@ function TamSizingCard({ result, verification, ideaTitle }) {
       </p>
 
       <div className="mt-4">
-        <button onClick={() => setShowNarrative((s) => !s)} aria-expanded={showNarrative}
-          className="flex items-center gap-1.5 text-xs font-semibold transition-colors hover:opacity-80"
-          style={{ color: PALETTE.blue }}>
-          {showNarrative ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-          {showNarrative ? "Hide full analysis" : "Read full analysis"}
-        </button>
+        {!forceExpanded && (
+          <button onClick={() => setShowNarrative((s) => !s)} aria-expanded={showNarrative}
+            className="report-print-hide flex items-center gap-1.5 text-xs font-semibold transition-colors hover:opacity-80"
+            style={{ color: PALETTE.blue }}>
+            {showNarrative ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+            {showNarrative ? "Hide full analysis" : "Read full analysis"}
+          </button>
+        )}
         {showNarrative && (
           <p className="text-sm leading-relaxed mt-2" style={{ color: isInsufficient ? PALETTE.textMuted : "#e4e9f5", fontStyle: isInsufficient ? "italic" : "normal" }}>
             {renderBoldText(stripMarketTags(result.text))}
@@ -1582,6 +1592,101 @@ function AskAiPanel({ idea, results, frameworksAllowed }) {
   );
 }
 
+// GitHub issue #18 follow-up (user feedback after the first Export PDF
+// ship): printing only whatever single tab happened to be active on
+// screen wasn't what "Export PDF" should mean for a stakeholder-facing
+// deliverable -- it should be the complete analysis, every framework,
+// not just the one tab the last click happened to land on. This is a
+// dedicated print-only view (display:none on screen, shown only under
+// @media print -- see print.css) that assembles a proper cover page +
+// verdict/metrics summary + every framework section in
+// SIDEBAR_FRAMEWORK_NAV's fixed presentation order + a full sources
+// appendix, reusing the exact same real components/data every screen
+// tab already renders (VerdictBanner, MetricRow, BusinessMetricRow,
+// TamSizingCard, FrameworkPanel, CitationList) -- same real numbers,
+// same citations, same null-when-ungrounded content, nothing
+// fabricated or idealized. Only the layout is new: a sectioned,
+// paginated document instead of one screen's worth of one tab.
+function PrintableFullReport({ report, idea, stats, today, title }) {
+  const frameworksToRender = SIDEBAR_FRAMEWORK_NAV.filter((item) => item.key && report.results?.[item.key]);
+  const allCitations = Object.entries(report.results || {}).flatMap(([fw, r]) => (r.citations || []).map((c) => ({ ...c, _framework: fw })));
+
+  return (
+    <div className="report-print-view">
+      {/* Each top-level block here is an UNFILTERED wrapper carrying the
+          page-break; the invert filter lives on the inner
+          .report-print-invert child instead. A CSS filter forces
+          Chromium's print engine to rasterize its whole subtree as one
+          flattened, unpaginated layer -- putting it on this outer level
+          would silently collapse every section back into a single
+          giant page (confirmed via a real generated PDF during
+          verification). Keeping filtered content one level in is what
+          lets page-break-before actually take effect between sections. */}
+      <div className="report-print-cover">
+        <div className="report-print-invert">
+          <div className="flex items-center gap-2.5 mb-10">
+            <div className="w-9 h-9 flex items-center justify-center shrink-0">
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none">
+                <defs>
+                  <linearGradient id="groundlyPrintLogoGrad" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+                    <stop offset="0%" stopColor={PALETTE.blue} />
+                    <stop offset="100%" stopColor={PALETTE.purpleLight} />
+                  </linearGradient>
+                </defs>
+                <path d="M12 2L21 7V17L12 22L3 17V7L12 2Z" stroke="url(#groundlyPrintLogoGrad)" strokeWidth="1.6" strokeLinejoin="round" />
+                <circle cx="12" cy="12" r="6.5" stroke="url(#groundlyPrintLogoGrad)" strokeWidth="1.8" strokeLinecap="round"
+                  strokeDasharray="35.17 5.67" strokeDashoffset="-2.84" />
+                <line x1="12.5" y1="12" x2="18" y2="12" stroke="url(#groundlyPrintLogoGrad)" strokeWidth="1.8" strokeLinecap="round" />
+              </svg>
+            </div>
+            <div>
+              <div className="text-base font-bold text-white leading-tight">Groundly</div>
+              <div className="text-[10px] leading-tight uppercase tracking-wider" style={{ color: PALETTE.textMuted }}>AI Analysis Platform</div>
+            </div>
+          </div>
+          <div className="text-xs uppercase tracking-wider font-semibold mb-3" style={{ color: PALETTE.blue }}>Full Business Analysis Report</div>
+          <h1 className="text-3xl font-extrabold text-white leading-tight mb-3" style={{ maxWidth: 640 }}>{idea || title}</h1>
+          <div className="text-sm" style={{ color: PALETTE.textSecondary }}>{today} &middot; v1.0 (Latest) &middot; {frameworksToRender.length} framework{frameworksToRender.length === 1 ? "" : "s"} analyzed</div>
+        </div>
+      </div>
+
+      <div className="report-print-section">
+        <div className="report-print-invert">
+          <div className="report-print-section-kicker">Groundly &middot; Executive Summary</div>
+          <VerdictBanner stats={stats} />
+          <MetricRow report={report} stats={stats} />
+          <BusinessMetricRow report={report} businessMetrics={report.business_metrics} />
+        </div>
+      </div>
+
+      {frameworksToRender.map((item) => {
+        const result = report.results[item.key];
+        const verification = report.verification?.[item.key];
+        return (
+          <div key={item.key} className="report-print-section">
+            <div className="report-print-invert">
+              <div className="report-print-section-kicker">Groundly &middot; {item.label}</div>
+              {item.key === "tam" && result.market_sizing
+                ? <TamSizingCard result={result} verification={verification} ideaTitle={title} forceExpanded />
+                : <FrameworkPanel frameworkKey={item.key} result={result} verification={verification} ideaTitle={title} />}
+            </div>
+          </div>
+        );
+      })}
+
+      <div className="report-print-section">
+        <div className="report-print-invert">
+          <div className="report-print-section-kicker">Groundly &middot; Sources &amp; Citations</div>
+          <div className="rounded-2xl p-4" style={{ background: PALETTE.bgCard, border: `1px solid ${PALETTE.border}` }}>
+            <div className="text-sm font-bold text-white mb-3">All Sources ({dedupeCitations(allCitations).length})</div>
+            <CitationList citations={allCitations} showFrameworkSource={true} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ReportView({ report, idea, onReset }) {
   const stats = useReportStats(report);
   // docs/PHASE_5_SPEC.md A: "overview" is a real selectable state alongside
@@ -1609,8 +1714,9 @@ export default function ReportView({ report, idea, onReset }) {
   );
 
   return (
-    <div className="report-view-root flex min-h-screen w-full overflow-hidden" style={{ background: PALETTE.bgOuter, fontFamily: "'Inter', sans-serif" }}>
-      <aside className="report-print-hide flex flex-col w-[250px] min-h-screen py-5 px-3 shrink-0" style={{ background: PALETTE.bgSidebar, borderRight: `1px solid ${PALETTE.border}` }}>
+    <div className="report-view-root" style={{ background: PALETTE.bgOuter, fontFamily: "'Inter', sans-serif" }}>
+    <div className="report-screen-view flex min-h-screen w-full overflow-hidden">
+      <aside className="flex flex-col w-[250px] min-h-screen py-5 px-3 shrink-0" style={{ background: PALETTE.bgSidebar, borderRight: `1px solid ${PALETTE.border}` }}>
         <div className="flex items-center gap-2 px-2 mb-6">
           {/* Hexagonal "G" mark matching the mock: an outlined (not
               filled) hexagon with a blue->purple gradient stroke, and an
@@ -1819,6 +1925,9 @@ export default function ReportView({ report, idea, onReset }) {
           </div>
         </div>
       </main>
+    </div>
+
+      <PrintableFullReport report={report} idea={idea} stats={stats} today={today} title={title} />
     </div>
   );
 }

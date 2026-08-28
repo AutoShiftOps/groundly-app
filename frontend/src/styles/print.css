@@ -1,60 +1,120 @@
 /* GitHub issue #18 (Export PDF). Browser print-to-PDF via a print
-   stylesheet -- no new dependency. The report renders exactly what's
-   on screen (same data, same DOM); only the presentation adapts for
-   the print medium, same as any site's print stylesheet:
-   - App chrome that isn't report content (sidebar nav, the Share/
-     Export PDF buttons themselves, the interactive Ask AI panel, the
-     empty Compare Version stub) is hidden.
-   - The dark theme (near-black background, light text) would either
-     print as a giant black rectangle or, if the browser skips
-     background colors (the common default), as invisible light text
-     on a white page. `filter: invert(1) hue-rotate(180deg)` on the
-     report root flips it to a light background with dark text for
-     print while keeping every element's actual content untouched --
-     a standard technique for adapting a dark UI to print, not a
-     content change.
-   - `overflow`/`max-height` clipping (the app's own scrollable panes)
-     is reset so multi-page content flows across print pages instead
-     of being cut off at one screen's height. */
+   stylesheet -- no new dependency. Real content only: the print view
+   (PrintableFullReport in ReportView.jsx) reuses the exact same real
+   components/data every screen tab already renders (VerdictBanner,
+   MetricRow, BusinessMetricRow, TamSizingCard, FrameworkPanel,
+   CitationList) for every framework the report actually has, same
+   null-when-ungrounded content as the live app -- nothing fabricated
+   or idealized, only the layout is new: a cover page + one section per
+   framework + a sources appendix, instead of one screen's worth of one
+   tab.
+
+   Two sibling trees, only one shown at a time:
+   - .report-screen-view: the normal interactive app (sidebar, tabs,
+     Ask AI, etc) -- what you see on screen. Hidden entirely for print.
+   - .report-print-view: the full multi-framework document -- hidden on
+     screen (display:none below), shown only under @media print.
+
+   The dark theme (near-black background, light text) would either
+   print as a giant black rectangle or, if the browser skips background
+   colors (the common default), as invisible light text on a white
+   page. `filter: invert(1) hue-rotate(180deg)` flips it to a light
+   background with dark text for print while keeping every element's
+   actual content untouched -- a standard technique for adapting a dark
+   UI to print, not a content change.
+
+   IMPORTANT: that filter is applied per-section (.report-print-invert),
+   NOT once around the whole .report-print-view tree. A CSS `filter` on
+   an ancestor forces Chromium's print/PDF engine to rasterize that
+   entire subtree as one flattened, unpaginated layer -- confirmed via
+   a real generated PDF: with the filter on the outer tree, an 11-
+   section report (cover + 10 frameworks + sources) came out as a
+   single giant page instead of paginating, because `page-break-before`
+   on descendants stopped being honored inside the filtered ancestor.
+   Scoping the filter to each section individually keeps the
+   page-break boundaries between sections on unfiltered elements, so
+   real pagination works again. */
+
+.report-print-view {
+  display: none;
+}
 
 @media print {
+  /* index.html pins html/body/#root to a fixed height:100% (viewport
+     height) for the normal single-screen app -- that's exactly what
+     was silently capping every print/PDF export to one page no matter
+     how many page-break-before sections existed: Chromium's print
+     engine computes total page count from the document's actual laid-
+     out height, and a hard height:100% (not min-height) holds that at
+     one viewport regardless of visually-overflowing content. Confirmed
+     via an isolated before/after test with a real generated PDF.
+     Freeing these back to their natural content height is what lets
+     multi-page pagination happen at all. */
+  html, body, #root {
+    height: auto !important;
+    min-height: 0 !important;
+  }
+
   html, body {
     background: #fff !important;
+  }
+
+  .report-screen-view {
+    display: none !important;
+  }
+
+  .report-print-view {
+    display: block !important;
+    background: #fff;
+  }
+
+  .report-print-view * {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+
+  .report-print-invert {
+    filter: invert(1) hue-rotate(180deg);
   }
 
   .report-print-hide {
     display: none !important;
   }
 
-  .report-view-root {
-    filter: invert(1) hue-rotate(180deg);
-    background: #fff !important;
-    overflow: visible !important;
-    height: auto !important;
-    min-height: 0 !important;
-  }
-
-  .report-view-root * {
-    overflow: visible !important;
-    max-height: none !important;
-  }
-
-  .report-main-content {
-    width: 100% !important;
-    min-height: 0 !important;
-  }
-
   /* The dashboard's multi-column grids (business-metric cards, the
-     framework-list + sources sidebar, category grids inside individual
-     framework panels) are sized for a wide desktop viewport -- print
-     media lays out against the page's width, not the screen's, so a
-     grid built for ~1200px+ clips/truncates text at a page's ~800px.
-     Force every grid inside the report to a single column for print;
-     content still renders in full, just stacked instead of side-by-side. */
-  .report-view-root [class*="grid-cols-"] {
+     category grids inside individual framework panels) are sized for a
+     wide desktop viewport -- print media lays out against the page's
+     width, not the screen's, so a grid built for ~1200px+ clips or
+     truncates text at a page's narrower width. Force every grid inside
+     the print view to a single column; content still renders in full,
+     just stacked instead of side-by-side. */
+  .report-print-view [class*="grid-cols-"] {
     display: block !important;
   }
-  .report-view-root [class*="grid-cols-"] > * {
+  .report-print-view [class*="grid-cols-"] > * {
     margin-bottom: 12px;
+  }
+
+  /* Cover page and each framework/sources section start on a fresh
+     page -- a "one section per page" document instead of a single
+     unbroken column, closer to an actual report a stakeholder would
+     expect to receive. Set on the UNFILTERED outer wrapper (see the
+     note above) -- .report-print-invert is only ever a plain child of
+     one of these, never itself carrying page-break-before. */
+  .report-print-cover {
+    padding: 48px 0 32px;
+  }
+  .report-print-section {
+    page-break-before: always;
+    break-before: page;
+    padding-top: 24px;
+  }
+  .report-print-section-kicker {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #7a8aaa;
+    margin-bottom: 10px;
   }
 }
