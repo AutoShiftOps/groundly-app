@@ -317,6 +317,95 @@ def _null_out_unsupported_bcg_quadrant(bcg_matrix: dict | None) -> dict | None:
     )
     return None
 
+# GitHub issue #16. Ansoff Matrix classifies growth strategy into one of
+# 4 quadrants based on whether this business's product and market are
+# each existing or new -- same "don't guess without real dual grounding"
+# discipline as BCG Matrix above, just with two categorical dimensions
+# (product/market: existing vs new) instead of two numeric ones (growth
+# rate/market share). Same anyOf-null schema shape and same
+# both-signals-or-nothing backstop pattern.
+ANSOFF_QUADRANTS = ("market_penetration", "market_development", "product_development", "diversification")
+
+ANSOFF_STRUCTURED_SUFFIX = """
+Additionally, since this is an Ansoff Matrix analysis, also populate the
+ansoff_matrix object:
+- Only assign a quadrant if the CONTEXT explicitly supports classifying
+  BOTH this business's market as "existing" or "new" AND its product/
+  service as "existing" or "new", relative to what the business
+  described in CONTEXT is actually doing. If either dimension can't be
+  determined from the CONTEXT, set ansoff_matrix to null entirely --
+  do not guess a quadrant from only one grounded dimension.
+- "market_dimension" is "existing" if the CONTEXT describes this
+  business selling into a market/customer base it (or the products
+  being described) already serves, or "new" if it describes expansion
+  into a market/geography/customer segment not currently served.
+  Null if the CONTEXT doesn't give enough signal either way.
+- "product_dimension" is "existing" if the CONTEXT describes the
+  current product/service offering, or "new" if it describes a new or
+  substantially different product/service being introduced. Null if
+  the CONTEXT doesn't give enough signal either way.
+- The four quadrants: market_penetration (existing market + existing
+  product), market_development (new market + existing product),
+  product_development (existing market + new product), diversification
+  (new market + new product). Pick the one matching the two dimensions
+  above -- don't pick a quadrant that contradicts them.
+- "citation_index" is the number of the CONTEXT chunk that most directly
+  supports the quadrant assignment, or null if you can't attribute it to
+  one specific chunk.
+- "rationale" is a short (1-2 sentence) explanation of why this quadrant
+  fits, referencing the real market_dimension and product_dimension
+  above -- never invent a justification not grounded in those two
+  fields.
+"""
+
+ANSOFF_MATRIX_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "narrative": {
+            "type": "string",
+            "description": "The full grounded analysis, same rules as ungrounded prose output: cite every factual sentence with [N] markers.",
+        },
+        "ansoff_matrix": {
+            "anyOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "quadrant": {"type": "string", "enum": list(ANSOFF_QUADRANTS)},
+                        "market_dimension": {"type": ["string", "null"], "enum": ["existing", "new", None]},
+                        "product_dimension": {"type": ["string", "null"], "enum": ["existing", "new", None]},
+                        "citation_index": {"type": ["integer", "null"]},
+                        "rationale": {"type": "string"},
+                    },
+                    "required": ["quadrant", "market_dimension", "product_dimension", "citation_index", "rationale"],
+                    "additionalProperties": False,
+                },
+                {"type": "null"},
+            ]
+        },
+    },
+    "required": ["narrative", "ansoff_matrix"],
+    "additionalProperties": False,
+}
+
+
+def _null_out_unsupported_ansoff_quadrant(ansoff_matrix: dict | None) -> dict | None:
+    # Same philosophy as _null_out_unsupported_bcg_quadrant: a quadrant
+    # assignment is only kept if BOTH market_dimension and
+    # product_dimension are one of the two real, non-null values
+    # ("existing"/"new") -- otherwise the whole result is nulled.
+    if ansoff_matrix is None:
+        return None
+    has_market_dim = ansoff_matrix.get("market_dimension") in ("existing", "new")
+    has_product_dim = ansoff_matrix.get("product_dimension") in ("existing", "new")
+    if has_market_dim and has_product_dim:
+        return ansoff_matrix
+    logger.info(
+        "generate_with_citations: ansoff_matrix quadrant=%r lacked real market/product dimension "
+        "grounding (market_dimension=%r, product_dimension=%r) -- nulling out as unsupported.",
+        ansoff_matrix.get("quadrant"), ansoff_matrix.get("market_dimension"), ansoff_matrix.get("product_dimension"),
+    )
+    return None
+
 # Phase 3: SWOT/PESTEL/BMC all reduce to the same shape -- a narrative plus
 # N named categories, each an array of { text, citation_index } points.
 # Built generically instead of writing the same schema 3x with different
@@ -540,6 +629,7 @@ STRUCTURED_FRAMEWORKS = {
         BALANCED_SCORECARD_STRUCTURED_SUFFIX,
         "balanced_scorecard", "grounded_balanced_scorecard_analysis", BALANCED_SCORECARD_SCHEMA,
     ),
+    "ansoff": (ANSOFF_STRUCTURED_SUFFIX, "ansoff_matrix", "grounded_ansoff_analysis", ANSOFF_MATRIX_SCHEMA),
 }
 
 
@@ -620,6 +710,8 @@ async def generate_with_citations(query: str, context_chunks: list, framework_ta
             extra_value = _null_out_unsupported_bcg_quadrant(extra_value)
         elif framework_tag == "balanced_scorecard" and extra_value:
             extra_value = _null_out_ungrounded_scorecard_metrics(extra_value)
+        elif framework_tag == "ansoff" and extra_value:
+            extra_value = _null_out_unsupported_ansoff_quadrant(extra_value)
 
         return {"text": text, "citations": citations, field_name: extra_value}
 

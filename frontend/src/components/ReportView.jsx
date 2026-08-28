@@ -104,7 +104,9 @@ const SIDEBAR_FRAMEWORK_NAV = [
   // active frameworks apart, unlike two disabled placeholders. Grid2X2
   // also just fits a 2x2 quadrant matrix thematically.
   { key: "bcg", label: "BCG Matrix", icon: Grid2X2, color: PALETTE.purple },
-  { key: null, label: "Ansoff Matrix", icon: TrendingUp, color: PALETTE.teal },
+  // GitHub issue #16: unlocked -- last of the original 6 paid-tier
+  // frameworks, now real.
+  { key: "ansoff", label: "Ansoff Matrix", icon: TrendingUp, color: PALETTE.teal },
   // GitHub issue #14: unlocked, same treatment as Porter's Five
   // Forces/STP/BCG Matrix above.
   { key: "value_chain", label: "Value Chain", icon: Link2, color: PALETTE.red },
@@ -961,6 +963,56 @@ function BalancedScorecard({ balancedScorecard }) {
   );
 }
 
+// GitHub issue #16. Same fixed 2x2 quadrant treatment as
+// BcgQuadrantChart -- market on one axis, product on the other, both
+// "existing" vs "new" per the standard Ansoff Matrix convention.
+const ANSOFF_QUADRANT_LAYOUT = [
+  { key: "market_development", label: "Market Development", color: PALETTE.blue },
+  { key: "diversification", label: "Diversification", color: PALETTE.red },
+  { key: "market_penetration", label: "Market Penetration", color: PALETTE.teal },
+  { key: "product_development", label: "Product Development", color: PALETTE.amber },
+];
+
+function AnsoffQuadrantChart({ ansoffMatrix }) {
+  return (
+    <div>
+      <div className="grid grid-cols-2 gap-2" style={{ maxWidth: 360 }}>
+        {ANSOFF_QUADRANT_LAYOUT.map((q) => {
+          const isAssigned = q.key === ansoffMatrix.quadrant;
+          return (
+            <div key={q.key} className="rounded-xl p-3 flex items-center justify-center text-center"
+              style={isAssigned
+                ? { background: `${q.color}22`, border: `1.5px solid ${q.color}`, minHeight: 72 }
+                : { border: `1.5px dashed ${PALETTE.textMuted}`, opacity: 0.5, minHeight: 72 }}>
+              <span className="text-xs font-bold uppercase tracking-wide" style={{ color: isAssigned ? q.color : PALETTE.textMuted }}>
+                {q.label}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-3 text-[10px] flex items-center justify-between" style={{ color: PALETTE.textMuted, maxWidth: 360 }}>
+        <span>← Existing product</span>
+        <span>New product →</span>
+      </div>
+      <div className="mt-4 flex flex-col gap-1.5 text-xs">
+        <div>
+          <span className="font-semibold" style={{ color: PALETTE.textSecondary }}>Market: </span>
+          <span className="text-white capitalize">{ansoffMatrix.market_dimension}</span>
+        </div>
+        <div>
+          <span className="font-semibold" style={{ color: PALETTE.textSecondary }}>Product: </span>
+          <span className="text-white capitalize">{ansoffMatrix.product_dimension}</span>
+        </div>
+        <p className="mt-1 leading-relaxed" style={{ color: "#e4e9f5" }}>
+          {ansoffMatrix.rationale}
+          {ansoffMatrix.citation_index != null && <span className="ml-1" style={{ color: PALETTE.blue }}>[{ansoffMatrix.citation_index}]</span>}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // Dispatches to a framework's structured visual treatment when available;
 // falls back to the plain prose paragraph otherwise (missing field, older
 // cached report, or a framework Phase 3 hasn't migrated yet) -- same
@@ -993,6 +1045,9 @@ function FrameworkBody({ frameworkKey, result }) {
   }
   if (frameworkKey === "balanced_scorecard" && result.balanced_scorecard) {
     return <BalancedScorecard balancedScorecard={result.balanced_scorecard} />;
+  }
+  if (frameworkKey === "ansoff" && result.ansoff_matrix) {
+    return <AnsoffQuadrantChart ansoffMatrix={result.ansoff_matrix} />;
   }
   const isInsufficient = result.text?.trim() === "Insufficient grounded data available for this section.";
   return (

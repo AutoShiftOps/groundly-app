@@ -22,7 +22,13 @@ router = APIRouter()
 # verified framework goes in this set rather than sitting fully working
 # but permanently unreachable behind a gate that doesn't exist. Revisit
 # once real tier/billing logic exists.
-FREE_FRAMEWORKS = {"pestel", "swot", "tam", "bmc", "porter", "stp", "bcg", "value_chain", "balanced_scorecard"}
+#
+# GitHub issue #16 (Ansoff Matrix) was the last of the original 6
+# "paid tier" M6 frameworks (docs/milestones.md) -- all 6 are now real
+# and in this set. Once actual tier/billing logic exists, this set
+# stops being "everything that works" and needs to actually split by
+# what a free vs paid *account* can request, not by what's been built.
+FREE_FRAMEWORKS = {"pestel", "swot", "tam", "bmc", "porter", "stp", "bcg", "value_chain", "balanced_scorecard", "ansoff"}
 
 # Extra structured-output fields (agents/rag_pipeline.py's
 # STRUCTURED_FRAMEWORKS, Phase 1 for market_sizing + Phase 3 for the
@@ -76,7 +82,7 @@ class AnalysisRequest(BaseModel):
     idea: str
     industry: str | None = None
     geography: str | None = None
-    frameworks: list[str] = ["pestel", "swot", "tam", "bmc", "porter", "stp", "bcg", "value_chain", "balanced_scorecard"]
+    frameworks: list[str] = ["pestel", "swot", "tam", "bmc", "porter", "stp", "bcg", "value_chain", "balanced_scorecard", "ansoff"]
     tier: str = "free"  # "free" or "paid"
 
 
@@ -153,5 +159,5 @@ def list_frameworks():
     # built, using the same short-key convention as the ones that are.
     return {
         "free": sorted(FREE_FRAMEWORKS),
-        "paid": ["ansoff"],
+        "paid": [],
     }

@@ -142,6 +142,17 @@ def test_balanced_scorecard_present_and_now_unlocked():
     assert key == "balanced_scorecard", f"Balanced Scorecard should be unlocked (key: 'balanced_scorecard') per GitHub issue #15, found key={key!r}."
 
 
+def test_ansoff_matrix_present_and_now_unlocked():
+    # GitHub issue #16: last of the original 6 paid-tier frameworks,
+    # same treatment as the other unlocks above.
+    source = _report_view_source()
+    entries = _extract_sidebar_nav_entries(source)
+    ansoff_entries = [(key, label) for key, label in entries if label == "Ansoff Matrix"]
+    assert ansoff_entries, "Ansoff Matrix is missing from SIDEBAR_FRAMEWORK_NAV entirely."
+    key, _label = ansoff_entries[0]
+    assert key == "ansoff", f"Ansoff Matrix should be unlocked (key: 'ansoff') per GitHub issue #16, found key={key!r}."
+
+
 def test_sidebar_nav_order_matches_the_mock_exactly():
     # docs/TEST_COVERAGE_SPEC.md follow-up: the mock interleaves real and
     # locked entries in a fixed order rather than grouping "unlocked
