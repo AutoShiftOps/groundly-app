@@ -27,6 +27,7 @@ import {
   Workflow, GraduationCap, X, Database, Search, BadgeCheck,
 } from "lucide-react";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
+import { encodeReportLink } from "../lib/reportLink";
 
 // Same lookup App.tsx uses for /api/analyze -- duplicated here rather
 // than threaded down as a prop since this is the only other real API
@@ -1465,6 +1466,41 @@ function OverviewFrameworkLinks({ stats, report, onSelectFramework }) {
   );
 }
 
+// GitHub issue #17 (Share). Builds a self-contained link (the whole
+// report encoded into the URL hash, see lib/reportLink.js) and copies
+// it to the clipboard -- confirmed decision: a copy-current-session
+// link, no backend persistence. Three visible states so a failure
+// (clipboard permission denied, or the report being too large to fit
+// in a URL) is never silent -- "Share" alone would look successful
+// even when nothing was actually copied.
+function ShareButton({ idea, report }) {
+  const [state, setState] = useState("idle"); // idle | copying | copied | error
+
+  const handleShare = async () => {
+    setState("copying");
+    try {
+      const url = await encodeReportLink({ idea, report });
+      if (!url) throw new Error("report too large to encode into a link");
+      await navigator.clipboard.writeText(url);
+      setState("copied");
+      setTimeout(() => setState("idle"), 2500);
+    } catch (err) {
+      console.error("ShareButton: failed to copy link", err);
+      setState("error");
+      setTimeout(() => setState("idle"), 2500);
+    }
+  };
+
+  const label = state === "copied" ? "Link copied!" : state === "error" ? "Couldn't copy link" : state === "copying" ? "Copying…" : "Share";
+
+  return (
+    <button onClick={handleShare} disabled={state === "copying"} className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-xl transition-colors hover:bg-white/5"
+      style={{ background: PALETTE.bgCard, color: state === "error" ? PALETTE.red : "#fff", border: `1px solid ${PALETTE.border}` }}>
+      {state === "copied" ? <CheckCircle2 size={14} /> : <Share2 size={14} />} {label}
+    </button>
+  );
+}
+
 // GitHub issue #20 ("Ask AI"). Calls the real /api/ask endpoint
 // (backend/routers/analysis.py -> agents/report_qa.py) with this
 // report's own already-generated results -- no new retrieval happens
@@ -1704,10 +1740,7 @@ export default function ReportView({ report, idea, onReset }) {
             </div>
           </div>
           <div className="flex gap-2 shrink-0">
-            <button disabled title="Coming soon" className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-xl opacity-60"
-              style={{ background: PALETTE.bgCard, color: "#fff", border: `1px solid ${PALETTE.border}` }}>
-              <Share2 size={14} /> Share
-            </button>
+            <ShareButton idea={idea} report={report} />
             <button disabled title="Coming soon" className="flex items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-xl opacity-70 text-white"
               style={{ background: `linear-gradient(90deg, ${PALETTE.blue}, ${PALETTE.purple})` }}>
               <Download size={14} /> Export PDF

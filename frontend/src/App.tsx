@@ -10,11 +10,12 @@
 // - Passes real activeStageIndex + sourceCount into LoadingScreen instead
 //   of the hardcoded constants that were in the Figma export.
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import HomeScreen from "./components/HomeScreen";
 import LoadingScreen from "./components/LoadingScreen";
 import ReportView from "./components/ReportView";
 import { trackEvent } from "./lib/ga4";
+import { decodeReportLinkFromHash, clearSharedHash } from "./lib/reportLink";
 import "./styles/theme.css";
 
 const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || "http://localhost:8000";
@@ -28,6 +29,24 @@ export default function App() {
   const [activeStage, setActiveStage] = useState(0);
   const [report, setReport] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // GitHub issue #17 (Share): a shared link encodes the whole report
+  // directly in the URL hash (see lib/reportLink.js) since there's no
+  // backend persistence -- restore it on mount if present, same as any
+  // other "load state from the URL" router would. Only runs once; a
+  // shared link is meant to open straight into its report, not run
+  // handleLaunch again.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const shared = await decodeReportLinkFromHash();
+      if (shared && !cancelled) {
+        setIdea(shared.idea || "");
+        setReport(shared.report);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const handleLaunch = async () => {
     if (!idea.trim()) return;
@@ -77,6 +96,7 @@ export default function App() {
     setReport(null);
     setError(null);
     setIdea("");
+    clearSharedHash();
   };
 
   const sourceCount = report
