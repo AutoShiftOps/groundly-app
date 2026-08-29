@@ -1240,6 +1240,10 @@ function TamSizingCard({ result, verification, ideaTitle, forceExpanded = false 
 
   const presentItems = items.filter((it) => it.present);
   const maxOuter = 92, minRadius = 24, ringGap = 18, ghostRadius = 34;
+  // Reserved space to the diagram's right for a leader-line callout label
+  // when a tier's own ring band is too thin to hold its inline text (see
+  // MIN_BAND_FOR_INLINE_LABEL below).
+  const CALLOUT_GUTTER = 70;
   const maxValue = presentItems.length ? Math.max(...presentItems.map((it) => it.value)) : 0;
   // Real-world tier ratios are far more skewed than sqrt-scaling alone can
   // stay legible at: a real case (TAM $6.1B / SAM $330M / SOM $8M, SAM at
@@ -1312,51 +1316,100 @@ function TamSizingCard({ result, verification, ideaTitle, forceExpanded = false 
       </div>
 
       <div className="flex items-center gap-6 flex-wrap">
-        <svg width={size} height={size} className="shrink-0">
-          {items.map((item, i) => {
-            if (!item.present) {
-              // Unchanged: dashed ghost ring for an absent tier.
+        {/* Widened from the diagram's own `size` to `size + CALLOUT_GUTTER`
+            (tests/tam_circle_diagram.test.jsx's literal width selector
+            updated to match) so a leader-line callout's label has real
+            reserved flexbox space -- otherwise the adjacent legend column
+            would sit at its old x-position and visually collide with
+            callout text drawn there via overflow:visible. */}
+        <svg width={size + CALLOUT_GUTTER} height={size} className="shrink-0" style={{ overflow: "visible" }}>
+          {(() => {
+            // Real-world ratios can be far more skewed than the mock's own
+            // example (mock: SAM ~27% of TAM; a real EV-charging case
+            // measured during this fix: SAM 5.4% of TAM) -- skewed enough
+            // that _null_out_unsupported_tam_tiers' sibling concern here,
+            // guaranteedFloor's minimum ring-gap separation, produces a
+            // visible band too thin to hold a legible two-line inline
+            // label without it visually crowding into the ring inside it
+            // (confirmed via a real screenshot: SAM's label overlapping
+            // into SOM's circle). Below this width, skip the inline label
+            // and draw a leader-line callout to the label positioned
+            // outside the whole diagram instead -- still fully labeled,
+            // just not crammed inside a band that can't fit it.
+            const MIN_BAND_FOR_INLINE_LABEL = 22;
+            let calloutCount = 0;
+            return items.map((item, i) => {
+              if (!item.present) {
+                // Unchanged: dashed ghost ring for an absent tier.
+                return (
+                  <g key={item.key}>
+                    <circle cx={cx} cy={cy} r={radii[i]} fill="none" stroke={PALETTE.textMuted} strokeWidth={1.5} strokeDasharray="4 3" opacity={0.6} />
+                    <text x={cx} y={cy - radii[i] + 9} textAnchor="middle" fontSize="7" fill={PALETTE.textMuted}>No data found</text>
+                  </g>
+                );
+              }
+              // Solid filled band, matching the mock -- each smaller present
+              // tier is drawn after (so painted over the center of) the
+              // larger one, leaving each ring's own color visible as a band
+              // around it rather than a hollow outline. Value written
+              // directly on the visible band/circle, not just in the side
+              // legend: positioned at the vertical midpoint of this tier's
+              // own visible band (between its own radius and the next
+              // smaller present tier's radius), or dead center for the
+              // innermost present tier, which has no inner neighbor to
+              // avoid.
+              const rankInPresent = presentIndices.indexOf(i);
+              const isInnermost = i === innermostPresentIndex;
+              const innerBoundary = isInnermost ? 0 : radii[presentIndices[rankInPresent + 1]];
+              const bandWidth = isInnermost ? radii[i] : radii[i] - innerBoundary;
+              const textY = isInnermost ? cy : cy - (radii[i] + innerBoundary) / 2;
+              // Fill opacity bumped from the original 0x59 (~35%, read as
+              // faint/washed-out next to the mock's bold, near-opaque
+              // bands) to 0xD9 (~85%) -- confirmed against a real
+              // screenshot comparison. At that opacity the fill itself IS
+              // the dominant color under the text now, not a light tint
+              // over the dark card background, so the inline label/value
+              // text gets a dark halo (stroke painted behind the fill via
+              // paintOrder) rather than relying on plain white-on-color
+              // contrast, which isn't reliably legible against every tier
+              // color (teal in particular).
+              const circle = <circle cx={cx} cy={cy} r={radii[i]} fill={`${item.color}D9`} stroke={item.color} strokeWidth={2} />;
+
+              if (bandWidth >= MIN_BAND_FOR_INLINE_LABEL) {
+                return (
+                  <g key={item.key}>
+                    {circle}
+                    <text x={cx} y={textY - 3} textAnchor="middle" fontSize="8" fontWeight="700" fill="#fff"
+                      stroke="rgba(0,0,0,0.55)" strokeWidth="2.5" strokeLinejoin="round" paintOrder="stroke">{item.label}</text>
+                    <text x={cx} y={textY + 9} textAnchor="middle" fontSize="9" fontWeight="800" fill="#fff"
+                      stroke="rgba(0,0,0,0.55)" strokeWidth="2.5" strokeLinejoin="round" paintOrder="stroke">{item.displayValue}</text>
+                  </g>
+                );
+              }
+
+              // Leader-line callout: fanned out to the upper-right, away
+              // from the other tiers' vertical inline-label stack, so it
+              // never collides with them regardless of how many bands end
+              // up needing one.
+              const angleDeg = -25 - calloutCount * 35;
+              calloutCount += 1;
+              const angleRad = (angleDeg * Math.PI) / 180;
+              const bandMidR = (radii[i] + innerBoundary) / 2;
+              const startX = cx + bandMidR * Math.cos(angleRad);
+              const startY = cy - bandMidR * Math.sin(angleRad);
+              const endX = cx + (maxOuter + 22) * Math.cos(angleRad);
+              const endY = cy - (maxOuter + 22) * Math.sin(angleRad);
               return (
                 <g key={item.key}>
-                  <circle cx={cx} cy={cy} r={radii[i]} fill="none" stroke={PALETTE.textMuted} strokeWidth={1.5} strokeDasharray="4 3" opacity={0.6} />
-                  <text x={cx} y={cy - radii[i] + 9} textAnchor="middle" fontSize="7" fill={PALETTE.textMuted}>No data found</text>
+                  {circle}
+                  <line x1={startX} y1={startY} x2={endX} y2={endY} stroke={item.color} strokeWidth={1.2} />
+                  <circle cx={startX} cy={startY} r={2} fill={item.color} />
+                  <text x={endX + 4} y={endY - 3} fontSize="8" fontWeight="700" fill={item.color}>{item.label}</text>
+                  <text x={endX + 4} y={endY + 9} fontSize="9" fontWeight="800" fill="#fff">{item.displayValue}</text>
                 </g>
               );
-            }
-            // Solid filled band, matching the mock -- each smaller present
-            // tier is drawn after (so painted over the center of) the
-            // larger one, leaving each ring's own color visible as a band
-            // around it rather than a hollow outline. Value written
-            // directly on the visible band/circle, not just in the side
-            // legend: positioned at the vertical midpoint of this tier's
-            // own visible band (between its own radius and the next
-            // smaller present tier's radius), or dead center for the
-            // innermost present tier, which has no inner neighbor to
-            // avoid.
-            const rankInPresent = presentIndices.indexOf(i);
-            const isInnermost = i === innermostPresentIndex;
-            const innerBoundary = isInnermost ? 0 : radii[presentIndices[rankInPresent + 1]];
-            const textY = isInnermost ? cy : cy - (radii[i] + innerBoundary) / 2;
-            // Fill opacity bumped from the original 0x59 (~35%, read as
-            // faint/washed-out next to the mock's bold, near-opaque
-            // bands) to 0xD9 (~85%) -- confirmed against a real
-            // screenshot comparison. At that opacity the fill itself IS
-            // the dominant color under the text now, not a light tint
-            // over the dark card background, so the inline label/value
-            // text gets a dark halo (stroke painted behind the fill via
-            // paintOrder) rather than relying on plain white-on-color
-            // contrast, which isn't reliably legible against every tier
-            // color (teal in particular).
-            return (
-              <g key={item.key}>
-                <circle cx={cx} cy={cy} r={radii[i]} fill={`${item.color}D9`} stroke={item.color} strokeWidth={2} />
-                <text x={cx} y={textY - 3} textAnchor="middle" fontSize="8" fontWeight="700" fill="#fff"
-                  stroke="rgba(0,0,0,0.55)" strokeWidth="2.5" strokeLinejoin="round" paintOrder="stroke">{item.label}</text>
-                <text x={cx} y={textY + 9} textAnchor="middle" fontSize="9" fontWeight="800" fill="#fff"
-                  stroke="rgba(0,0,0,0.55)" strokeWidth="2.5" strokeLinejoin="round" paintOrder="stroke">{item.displayValue}</text>
-              </g>
-            );
-          })}
+            });
+          })()}
         </svg>
         <div className="flex flex-col gap-2.5">
           {items.map((item) => (

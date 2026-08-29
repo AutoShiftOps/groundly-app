@@ -15,7 +15,7 @@
 // closer together, not always snapping to the harsh floor pattern.
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import ReportViewTamDefault from "./.generated/ReportView.tam-default.jsx";
+import ReportViewTamDefault from "../src/components/ReportView.tam-default.generated.jsx";
 import { check, finish } from "./lib/ssr-assert.mjs";
 
 function fixtureWithMarketSizing(marketSizing) {
@@ -44,7 +44,10 @@ function extractDiagramSvg(html) {
   // = maxOuter*2+16 = 200 at this component's current constants) --
   // find the diagram one specifically, not just the first <svg> on the
   // page, since the logo's markup also contains <circle>.
-  const svgStart = html.indexOf('<svg width="200"');
+  // Widened from the diagram's own 200px to 270px (200 + CALLOUT_GUTTER)
+  // so a thin-band tier's leader-line callout label has real reserved
+  // flexbox space next to the legend column, instead of overlapping it.
+  const svgStart = html.indexOf('<svg width="270"');
   const svgEnd = html.indexOf("</svg>", svgStart) + "</svg>".length;
   return html.slice(svgStart, svgEnd);
 }
@@ -94,7 +97,23 @@ check("Fill opacity reads as bold/vivid (75-90% range), not faint -- checked aga
   return alphaFraction >= 0.75 && alphaFraction <= 0.90;
 })());
 check("Inline abbreviation label ('TAM') rendered inside the SVG diagram itself, not just the legend", extractDiagramSvg(extremeHtml).includes(">TAM<"));
-check("Inline dollar value ('$330M') rendered inside the SVG diagram itself for SAM", extractDiagramSvg(extremeHtml).includes("$330M"));
+check("Dollar value ('$330M') rendered inside the SVG diagram itself for SAM -- inline or, once its band gets too thin (see below), as a leader-line callout label", extractDiagramSvg(extremeHtml).includes("$330M"));
+
+// --- Leader-line callout: real bug found comparing against the mock on
+// this exact extreme-ratio case -- SAM's inline label, squeezed into an
+// 18px-wide band (42 - 24), visually overlapped into SOM's circle
+// underneath it. Below MIN_BAND_FOR_INLINE_LABEL, that tier now gets a
+// leader-line callout to a label positioned outside the diagram instead
+// of cramming text into a band too thin to hold it. ---
+check("Extreme-ratio case: SAM's band (42-24=18px) is too thin for an inline label -- gets a leader-line callout (<line>) instead", extractDiagramSvg(extremeHtml).includes("<line "));
+check("Extreme-ratio case: TAM (50px band) and SOM (24px radius, centered not banded) still keep their labels inline, no callout needed for either", (() => {
+  const svg = extractDiagramSvg(extremeHtml);
+  // Exactly one callout (SAM) -- not zero (bug not fixed) and not more
+  // than one (TAM/SOM incorrectly also pushed into callouts).
+  const lineCount = (svg.match(/<line /g) || []).length;
+  return lineCount === 1;
+})());
+check("Mock-like-ratio case: SAM's band (48-24=24px) clears the threshold -- no callout needed, matches the mock's own all-inline layout", !extractDiagramSvg(mockLikeHtml).includes("<line "));
 
 // --- Absent-tier ghost ring treatment unchanged ---
 const partialFixture = fixtureWithMarketSizing({
