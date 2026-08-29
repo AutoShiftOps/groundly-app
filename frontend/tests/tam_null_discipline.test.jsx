@@ -11,7 +11,7 @@
 // since react-dom/server can't simulate clicking the TAM tab.
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import ReportViewTamDefault from "./.generated/ReportView.tam-default.jsx";
+import ReportViewTamDefault from "../src/components/ReportView.tam-default.generated.jsx";
 import { check, finish } from "./lib/ssr-assert.mjs";
 
 // Deliberately partially-null: tam has a real grounded value (with a real

@@ -12,8 +12,8 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ReportView from "../src/components/ReportView.jsx";
-import ReportViewTamDefault from "./.generated/ReportView.tam-default.jsx";
-import ReportViewSwotDefault from "./.generated/ReportView.swot-default.jsx";
+import ReportViewTamDefault from "../src/components/ReportView.tam-default.generated.jsx";
+import ReportViewSwotDefault from "../src/components/ReportView.swot-default.generated.jsx";
 import { check, finish } from "./lib/ssr-assert.mjs";
 
 // pestel: 2 citations, 2 distinct source_urls. swot: 0 citations (the

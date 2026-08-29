@@ -16,8 +16,8 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ReportView from "../src/components/ReportView.jsx";
-import ReportViewTamDefault from "./.generated/ReportView.tam-default.jsx";
-import ReportViewSwotDefault from "./.generated/ReportView.swot-default.jsx";
+import ReportViewTamDefault from "../src/components/ReportView.tam-default.generated.jsx";
+import ReportViewSwotDefault from "../src/components/ReportView.swot-default.generated.jsx";
 import { check, finish } from "./lib/ssr-assert.mjs";
 
 const fixtureReport = {
@@ -45,9 +45,32 @@ const fixtureReport = {
 
 const props = { report: fixtureReport, idea: "EcoPack sustainable packaging idea", onReset: () => {} };
 
-const overviewHtml = renderToStaticMarkup(React.createElement(ReportView, props));
-const tamTabHtml = renderToStaticMarkup(React.createElement(ReportViewTamDefault, props));
-const swotTabHtml = renderToStaticMarkup(React.createElement(ReportViewSwotDefault, props));
+// GitHub issue #18 follow-up (Export PDF, full-report version):
+// ReportView now renders a SECOND tree unconditionally alongside the
+// interactive one -- PrintableFullReport (.report-print-view), hidden
+// on screen via CSS (display:none) but very much present in raw SSR
+// markup, since react-dom/server has no concept of CSS. It always
+// includes every present framework's full card (VerdictBanner,
+// TamSizingCard/FrameworkPanel for every framework, etc) regardless of
+// which tab is active on screen -- that's the whole point of it. This
+// test is specifically about the INTERACTIVE screen view's own
+// isOverview gating, so it scopes every check to just
+// .report-screen-view's markup (which always comes first in the DOM,
+// per ReportView.jsx's own structure) and ignores the separate
+// always-rendered print tree entirely -- not scoping this would make
+// every "does NOT render" / "exactly once" check below fail against
+// content that's real, intentional, and simply in the other tree.
+function screenViewOnly(html) {
+  const printViewStart = html.indexOf('class="report-print-view"');
+  if (printViewStart === -1) {
+    throw new Error("Could not find .report-print-view in rendered HTML -- ReportView.jsx's structure changed, this test's scoping needs updating.");
+  }
+  return html.slice(0, printViewStart);
+}
+
+const overviewHtml = screenViewOnly(renderToStaticMarkup(React.createElement(ReportView, props)));
+const tamTabHtml = screenViewOnly(renderToStaticMarkup(React.createElement(ReportViewTamDefault, props)));
+const swotTabHtml = screenViewOnly(renderToStaticMarkup(React.createElement(ReportViewSwotDefault, props)));
 
 // Marker strings unique to each gated block -- real component text, not
 // invented for the test, so a rename would need this test updated too
