@@ -229,8 +229,12 @@ function StatsGrid() {
   const cards: StatCardData[] = [
     { icon: <Search size={18} className="text-[#4a8fff]" strokeWidth={1.8} />, iconBg: "rgba(74,143,255,0.18)",
       value: <LoadingDots color="#4a8fff" />, label: "Gathering sources", subtext: "Retrieving grounded data…" },
+    // Stale since the M6 framework buildout -- this used to say "4" /
+    // "PESTEL, SWOT, TAM, BMC" from back when those were the only real
+    // frameworks. All 10 are real now (backend FREE_FRAMEWORKS), so the
+    // claim is corrected to match, not just restyled.
     { icon: <Globe size={18} className="text-[#2dd4bf]" strokeWidth={1.8} />, iconBg: "rgba(45,212,191,0.15)",
-      value: "4", label: "frameworks analyzed", subtext: "PESTEL, SWOT, TAM, BMC" },
+      value: "10", label: "frameworks analyzed", subtext: "PESTEL, SWOT, TAM, BMC + 6 more" },
     { icon: <BarChart2 size={18} className="text-[#a78bfa]" strokeWidth={1.8} />, iconBg: "rgba(167,139,250,0.18)",
       value: <LoadingDots color="#a78bfa" />, label: "Synthesizing analysis", subtext: "Crunching numbers for deeper insights" },
   ];

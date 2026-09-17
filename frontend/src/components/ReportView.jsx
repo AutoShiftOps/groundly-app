@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 import { encodeReportLink } from "../lib/reportLink";
+import Sidebar from "./Sidebar";
 
 // Same lookup App.tsx uses for /api/analyze -- duplicated here rather
 // than threaded down as a prop since this is the only other real API
@@ -1715,124 +1716,19 @@ export default function ReportView({ report, idea, onReset }) {
 
   return (
     <div className="flex min-h-screen w-full overflow-hidden" style={{ background: PALETTE.bgOuter, fontFamily: "'Inter', sans-serif" }}>
-      <aside className="flex flex-col w-[250px] min-h-screen py-5 px-3 shrink-0" style={{ background: PALETTE.bgSidebar, borderRight: `1px solid ${PALETTE.border}` }}>
-        <div className="flex items-center gap-2 px-2 mb-6">
-          {/* Hexagonal "G" mark matching the mock: an outlined (not
-              filled) hexagon with a blue->purple gradient stroke, and an
-              open-ring "G" glyph inside built the same way -- a dashed
-              circle with one gap (not an arc path, to avoid guessing
-              large-arc/sweep flags for a shape this project can't
-              currently screenshot-verify pixel-by-pixel) plus a short bar
-              closing the gap toward center, echoing the mock's monogram. */}
-          <div className="w-8 h-8 flex items-center justify-center shrink-0">
-            <svg width="30" height="30" viewBox="0 0 24 24" fill="none">
-              <defs>
-                <linearGradient id="groundlyLogoGrad" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
-                  <stop offset="0%" stopColor={PALETTE.blue} />
-                  <stop offset="100%" stopColor={PALETTE.purpleLight} />
-                </linearGradient>
-              </defs>
-              <path d="M12 2L21 7V17L12 22L3 17V7L12 2Z" stroke="url(#groundlyLogoGrad)" strokeWidth="1.6" strokeLinejoin="round" />
-              <circle cx="12" cy="12" r="6.5" stroke="url(#groundlyLogoGrad)" strokeWidth="1.8" strokeLinecap="round"
-                strokeDasharray="35.17 5.67" strokeDashoffset="-2.84" />
-              <line x1="12.5" y1="12" x2="18" y2="12" stroke="url(#groundlyLogoGrad)" strokeWidth="1.8" strokeLinecap="round" />
-            </svg>
-          </div>
-          <div>
-            <div className="text-sm font-bold text-white leading-tight">Groundly</div>
-            <div className="text-[9px] leading-tight uppercase tracking-wider" style={{ color: PALETTE.textMuted }}>AI Analysis Platform</div>
-          </div>
-        </div>
-
-        <button onClick={() => setActiveFramework("overview")}
-          className="flex items-center gap-2 text-sm font-semibold px-3 py-2.5 rounded-xl transition-colors mb-3"
-          style={{ background: isOverview ? `${PALETTE.blue}1f` : "transparent", color: isOverview ? "#fff" : PALETTE.textSecondary,
-            boxShadow: isOverview ? `inset 0 0 0 1.5px ${PALETTE.blue}` : "none" }}>
-          <LayoutGrid size={15} style={{ color: isOverview ? PALETTE.blue : PALETTE.textMuted }} />
-          Overview
-        </button>
-
-        <div className="text-[10px] uppercase tracking-wider px-2 mb-1" style={{ color: PALETTE.textMuted }}>Frameworks</div>
-
-        <div className="flex flex-col gap-0.5">
-          {/* One fixed-order list, real and locked rows interleaved exactly
-              as report-ux-mock.png shows them -- not grouped into
-              "unlocked first, then locked". A `key` entry only renders
-              unlocked if report.results actually has that framework (same
-              condition stats.frameworks encoded before); otherwise it
-              falls through to the same locked treatment as a `key: null`
-              placeholder, which keeps this safe even for the edge case of
-              a supported framework whose data didn't come back on this
-              particular report. */}
-          {SIDEBAR_FRAMEWORK_NAV.map((item) => {
-            const isUnlocked = item.key && stats.frameworks.includes(item.key);
-            const NavIcon = item.icon;
-
-            if (isUnlocked) {
-              const verified = report.verification?.[item.key]?.verified;
-              const active = activeFramework === item.key;
-              // Two independent signals, deliberately not conflated:
-              // brightness/color here is driven ONLY by lock state (this
-              // row is unlocked, full stop) -- verified/weak-data status
-              // never dims a row or grays out its icon. That status only
-              // ever shows up in the checkmark-vs-dot indicator below.
-              // Without this, an unlocked-but-weak-data framework reads
-              // as visually indistinguishable from a genuinely locked
-              // one, which is exactly the bug this fixes.
-              return (
-                <button key={item.label} onClick={() => setActiveFramework(item.key)}
-                  className="flex items-start justify-between gap-2 text-sm px-3 py-2.5 rounded-xl transition-colors text-left"
-                  style={{ background: active ? `${PALETTE.blue}1f` : "transparent", color: "#fff",
-                    boxShadow: active ? `inset 0 0 0 1.5px ${PALETTE.blue}` : "none" }}>
-                  <span className="flex items-start gap-2 min-w-0">
-                    <NavIcon size={15} style={{ color: active ? PALETTE.blue : item.color }} className="shrink-0 mt-0.5" />
-                    {/* Wraps instead of truncating (matches the mock's own
-                        treatment of "Business Model Canvas" -- it wraps to
-                        a 2nd line there too, at this same sidebar width,
-                        rather than clipping with an ellipsis). */}
-                    <span className="leading-snug">{item.label}</span>
-                  </span>
-                  {/* Intentional, confirmed: checkmark = a strong grounded
-                      result; gray dot = the framework ran but came back
-                      weak/insufficient. Not a uniform "ran" indicator, and
-                      NOT a brightness/lock signal either -- a weak-data
-                      framework still looks fully available above, it just
-                      gets a dot here instead of a checkmark. */}
-                  {verified
-                    ? <CheckCircle2 size={14} style={{ color: PALETTE.teal }} className="shrink-0 mt-0.5" />
-                    : <span className="w-1.5 h-1.5 rounded-full shrink-0 mt-2" style={{ background: PALETTE.textMuted }} />}
-                </button>
-              );
-            }
-
-            return (
-              <button key={item.label} disabled className="flex items-start justify-between gap-2 text-sm px-3 py-2.5 rounded-xl opacity-40 cursor-not-allowed text-left" style={{ color: PALETTE.textSecondary }}>
-                <span className="flex items-start gap-2 min-w-0">
-                  <NavIcon size={15} className="shrink-0 mt-0.5" />
-                  <span className="leading-snug">{item.label}</span>
-                </span>
-                <Lock size={12} className="shrink-0 mt-0.5" />
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="mt-auto flex flex-col gap-2">
-          <div className="rounded-xl p-3.5" style={{ background: PALETTE.bgCard, border: `1px solid ${PALETTE.border}` }}>
-            <div className="flex items-center gap-1.5 text-xs font-bold mb-1.5" style={{ color: PALETTE.purpleLight }}>
-              <Sparkles size={13} /> Pro Plan
-            </div>
-            <p className="text-[11px] mb-2.5" style={{ color: PALETTE.textSecondary }}>Unlock advanced frameworks and export unlimited reports.</p>
-            <button disabled className="w-full text-xs font-semibold py-2 rounded-lg opacity-60" style={{ background: PALETTE.bgPanel, color: "#fff", border: `1px solid ${PALETTE.border}` }}>
-              Upgrade Plan
-            </button>
-          </div>
-          <button onClick={onReset} className="w-full text-xs font-semibold py-2.5 rounded-lg transition-colors hover:bg-white/5"
-            style={{ background: PALETTE.bgCard, color: "#fff", border: `1px solid ${PALETTE.border}` }}>
-            Start New Analysis
-          </button>
-        </div>
-      </aside>
+      {/* GitHub visual-port task: replaces this view's own bespoke 250px
+          framework-listing sidebar with the SAME slim icon-rail Sidebar
+          component Home/Loading screens already use (frontend/src/
+          components/Sidebar.tsx) -- one consistent app shell across every
+          screen instead of ReportView carrying a second, different
+          sidebar implementation. Framework switching itself moves to the
+          horizontal pill row below (matching aurelo-ui's actual current
+          report layout, not just its home/loading screens). "Analyze"
+          resets to a fresh idea, same as Home/Loading's own nav; the
+          other nav labels have no real destination in this app yet
+          (Projects/Insights/Market/Reports aren't real routes), so they're
+          intentionally no-ops rather than fabricated pages. */}
+      <Sidebar activeNav="Analyze" onNavChange={(label) => { if (label === "Analyze") onReset(); }} />
 
       <main className="report-main-content flex-1 min-h-screen overflow-y-auto px-8 py-7">
         <div className="flex items-start justify-between mb-5 gap-4">
@@ -1849,6 +1745,57 @@ export default function ReportView({ report, idea, onReset }) {
             <ShareButton idea={idea} report={report} />
             <ExportPdfButton report={report} idea={idea} title={title} today={today} />
           </div>
+        </div>
+
+        {/* Horizontal pill-tab framework nav, replacing the old vertical
+            sidebar list for this specific job (framework switching) --
+            ported from aurelo-ui's actual report layout. Overview + every
+            framework in one wrapped row under the header; the old
+            sidebar's lock/verified semantics carry over unchanged
+            (a framework only renders as a real pill if report.results
+            actually has it -- everything in FREE_FRAMEWORKS does, now
+            that all 10 are real and unlocked, so the disabled/Lock
+            branch below is effectively dormant today but stays as a
+            defensive fallback for a framework that's supported but
+            didn't come back on this particular report). */}
+        <div className="flex flex-wrap gap-2 mb-5">
+          <button type="button" onClick={() => setActiveFramework("overview")}
+            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-full transition-colors"
+            style={{ background: isOverview ? `${PALETTE.blue}22` : PALETTE.bgCard, color: isOverview ? PALETTE.blue : PALETTE.textSecondary,
+              border: `1px solid ${isOverview ? PALETTE.blue : PALETTE.border}` }}>
+            <LayoutGrid size={13} /> Overview
+          </button>
+          {SIDEBAR_FRAMEWORK_NAV.map((item) => {
+            const isUnlocked = item.key && stats.frameworks.includes(item.key);
+            const NavIcon = item.icon;
+            const active = activeFramework === item.key;
+
+            if (!isUnlocked) {
+              return (
+                <button key={item.label} disabled
+                  className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-full opacity-40 cursor-not-allowed"
+                  style={{ color: PALETTE.textSecondary, border: `1px solid ${PALETTE.border}` }}>
+                  <NavIcon size={13} /> {item.label} <Lock size={11} />
+                </button>
+              );
+            }
+
+            const verified = report.verification?.[item.key]?.verified;
+            return (
+              <button key={item.label} type="button" onClick={() => setActiveFramework(item.key)}
+                className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-full transition-colors"
+                style={{ background: active ? `${PALETTE.blue}22` : PALETTE.bgCard, color: active ? PALETTE.blue : "#fff",
+                  border: `1px solid ${active ? PALETTE.blue : PALETTE.border}` }}>
+                <NavIcon size={13} style={{ color: active ? PALETTE.blue : item.color }} /> {item.label}
+                {/* Same checkmark-vs-dot distinction the old sidebar made:
+                    verified = strong grounded result, dot = ran but weak/
+                    insufficient. Never a lock/availability signal. */}
+                {verified
+                  ? <CheckCircle2 size={12} style={{ color: PALETTE.teal }} />
+                  : <span className="w-1.5 h-1.5 rounded-full" style={{ background: PALETTE.textMuted }} />}
+              </button>
+            );
+          })}
         </div>
 
         {/* docs/PHASE_5_SPEC.md A: this block used to render unconditionally

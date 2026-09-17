@@ -5,6 +5,8 @@ frontend/.env
 frontend/.env.local
 npm-debug.log*
 frontend/tests/.generated/
+frontend/.preview-tmp/
+aurelo-ui/.preview-tmp/
 
 # Python test artifacts
 .pytest_cache/
