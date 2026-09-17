@@ -1158,7 +1158,7 @@ function MethodologyModal({ frameworkKey, onClose }) {
   );
 }
 
-function FrameworkPanel({ frameworkKey, result, verification, ideaTitle }) {
+function FrameworkPanel({ frameworkKey, result, verification, ideaTitle, isSample = false }) {
   const [collapsed, setCollapsed] = useState(false);
   const [showMethodology, setShowMethodology] = useState(false);
   const verified = verification?.verified ?? false;
@@ -1177,10 +1177,14 @@ function FrameworkPanel({ frameworkKey, result, verification, ideaTitle }) {
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {/* isSample: this report was never sent to the real Groundly API
+              (see report.source / "Run the live demo" in ReportView's
+              caller) -- a teal "Verified" pill on fabricated content would
+              imply a real grounding check that never happened. */}
           <span className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full"
-            style={{ color: verified ? PALETTE.teal : PALETTE.amber, border: `1px solid ${verified ? PALETTE.teal : PALETTE.amber}` }}>
-            {verified ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
-            {verified ? "Verified" : "Unverified"}
+            style={{ color: isSample ? PALETTE.textMuted : verified ? PALETTE.teal : PALETTE.amber, border: `1px solid ${isSample ? PALETTE.textMuted : verified ? PALETTE.teal : PALETTE.amber}` }}>
+            {isSample ? <Info size={13} /> : verified ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
+            {isSample ? "Sample" : verified ? "Verified" : "Unverified"}
           </span>
           {/* GitHub issue #19: wired to a real modal now. report-print-hide:
               interactive controls, meaningless on a printed/PDF page. */}
@@ -1228,7 +1232,7 @@ function FrameworkPanel({ frameworkKey, result, verification, ideaTitle }) {
 // the narrative and hides the toggle button entirely; screen usage
 // (FrameworkPanel's TAM tab) doesn't pass this, so its own default
 // collapsed-behind-a-toggle behavior is unchanged.
-function TamSizingCard({ result, verification, ideaTitle, forceExpanded = false }) {
+function TamSizingCard({ result, verification, ideaTitle, forceExpanded = false, isSample = false }) {
   const items = useMemo(() => marketTiersFromApi(result.market_sizing), [result]);
   // Assumption 1 (confirmed): narrative stays available, not deleted --
   // collapsed behind a toggle, default closed, so circles/table (what the
@@ -1301,10 +1305,11 @@ function TamSizingCard({ result, verification, ideaTitle, forceExpanded = false 
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {/* isSample: see the matching comment in FrameworkPanel above. */}
           <span className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full"
-            style={{ color: verified ? PALETTE.teal : PALETTE.amber, border: `1px solid ${verified ? PALETTE.teal : PALETTE.amber}` }}>
-            {verified ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
-            {verified ? "Verified" : "Unverified"}
+            style={{ color: isSample ? PALETTE.textMuted : verified ? PALETTE.teal : PALETTE.amber, border: `1px solid ${isSample ? PALETTE.textMuted : verified ? PALETTE.teal : PALETTE.amber}` }}>
+            {isSample ? <Info size={13} /> : verified ? <CheckCircle2 size={13} /> : <AlertTriangle size={13} />}
+            {isSample ? "Sample" : verified ? "Verified" : "Unverified"}
           </span>
           {/* GitHub issue #19: wired to a real modal now. report-print-hide:
               interactive control, meaningless on a printed/PDF page. */}
@@ -1505,6 +1510,9 @@ function TamSizingCard({ result, verification, ideaTitle, forceExpanded = false 
 // "nice-to-have") main-content area -- real per-framework counts/verified
 // state, not fabricated, doubling as quick navigation into each tab.
 function OverviewFrameworkLinks({ stats, report, onSelectFramework }) {
+  // isSample: see FrameworkPanel's matching comment -- report.source is
+  // only ever "groundly" for a real, grounded API response.
+  const isSample = Boolean(report.source) && report.source !== "groundly";
   return (
     <div className="grid grid-cols-2 gap-3">
       {stats.frameworks.map((fw) => {
@@ -1516,12 +1524,14 @@ function OverviewFrameworkLinks({ stats, report, onSelectFramework }) {
             style={{ background: PALETTE.bgCard, border: `1px solid ${PALETTE.border}` }}>
             <div className="flex items-center justify-between mb-1">
               <span className="text-sm font-bold text-white">{FRAMEWORK_LABELS[fw] || fw.toUpperCase()}</span>
-              {verified
-                ? <CheckCircle2 size={14} style={{ color: PALETTE.teal }} />
-                : <AlertTriangle size={14} style={{ color: PALETTE.amber }} />}
+              {isSample
+                ? <Info size={14} style={{ color: PALETTE.textMuted }} />
+                : verified
+                  ? <CheckCircle2 size={14} style={{ color: PALETTE.teal }} />
+                  : <AlertTriangle size={14} style={{ color: PALETTE.amber }} />}
             </div>
             <p className="text-xs" style={{ color: PALETTE.textSecondary }}>
-              {citationCount} grounded source{citationCount === 1 ? "" : "s"} · {verified ? "Verified" : "Needs review"}
+              {citationCount} grounded source{citationCount === 1 ? "" : "s"} · {isSample ? "Sample" : verified ? "Verified" : "Needs review"}
             </p>
           </button>
         );
@@ -1657,6 +1667,7 @@ function AskAiPanel({ idea, results, frameworksAllowed }) {
 function PrintableFullReport({ report, idea, stats, today, title }) {
   const frameworksToRender = SIDEBAR_FRAMEWORK_NAV.filter((item) => item.key && report.results?.[item.key]);
   const allCitations = Object.entries(report.results || {}).flatMap(([fw, r]) => (r.citations || []).map((c) => ({ ...c, _framework: fw })));
+  const isSample = Boolean(report.source) && report.source !== "groundly";
 
   return (
     <div className="report-print-view">
@@ -1714,8 +1725,8 @@ function PrintableFullReport({ report, idea, stats, today, title }) {
             <div className="report-print-invert">
               <div className="report-print-section-kicker">Groundly &middot; {item.label}</div>
               {item.key === "tam" && result.market_sizing
-                ? <TamSizingCard result={result} verification={verification} ideaTitle={title} forceExpanded />
-                : <FrameworkPanel frameworkKey={item.key} result={result} verification={verification} ideaTitle={title} />}
+                ? <TamSizingCard result={result} verification={verification} ideaTitle={title} forceExpanded isSample={isSample} />
+                : <FrameworkPanel frameworkKey={item.key} result={result} verification={verification} ideaTitle={title} isSample={isSample} />}
             </div>
           </div>
         );
@@ -1753,6 +1764,11 @@ export default function ReportView({ report: rawReport, idea, onReset, onNavChan
   const activeVerification = activeFramework && !isOverview ? report.verification?.[activeFramework] : null;
   const today = new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
   const title = idea ? (idea.length > 52 ? idea.slice(0, 52) + "…" : idea) : "Business Idea Analysis";
+  // report.source is only "groundly" for a real, grounded backend
+  // response -- "local"/"grok"/anything else means fabricated/sample
+  // content (see lib/groundly/fallback.ts and analyze.ts) that must never
+  // render identically to a real, verified analysis.
+  const isSampleReport = Boolean(report.source) && report.source !== "groundly";
   // Real citations from every framework, tagged with which one they came
   // from -- feeds the Sources & Citations panel on the Overview tab, where
   // a single framework's activeResult doesn't exist to pull from.
@@ -1813,6 +1829,12 @@ export default function ReportView({ report: rawReport, idea, onReset, onNavChan
       </aside>
 
       <main className="report-main-content flex-1 min-h-screen overflow-y-auto px-8 py-7">
+        {isSampleReport && (
+          <div className="report-print-hide flex items-center gap-2 mb-4 text-xs font-semibold px-3 py-2 rounded-xl" style={{ background: `${PALETTE.amber}14`, border: `1px solid ${PALETTE.amber}44`, color: PALETTE.amber }}>
+            <Info size={14} />
+            Sample preview — this analysis was generated instantly for demo purposes and was never sent to Groundly's real research pipeline. Numbers and citations here are illustrative, not verified.
+          </div>
+        )}
         <div className="flex items-start justify-between mb-5 gap-4">
           <div className="flex items-start gap-3">
             <div className="flex items-center justify-center rounded-xl shrink-0" style={{ width: 38, height: 38, background: PALETTE.bgCard, border: `1px solid ${PALETTE.border}`, color: PALETTE.teal }}>
@@ -1879,8 +1901,8 @@ export default function ReportView({ report: rawReport, idea, onReset, onNavChan
                 // attempted has nothing to show there, so it falls back to
                 // the plain FrameworkPanel every other framework already uses.
                 activeFramework === "tam" && activeResult.market_sizing
-                  ? <TamSizingCard result={activeResult} verification={activeVerification} ideaTitle={title} />
-                  : <FrameworkPanel frameworkKey={activeFramework} result={activeResult} verification={activeVerification} ideaTitle={title} />
+                  ? <TamSizingCard result={activeResult} verification={activeVerification} ideaTitle={title} isSample={isSampleReport} />
+                  : <FrameworkPanel frameworkKey={activeFramework} result={activeResult} verification={activeVerification} ideaTitle={title} isSample={isSampleReport} />
               )}
           </div>
 
