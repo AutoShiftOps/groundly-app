@@ -13,6 +13,7 @@
 import { useState } from "react";
 import { Sparkles, ArrowRight } from "lucide-react";
 import Sidebar from "./Sidebar";
+import TrainScene from "./TrainScene";
 
 interface HomeScreenProps {
   idea: string;
@@ -21,9 +22,19 @@ interface HomeScreenProps {
   error: string | null;
 }
 
+const SAMPLES = [
+  "NightShift — chef-grade meal kits for people who work 7pm to 7am.",
+  "Halo Ledger — a financial OS that forecasts founder runway from the books.",
+  "PeerCharge — a neighborhood network for sharing home EV chargers.",
+];
+
 export default function HomeScreen({ idea, setIdea, onLaunch, error }: HomeScreenProps) {
   const [activeNav, setActiveNav] = useState("Analyze");
-  const canLaunch = idea.trim().length > 0;
+  // aurelo-ui's own idea-form.tsx uses this same 12-char floor (not
+  // origin/main's looser >0) -- kept from the pre-restyle version since
+  // it's the more faithful match to the actual Aurelo reference, not just
+  // a styling choice.
+  const canLaunch = idea.trim().length >= 12;
 
   return (
     <div
@@ -83,14 +94,32 @@ export default function HomeScreen({ idea, setIdea, onLaunch, error }: HomeScree
             <textarea
               value={idea}
               onChange={(e) => setIdea(e.target.value)}
-              placeholder="e.g., A subscription box for eco-friendly packaging aimed at small e-commerce brands..."
+              placeholder="Describe the product, who it’s for, and why now…"
               rows={5}
+              maxLength={600}
               className="w-full rounded-xl p-4 text-sm text-white resize-y outline-none transition-colors"
               style={{ background: "#080f1e", border: "1px solid rgba(99,140,255,0.13)" }}
               onFocus={(e) => { e.currentTarget.style.borderColor = "rgba(74,143,255,0.55)"; }}
               onBlur={(e) => { e.currentTarget.style.borderColor = "rgba(99,140,255,0.13)"; }}
             />
-            <div className="flex justify-end mt-4">
+            <div className="flex items-center justify-between mt-3 text-xs" style={{ color: "#5a6a8a" }}>
+              <span>Private until you launch the analysis.</span>
+              <span>{idea.trim().length}/600</span>
+            </div>
+            <div className="flex flex-wrap gap-2 mt-4">
+              {SAMPLES.map((sample) => (
+                <button
+                  key={sample}
+                  type="button"
+                  onClick={() => setIdea(sample)}
+                  className="rounded-full px-3 py-1.5 text-xs transition-colors hover:text-white"
+                  style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(99,140,255,0.16)", color: "#7a8aaa" }}
+                >
+                  {sample.split("—")[0]?.trim()}
+                </button>
+              ))}
+            </div>
+            <div className="flex justify-end mt-5">
               <button
                 onClick={onLaunch}
                 disabled={!canLaunch}
@@ -114,6 +143,10 @@ export default function HomeScreen({ idea, setIdea, onLaunch, error }: HomeScree
               {error}
             </div>
           )}
+
+          <div className="mt-10 w-full max-w-4xl opacity-90">
+            <TrainScene activeStageIndex={-1} />
+          </div>
         </main>
       </div>
     </div>

@@ -1,0 +1,36 @@
+{
+  "url": "http://127.0.0.1:8080/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Aurelo",
+      "hasCanvas": false,
+      "bodyTextLen": 416,
+      "bodyTextHash": "f4beda0fec3949df3d123478319471f10a94c40133e3adc6a3682b3192f0d1af",
+      "bodyTextPrefix": "Aurelo AI Business Analyst Analyze Projects Insights Market Repo",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/home-now.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Aurelo",
+      "hasCanvas": false,
+      "bodyTextLen": 379,
+      "bodyTextHash": "5d67eb9ffc78f9bb302a77b419769462a8a9769a0d055a0baf7234e02309f267",
+      "bodyTextPrefix": "Aurelo Aurelo · AI business analyst What’s the business idea we ",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/home-now-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/home-now.json"
+}

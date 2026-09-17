@@ -1,0 +1,36 @@
+{
+  "url": "http://127.0.0.1:8080/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Aurelo",
+      "hasCanvas": false,
+      "bodyTextLen": 531,
+      "bodyTextHash": "2a3c880e08f2d9e8ba8a8c999e65ac172aa8fb317d25124b98ccaad81daebda3",
+      "bodyTextPrefix": "Aurelo AI Business Analyst Live analysis New analysis Analyze Pr",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Aurelo",
+      "hasCanvas": false,
+      "bodyTextLen": 481,
+      "bodyTextHash": "7c305fdac802034f57037dd8ee8e0dd7eeaf027f7010844572587500ee1d455a",
+      "bodyTextPrefix": "Aurelo Live analysis Analyzing your business idea Our AI is work",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/app-builder-preview.json"
+}
