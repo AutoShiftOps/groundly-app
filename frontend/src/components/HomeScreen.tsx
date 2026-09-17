@@ -1,11 +1,17 @@
 // frontend/src/components/HomeScreen.tsx
 //
-// Restored home/idle screen - this was completely missing after the Figma
-// import replaced App.tsx with just the loading-screen mockup. Styled to
-// match the same dark palette/typography as the Figma TrainProgress screen
-// so the three screens (Home -> Loading -> Report) feel like one product.
+// Visual restyle to match the feature/aurelo-ui branch's home-screen design
+// language (sparkle decorations, gradient "idea" text, rise-in entrance
+// animation) -- ported as CSS classes only (see
+// ../styles/aurelo-tokens.css), not as a merge of that branch's app. Real
+// Groundly identity kept throughout ("Aurelo · AI business analyst" in the
+// source branch was intentionally NOT carried over -- that branding was
+// deliberately corrected away from earlier in this project's history).
+// Props, state, and behavior are byte-identical to the previous version:
+// this is a presentation-only change.
 
 import { useState } from "react";
+import { Sparkles, ArrowRight } from "lucide-react";
 import Sidebar from "./Sidebar";
 
 interface HomeScreenProps {
@@ -17,63 +23,94 @@ interface HomeScreenProps {
 
 export default function HomeScreen({ idea, setIdea, onLaunch, error }: HomeScreenProps) {
   const [activeNav, setActiveNav] = useState("Analyze");
+  const canLaunch = idea.trim().length > 0;
 
   return (
-    <div className="flex min-h-screen w-full overflow-hidden"
+    <div
+      className="flex min-h-screen w-full overflow-hidden"
       style={{
         background: "radial-gradient(ellipse 80% 60% at 75% 5%, rgba(90,60,180,0.18) 0%, #050c1a 55%)",
         fontFamily: "'Inter', sans-serif",
-      }}>
+      }}
+    >
       <Sidebar activeNav={activeNav} onNavChange={setActiveNav} />
 
       <div className="flex flex-col flex-1 min-h-screen overflow-y-auto">
-        <header className="flex items-center justify-between px-6 py-3 shrink-0"
-          style={{ borderBottom: "1px solid rgba(99,140,255,0.08)" }}>
+        <header
+          className="flex items-center justify-between px-6 py-3 shrink-0"
+          style={{ borderBottom: "1px solid rgba(99,140,255,0.08)" }}
+        >
           <div className="flex items-center gap-2">
-            <span className="text-[#4a8fff] text-base">✦</span>
+            <Sparkles size={15} className="text-[#4a8fff]" strokeWidth={2} />
             <span className="text-sm font-semibold text-[#c0cce8] tracking-wide">AI Business Analyst</span>
           </div>
         </header>
 
-        <main className="flex-1 flex flex-col px-8 pt-10">
-          <h1 className="text-[2.6rem] font-extrabold leading-[1.15] text-white max-w-2xl" style={{ letterSpacing: "-0.025em" }}>
-            Describe your business{" "}
-            <span style={{ background: "linear-gradient(90deg,#4a8fff,#2dd4bf)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-              idea
-            </span>
+        <main className="relative flex-1 flex flex-col px-8 pt-10 overflow-hidden">
+          {/* Decorative sparkles -- purely visual, matches the aurelo-ui
+              hero treatment. Hidden on small viewports and under
+              prefers-reduced-motion (handled in aurelo-tokens.css). */}
+          <Sparkles
+            className="sparkle absolute left-[38%] top-2 hidden size-4 md:block"
+            style={{ animationDelay: "0.2s" }}
+            aria-hidden="true"
+          />
+          <Sparkles
+            className="sparkle absolute right-[22%] top-10 hidden size-5 text-[#5eead4] md:block"
+            style={{ animationDelay: "0.9s" }}
+            aria-hidden="true"
+          />
+
+          <h1
+            className="rise-in text-[2.6rem] font-extrabold leading-[1.15] text-white max-w-2xl"
+            style={{ letterSpacing: "-0.025em" }}
+          >
+            Describe your business <span className="idea-gradient">idea</span>
           </h1>
-          <p className="mt-2 text-[#7a8aaa] text-sm font-medium max-w-xl">
+          <p className="rise-in mt-2 text-[#7a8aaa] text-sm font-medium max-w-xl" style={{ animationDelay: "80ms" }}>
             Generate a grounded, multi-framework decision report backed by real sources.
           </p>
 
-          <div className="mt-8 max-w-xl w-full rounded-2xl p-6"
-            style={{ background: "rgba(10,20,40,0.92)", border: "1px solid rgba(99,140,255,0.13)", boxShadow: "0 4px 28px rgba(0,0,0,0.35)" }}>
+          <div
+            className="rise-in mt-8 max-w-xl w-full rounded-2xl p-6"
+            style={{
+              animationDelay: "160ms",
+              background: "rgba(10,20,40,0.92)",
+              border: "1px solid rgba(99,140,255,0.13)",
+              boxShadow: "0 4px 28px rgba(0,0,0,0.35)",
+            }}
+          >
             <textarea
               value={idea}
               onChange={(e) => setIdea(e.target.value)}
               placeholder="e.g., A subscription box for eco-friendly packaging aimed at small e-commerce brands..."
               rows={5}
-              className="w-full rounded-xl p-4 text-sm text-white resize-y"
+              className="w-full rounded-xl p-4 text-sm text-white resize-y outline-none transition-colors"
               style={{ background: "#080f1e", border: "1px solid rgba(99,140,255,0.13)" }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = "rgba(74,143,255,0.55)"; }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = "rgba(99,140,255,0.13)"; }}
             />
             <div className="flex justify-end mt-4">
               <button
                 onClick={onLaunch}
-                disabled={!idea.trim()}
-                className="px-6 py-3 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-110"
+                disabled={!canLaunch}
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-110"
                 style={{
                   background: "linear-gradient(90deg,#4a8fff 0%,#7c3aed 100%)",
-                  boxShadow: "0 0 20px rgba(74,143,255,0.4)",
+                  boxShadow: canLaunch ? "0 0 20px rgba(74,143,255,0.4)" : "none",
                 }}
               >
                 Launch Analysis
+                <ArrowRight size={16} />
               </button>
             </div>
           </div>
 
           {error && (
-            <div className="mt-5 max-w-xl w-full rounded-xl p-4 text-sm"
-              style={{ background: "rgba(255,92,92,0.08)", border: "1px solid rgba(255,92,92,0.3)", color: "#ff8080" }}>
+            <div
+              className="rise-in mt-5 max-w-xl w-full rounded-xl p-4 text-sm"
+              style={{ background: "rgba(255,92,92,0.08)", border: "1px solid rgba(255,92,92,0.3)", color: "#ff8080" }}
+            >
               {error}
             </div>
           )}
