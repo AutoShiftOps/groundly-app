@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import { AnalysisTheater, LiveBadge } from "@/components/analyze/analysis-theater";
 import { IdeaForm } from "@/components/analyze/idea-form";
@@ -7,10 +7,19 @@ import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
 import { analyzeIdeaGroundly } from "@/lib/groundly/analyze";
 import { buildGroundlyFallback } from "@/lib/groundly/fallback";
+import { hydrateReport } from "@/lib/groundly/hydrate";
 import { DEMO_IDEA } from "@/lib/analysis/demo";
 import { useAnalysis } from "@/lib/analysis/store";
 
 export const Route = createFileRoute("/")({ component: Home });
+
+const NAV_TO: Record<string, string> = {
+  Projects: "/projects",
+  Insights: "/insights",
+  Market: "/market",
+  Reports: "/reports",
+  Settings: "/settings",
+};
 
 function Home() {
   const view = useAnalysis((s) => s.view);
@@ -22,6 +31,7 @@ function Home() {
   const attachGroundly = useAnalysis((s) => s.attachGroundly);
   const reducedMotion = useAnalysis((s) => s.reducedMotion);
   const inFlight = useRef(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (view !== "running") return;
@@ -39,7 +49,7 @@ function Home() {
       if (shared.report?.results) {
         useAnalysis.setState({
           idea: shared.idea || "",
-          groundly: shared.report,
+          groundly: hydrateReport(shared.report),
           view: "report",
         });
       }
@@ -68,8 +78,25 @@ function Home() {
     }
   }
 
+  function handleNav(label: string) {
+    if (label === "Analyze") {
+      startCompose();
+      return;
+    }
+    const to = NAV_TO[label];
+    if (to) void navigate({ to });
+  }
+
   if (view === "report" && groundly) {
-    return <ReportView report={groundly} idea={idea} onReset={startCompose} />;
+    return (
+      <ReportView
+        report={groundly}
+        idea={idea}
+        onReset={startCompose}
+        onNavChange={handleNav}
+        activeNav="Analyze"
+      />
+    );
   }
 
   return (

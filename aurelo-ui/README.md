@@ -1,11 +1,13 @@
 # Aurelo UI (evaluation snapshot)
 
-TanStack Start + React UI built to match the Aurelo train-car mock, wired to Groundly analysis:
+TanStack Start + React UI wired to Groundly analysis:
 
 - Idea-first home screen
 - Labeled train compartments (Ideating → Researching → Prototyping → Testing → Finalizing)
-- Groundly ReportView (10 frameworks, Ask AI, citations, share)
-- Analyze API with live backend + fallback
+- Groundly ReportView matched to `assets/images/report-ux-mock.png` (thin app nav, top framework pills, TAM rings + table)
+- Other frameworks get the same structured visual treatment via `src/lib/groundly/hydrate.ts` when the API only returns prose
+- Ask AI, citations, share, print
+- Analyze / Projects / Insights / Market / Reports / Settings all navigate
 
 This folder is a **preview snapshot** for evaluation. It does not replace `frontend/`.
 

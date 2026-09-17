@@ -5,6 +5,7 @@ import { MARKET_CODES, PRO_TIPS, stageIndexFromProgress } from "./types";
 import type { AnalysisReport, Project, View } from "./types";
 import { deriveBrief } from "@/lib/groundly/brief";
 import { buildGroundlyFallback } from "@/lib/groundly/fallback";
+import { hydrateReport } from "@/lib/groundly/hydrate";
 import type { GroundlyReport } from "@/lib/groundly/types";
 
 interface AnalysisStore {
@@ -142,16 +143,17 @@ export const useAnalysis = create<AnalysisStore>()(
       },
 
       attachGroundly: (groundly) => {
-        const brief = deriveBrief(get().idea, groundly);
+        const hydrated = hydrateReport(groundly);
+        const brief = deriveBrief(get().idea, hydrated);
         const { progress } = get();
-        set({ pendingGroundly: groundly, pendingReport: brief });
+        set({ pendingGroundly: hydrated, pendingReport: brief });
         if (progress >= 100) {
           const { idea, projects } = get();
           set({
             view: "report",
             report: brief,
-            groundly,
-            projects: commitProject(idea, brief, groundly, projects),
+            groundly: hydrated,
+            projects: commitProject(idea, brief, hydrated, projects),
           });
         }
       },
@@ -183,7 +185,7 @@ export const useAnalysis = create<AnalysisStore>()(
         const shouldAdvanceTip = Math.floor(progress) % 12 === 0 && Math.floor(state.progress) % 12 !== 0;
 
         if (progress >= 100 && (state.pendingGroundly || state.pendingReport)) {
-          const groundly = state.pendingGroundly ?? buildGroundlyFallback(state.idea, "local");
+          const groundly = hydrateReport(state.pendingGroundly ?? buildGroundlyFallback(state.idea, "local"));
           const brief = state.pendingReport ?? deriveBrief(state.idea, groundly);
           set({
             progress: 100,

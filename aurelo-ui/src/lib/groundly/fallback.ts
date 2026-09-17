@@ -1,3 +1,4 @@
+import { hydrateReport } from "./hydrate";
 import { FRAMEWORKS, type FrameworkKey, type GroundlyCitation, type GroundlyReport } from "./types";
 
 const LABELS: Record<FrameworkKey, string> = {
@@ -75,7 +76,7 @@ export function buildGroundlyFallback(idea: string, source: GroundlyReport["sour
     verification[fw] = { verified: true, unsupported_claims: [] };
   }
 
-  return {
+  return hydrateReport({
     stage: "finalizing",
     frameworks_requested: [...FRAMEWORKS],
     frameworks_allowed: [...FRAMEWORKS],
@@ -114,5 +115,5 @@ export function buildGroundlyFallback(idea: string, source: GroundlyReport["sour
       },
     },
     source,
-  };
+  });
 }
