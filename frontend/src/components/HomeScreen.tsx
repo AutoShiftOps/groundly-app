@@ -20,6 +20,7 @@ interface HomeScreenProps {
   setIdea: (v: string) => void;
   onLaunch: () => void;
   error: string | null;
+  onNavigate?: (label: string) => void;
 }
 
 const SAMPLES = [
@@ -28,8 +29,12 @@ const SAMPLES = [
   "PeerCharge — a neighborhood network for sharing home EV chargers.",
 ];
 
-export default function HomeScreen({ idea, setIdea, onLaunch, error }: HomeScreenProps) {
+export default function HomeScreen({ idea, setIdea, onLaunch, error, onNavigate }: HomeScreenProps) {
   const [activeNav, setActiveNav] = useState("Analyze");
+  const handleNavChange = (label: string) => {
+    setActiveNav(label);
+    if (label !== "Analyze") onNavigate?.(label);
+  };
   // aurelo-ui's own idea-form.tsx uses this same 12-char floor (not
   // origin/main's looser >0) -- kept from the pre-restyle version since
   // it's the more faithful match to the actual Aurelo reference, not just
@@ -44,7 +49,7 @@ export default function HomeScreen({ idea, setIdea, onLaunch, error }: HomeScree
         fontFamily: "'Inter', sans-serif",
       }}
     >
-      <Sidebar activeNav={activeNav} onNavChange={setActiveNav} />
+      <Sidebar activeNav={activeNav} onNavChange={handleNavChange} />
 
       <div className="flex flex-col flex-1 min-h-screen overflow-y-auto">
         <header

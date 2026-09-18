@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { AreaChart, Area, ResponsiveContainer } from "recharts";
 import { encodeReportLink } from "../lib/reportLink";
+import { computeReportStats } from "../lib/reportStats";
 import Sidebar from "./Sidebar";
 
 // Same lookup App.tsx uses for /api/analyze -- duplicated here rather
@@ -143,46 +144,7 @@ const SIDE_NAV = [
 ];
 
 function useReportStats(report) {
-  return useMemo(() => {
-    const frameworks = Object.keys(report?.results || {});
-    const verifiedCount = frameworks.filter((fw) => report.verification?.[fw]?.verified).length;
-    const totalFrameworks = frameworks.length;
-
-    let totalCitations = 0, similaritySum = 0, similarityCount = 0;
-    const trend = [];
-
-    frameworks.forEach((fw) => {
-      const citations = report.results[fw]?.citations || [];
-      const seen = new Set();
-      citations.forEach((c) => {
-        if (!seen.has(c.source_url)) { seen.add(c.source_url); totalCitations += 1; }
-        similaritySum += c.similarity;
-        similarityCount += 1;
-        trend.push(Math.round(c.similarity * 100));
-      });
-    });
-
-    const avgSimilarity = similarityCount ? Math.round((similaritySum / similarityCount) * 100) : 0;
-    const confidencePct = totalFrameworks ? Math.round((verifiedCount / totalFrameworks) * 100) : 0;
-    const unverifiedCount = totalFrameworks - verifiedCount;
-
-    let verdict = "Insufficient Data", verdictSub = "Not enough grounded sources yet to form a verdict.", tone = "amber";
-    if (totalFrameworks > 0 && verifiedCount === totalFrameworks) {
-      verdict = "Proceed With Confidence";
-      verdictSub = "All frameworks are backed by verified, grounded sources.";
-      tone = "teal";
-    } else if (verifiedCount > 0) {
-      verdict = "Proceed With Caution";
-      verdictSub = `${unverifiedCount} of ${totalFrameworks} sections need stronger sourcing.`;
-      tone = "amber";
-    } else if (totalFrameworks > 0) {
-      verdict = "Gather More Sources";
-      verdictSub = "No sections passed grounding verification yet.";
-      tone = "red";
-    }
-
-    return { frameworks, verifiedCount, totalFrameworks, totalCitations, avgSimilarity, confidencePct, unverifiedCount, verdict, verdictSub, tone };
-  }, [report]);
+  return useMemo(() => computeReportStats(report), [report]);
 }
 
 function ToneColor(tone) {
@@ -522,6 +484,16 @@ function lastSentence(text) {
   if (!text) return "";
   const sentences = text.trim().split(/(?<=[.!?])\s+/).filter(Boolean);
   return sentences.length ? sentences[sentences.length - 1] : text.trim();
+}
+
+// GitHub visual-port task (Insights page): same sentence-splitting logic
+// as lastSentence, just the other end -- a framework's first real
+// grounded sentence (with whatever [N] citation marker it carries)
+// makes a punchier "insight" card than the last one.
+function firstSentence(text) {
+  if (!text) return "";
+  const sentences = text.trim().split(/(?<=[.!?])\s+/).filter(Boolean);
+  return sentences.length ? sentences[0] : text.trim();
 }
 
 function FrameworkStrip({ result }) {
@@ -1688,7 +1660,7 @@ function ExportPdfButton({ report, idea, title, today }) {
   );
 }
 
-export default function ReportView({ report, idea, onReset }) {
+export default function ReportView({ report, idea, onReset, onNavigate, activeNav = "Analyze" }) {
   const stats = useReportStats(report);
   // docs/PHASE_5_SPEC.md A: "overview" is a real selectable state alongside
   // the framework keys, not a separate parallel concept -- defaults here
@@ -1728,7 +1700,7 @@ export default function ReportView({ report, idea, onReset }) {
           other nav labels have no real destination in this app yet
           (Projects/Insights/Market/Reports aren't real routes), so they're
           intentionally no-ops rather than fabricated pages. */}
-      <Sidebar activeNav="Analyze" onNavChange={(label) => { if (label === "Analyze") onReset(); }} />
+      <Sidebar activeNav={activeNav} onNavChange={(label) => { if (label === "Analyze") onReset(); else onNavigate?.(label); }} />
 
       <main className="report-main-content flex-1 min-h-screen overflow-y-auto px-8 py-7">
         <div className="flex items-start justify-between mb-5 gap-4">
@@ -1865,3 +1837,13 @@ export default function ReportView({ report, idea, onReset }) {
     </div>
   );
 }
+
+// Named exports alongside the default -- purely additive, no behavior
+// change to anything above. GitHub visual-port task (Projects/Insights/
+// Market/Reports pages): MarketScreen reuses TamSizingCard directly
+// (the real nested-circle TAM/SAM/SOM diagram, leader-line callouts and
+// all) instead of duplicating ~150 lines of intricate diagram-layout
+// code a second time. ToneColor/PALETTE let the new screens render the
+// exact same verdict colors as the live report, not a second guessed
+// palette.
+export { TamSizingCard, ToneColor, PALETTE, dedupeCitations, stripMarketTags, lastSentence, firstSentence, renderBoldText, FRAMEWORK_LABELS };

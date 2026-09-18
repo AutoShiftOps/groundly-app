@@ -49,6 +49,13 @@ const TIP_SLIDES: TipSlide[] = [
   { kind: "tip", text: "Unit economics — what a customer costs vs. earns you — drive long-term profitability more than growth alone." },
 ];
 
+// GitHub visual-port task (Insights page): exported so InsightsScreen
+// can reuse these same real, accurate statements about how the product
+// actually works as "Pro Tip" cards, instead of a second hand-copied
+// (and possibly drifting) list. Derived from TIP_SLIDES itself, not
+// retyped, so the two can't drift apart.
+export const PRO_TIPS = TIP_SLIDES.filter((s): s is { kind: "tip"; text: string } => s.kind === "tip").map((s) => s.text);
+
 function ShortViewportStyles() {
   return (
     <style>{`
@@ -251,20 +258,25 @@ function StatsGrid() {
 interface LoadingScreenProps {
   activeStageIndex: number;
   sourceCount: number;
+  onNavigate?: (label: string) => void;
 }
 
 // sourceCount stays in the prop contract (App.tsx passes real data,
 // untouched here per that constraint) but is intentionally no longer
 // displayed -- see StatsGrid/LoadingDots above for why.
-export default function LoadingScreen({ activeStageIndex, sourceCount: _sourceCount }: LoadingScreenProps) {
+export default function LoadingScreen({ activeStageIndex, sourceCount: _sourceCount, onNavigate }: LoadingScreenProps) {
   const [activeNav, setActiveNav] = useState("Analyze");
+  const handleNavChange = (label: string) => {
+    setActiveNav(label);
+    if (label !== "Analyze") onNavigate?.(label);
+  };
   const progressPct = Math.min(100, Math.round(((activeStageIndex + 1) / STAGE_LABELS.length) * 100));
 
   return (
     <div className="flex w-full overflow-hidden"
       style={{ height: "100dvh", background: "radial-gradient(ellipse 80% 60% at 75% 5%, rgba(90,60,180,0.18) 0%, #050c1a 55%)", fontFamily: "'Inter', sans-serif" }}>
       <ShortViewportStyles />
-      <Sidebar activeNav={activeNav} onNavChange={setActiveNav} />
+      <Sidebar activeNav={activeNav} onNavChange={handleNavChange} />
       <div className="flex flex-col flex-1 min-h-screen overflow-y-auto">
         <TopBar />
         <main className="flex-1 flex flex-col min-h-0">
