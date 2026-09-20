@@ -8,20 +8,20 @@ const RADIUS = 42000;
 const rail = (x: number) => CREST_Y + Math.pow(x - CREST_X, 2) / (2 * RADIUS);
 const tilt = (x: number) => (Math.atan((x - CREST_X) / RADIUS) * 180) / Math.PI;
 
-const railPoly = (dy = 0) => {
+const railPoly = (dy = 0, x0 = -40, x1 = W + 50) => {
   const pts: [number, number][] = [];
-  for (let x = -40; x <= W + 50; x += 12) pts.push([x, rail(x) + dy]);
+  for (let x = x0; x <= x1; x += 10) pts.push([x, rail(x) + dy]);
   return pts;
 };
 
-const railPath = (dy = 0) => {
-  const pts = railPoly(dy);
+const railPath = (dy = 0, x0 = -40, x1 = W + 50) => {
+  const pts = railPoly(dy, x0, x1);
   return pts.map((p, i) => `${i ? "L" : "M"}${p[0]} ${p[1].toFixed(1)}`).join(" ");
 };
 
-const closedBand = (topDy: number, botDy: number) => {
-  const top = railPoly(topDy);
-  const bot = railPoly(botDy).reverse();
+const closedBand = (topDy: number, botDy: number, x0: number, x1: number) => {
+  const top = railPoly(topDy, x0, x1);
+  const bot = railPoly(botDy, x0, x1).reverse();
   return `M${top[0][0]} ${top[0][1].toFixed(1)} ${top
     .slice(1)
     .map((p) => `L${p[0]} ${p[1].toFixed(1)}`)
@@ -224,12 +224,42 @@ function Coupler({ index }: { index: number }) {
 }
 
 function Platform() {
+  const x0 = START - 36;
+  const x1 = carX(4) + CAR_W / 2 + 56;
+  const L0: [number, number] = [x0, rail(x0) + 6];
+  const L1: [number, number] = [x0, rail(x0) + 44];
+  const L2: [number, number] = [x0, rail(x0) + 96];
+  const R0: [number, number] = [x1, rail(x1) + 6];
+  const R1: [number, number] = [x1, rail(x1) + 44];
+  const R2: [number, number] = [x1, rail(x1) + 96];
+
   return (
-    <g mask="url(#tsPlatFade)">
-      <path d={closedBand(8, 86)} fill="url(#tsPlatFront)" opacity={0.72} />
-      <path d={closedBand(4, 40)} fill="url(#tsPlatTop)" opacity={0.55} />
-      <path d={railPath(10)} fill="none" stroke="#d4b43a" strokeWidth={3.4} opacity={0.9} />
-      <path d={railPath(14)} fill="none" stroke="#f7e7a8" strokeWidth={1.15} opacity={0.55} />
+    <g>
+      <path d={closedBand(44, 96, x0, x1)} fill="url(#tsPlatFront)" />
+      <path d={`M${L1[0]} ${L1[1]} L${L2[0]} ${L2[1]} L${L0[0] - 18} ${L2[1]} L${L0[0] - 10} ${L0[1]} Z`} fill="#0a1428" opacity={0.85} />
+      <path d={`M${R1[0]} ${R1[1]} L${R2[0]} ${R2[1]} L${R0[0] + 18} ${R2[1]} L${R0[0] + 10} ${R0[1]} Z`} fill="#071020" opacity={0.7} />
+      <path d={closedBand(6, 44, x0, x1)} fill="url(#tsPlatTop)" />
+      <path d={`M${L0[0]} ${L0[1]} L${R0[0]} ${R0[1]} L${R0[0] + 10} ${R0[1] - 14} L${L0[0] - 10} ${L0[1] - 14} Z`} fill="url(#tsPlatBack)" opacity={0.55} />
+      <path d={railPath(44, x0, x1)} fill="none" stroke="#e2c04a" strokeWidth={5} />
+      <path d={railPath(44, x0, x1)} fill="none" stroke="#fff4c2" strokeWidth={1.6} opacity={0.8} />
+      {Array.from({ length: 22 }, (_, i) => {
+        const x = x0 + 24 + i * 64;
+        if (x > x1 - 20) return null;
+        const y = rail(x) + 18;
+        return (
+          <line
+            key={x}
+            x1={x}
+            y1={y}
+            x2={x + 22}
+            y2={y}
+            stroke="#4a628c"
+            strokeWidth={1.6}
+            strokeDasharray="5 7"
+            opacity={0.45}
+          />
+        );
+      })}
     </g>
   );
 }
@@ -239,7 +269,7 @@ export default function TrainScene({ activeStageIndex }: { activeStageIndex: num
 
   return (
     <svg
-      viewBox={`0 0 ${W} 310`}
+      viewBox={`0 0 ${W} 330`}
       preserveAspectRatio="xMidYMid meet"
       role="img"
       aria-label={`Analysis pipeline. Current stage: ${active < 0 ? "idle" : STAGE_LABELS[active]}.`}
@@ -282,22 +312,19 @@ export default function TrainScene({ activeStageIndex }: { activeStageIndex: num
           <stop offset="1" stopColor="#fff" stopOpacity="0" />
         </linearGradient>
         <linearGradient id="tsPlatTop" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#10203c" stopOpacity=".35" />
-          <stop offset="1" stopColor="#070d18" stopOpacity=".2" />
+          <stop offset="0" stopColor="#163056" />
+          <stop offset=".4" stopColor="#0c1a32" />
+          <stop offset="1" stopColor="#081224" />
         </linearGradient>
         <linearGradient id="tsPlatFront" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#1a2c4e" stopOpacity=".55" />
-          <stop offset="1" stopColor="#050a14" stopOpacity="0" />
+          <stop offset="0" stopColor="#1b335c" />
+          <stop offset=".55" stopColor="#0d172c" />
+          <stop offset="1" stopColor="#050914" stopOpacity=".35" />
         </linearGradient>
-        <linearGradient id="tsPlatFadeGrad" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0" stopColor="#fff" stopOpacity="0" />
-          <stop offset=".08" stopColor="#fff" stopOpacity="1" />
-          <stop offset=".92" stopColor="#fff" stopOpacity="1" />
-          <stop offset="1" stopColor="#fff" stopOpacity="0" />
+        <linearGradient id="tsPlatBack" x1="0" y1="1" x2="0" y2="0">
+          <stop offset="0" stopColor="#0c1a32" />
+          <stop offset="1" stopColor="#152848" />
         </linearGradient>
-        <mask id="tsPlatFade">
-          <rect x="0" y="0" width={W} height="310" fill="url(#tsPlatFadeGrad)" />
-        </mask>
         <radialGradient id="tsWheel" cx=".34" cy=".28" r=".9">
           <stop offset="0" stopColor="#4d5f7d" />
           <stop offset=".45" stopColor="#131c2c" />
@@ -333,16 +360,17 @@ export default function TrainScene({ activeStageIndex }: { activeStageIndex: num
 
       <Platform />
 
-      {Array.from({ length: 38 }, (_, i) => {
-        const x = 20 + i * 42;
+      {Array.from({ length: 36 }, (_, i) => {
+        const x = START - 20 + i * 42;
+        if (x > carX(4) + CAR_W / 2 + 40) return null;
         const y = rail(x);
-        return <line key={x} x1={x} y1={y + 2} x2={x} y2={y + 13} stroke="#6a86b8" strokeWidth={3} opacity={0.28} />;
+        return <line key={x} x1={x} y1={y + 1} x2={x} y2={y + 15} stroke="#7a96c8" strokeWidth={3.4} opacity={0.45} />;
       })}
       <g className="ts-add">
-        <path d={railPath(0)} fill="none" stroke="url(#tsRib)" strokeWidth={9} opacity={0.32} filter="url(#tsB9)" />
-        <path d={railPath(0)} fill="none" stroke="url(#tsCore)" strokeWidth={2.5} opacity={0.95} />
-        <path d={railPath(16)} fill="none" stroke="url(#tsRib)" strokeWidth={8} opacity={0.24} filter="url(#tsB9)" />
-        <path d={railPath(16)} fill="none" stroke="url(#tsCore)" strokeWidth={2.2} opacity={0.8} />
+        <path d={railPath(0, START - 28, carX(4) + CAR_W / 2 + 48)} fill="none" stroke="url(#tsRib)" strokeWidth={10} opacity={0.38} filter="url(#tsB9)" />
+        <path d={railPath(0, START - 28, carX(4) + CAR_W / 2 + 48)} fill="none" stroke="url(#tsCore)" strokeWidth={2.8} opacity={1} />
+        <path d={railPath(16, START - 28, carX(4) + CAR_W / 2 + 48)} fill="none" stroke="url(#tsRib)" strokeWidth={9} opacity={0.3} filter="url(#tsB9)" />
+        <path d={railPath(16, START - 28, carX(4) + CAR_W / 2 + 48)} fill="none" stroke="url(#tsCore)" strokeWidth={2.4} opacity={0.9} />
       </g>
 
       {STAGE_LABELS.map((_, i) => {
