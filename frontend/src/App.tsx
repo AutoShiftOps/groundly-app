@@ -21,6 +21,7 @@ import ReportsScreen from "./components/ReportsScreen";
 import { trackEvent } from "./lib/ga4";
 import { decodeReportLinkFromHash, clearSharedHash } from "./lib/reportLink";
 import { loadProjects, saveProject } from "./lib/projectsStore";
+import { hydrateReport } from "./lib/hydrate";
 import "./styles/theme.css";
 
 const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || "http://localhost:8000";
@@ -95,7 +96,7 @@ export default function App() {
       const data = await response.json();
       clearInterval(stageTimer);
       setActiveStage(STAGE_COUNT - 1);
-      setReport(data);
+      setReport(hydrateReport(data));
       trackEvent("report_completed");
       const saved = saveProject(idea, data);
       if (saved) setProjects((prev) => [saved, ...prev].slice(0, 24));

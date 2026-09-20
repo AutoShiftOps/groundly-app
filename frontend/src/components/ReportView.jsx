@@ -534,9 +534,9 @@ function FrameworkStrip({ result }) {
 // MARKET_TIERS) was removed here after verifying the new field 15/15 (100%)
 // on real calls, per the spec's "remove once verified" cutover.
 const MARKET_TIER_META = {
-  tam: { label: "TAM", color: PALETTE.blue },
+  tam: { label: "TAM", color: PALETTE.teal },
   sam: { label: "SAM", color: PALETTE.purple },
-  som: { label: "SOM", color: PALETTE.teal },
+  som: { label: "SOM", color: PALETTE.amber },
 };
 
 // docs/PHASE_4_SPEC.md B1: % of Parent is derived, not fabricated -- pure

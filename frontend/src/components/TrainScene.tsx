@@ -1,49 +1,48 @@
-// frontend/src/components/TrainScene.tsx
-//
-// The pipeline train, rendered as one SVG so the rail, wheels, bodies and
-// couplers all live in a single coordinate space. Every element is placed by
-// evaluating rail(x) — the wheels sit on the line by construction, at any width.
-//
-// Driven entirely by `activeStageIndex`, so it advances with the real analysis.
-// No imperative DOM building, no useEffect, no browser storage.
-
 import { Fragment } from "react";
 
-/* ── geometry ──────────────────────────────────────────────────────────── */
 const W = 1520;
-const CREST_X = 1720;      // crest sits off-canvas, so the train climbs then levels
-const CREST_Y = 250;
-const RADIUS = 24000;
+const CREST_X = 1880;
+const CREST_Y = 188;
+const RADIUS = 34000;
 
 const rail = (x: number) => CREST_Y + Math.pow(x - CREST_X, 2) / (2 * RADIUS);
 const tilt = (x: number) => (Math.atan((x - CREST_X) / RADIUS) * 180) / Math.PI;
 
-const railPath = (dy = 0) => {
-  let d = "";
-  for (let x = -50; x <= W + 70; x += 20) d += (d ? "L" : "M") + x + " " + (rail(x) + dy).toFixed(1);
-  return d;
+const railPoly = (dy = 0) => {
+  const pts: [number, number][] = [];
+  for (let x = -80; x <= W + 90; x += 14) pts.push([x, rail(x) + dy]);
+  return pts;
 };
 
-const CAR_W = 246;
-const CAR_H = 92;
-const GAP = 26;
-const RX = 28;
-const WR = 12;                       // wheel radius; centre sits WR above the rail
-const BOT = -16;                     // body bottom — wheels tuck up into it
+const railPath = (dy = 0) => {
+  const pts = railPoly(dy);
+  return pts.map((p, i) => `${i ? "L" : "M"}${p[0]} ${p[1].toFixed(1)}`).join(" ");
+};
+
+const closedBand = (topDy: number, botDy: number) => {
+  const top = railPoly(topDy);
+  const bot = railPoly(botDy).reverse();
+  return `M${top[0][0]} ${top[0][1].toFixed(1)} ${top.slice(1).map((p) => `L${p[0]} ${p[1].toFixed(1)}`).join(" ")} ${bot.map((p) => `L${p[0]} ${p[1].toFixed(1)}`).join(" ")} Z`;
+};
+
+const CAR_W = 208;
+const CAR_H = 90;
+const GAP = 34;
+const RX = 12;
+const WR = 11;
+const BOT = -16;
 const TOP = BOT - CAR_H;
-const MID = BOT - CAR_H / 2;
-const LOCO = 84;
-const START = 18;
+const LOCO_W = 162;
+const START = 36;
 
-const carX = (i: number) => START + LOCO + CAR_W / 2 + i * (CAR_W + GAP);
+const carX = (i: number) => START + LOCO_W + 20 + CAR_W / 2 + i * (CAR_W + GAP);
 
-/* ── theme ─────────────────────────────────────────────────────────────── */
 type Status = "done" | "active" | "pending";
 
-const THEME: Record<Status, { hue: string; lit: string; glass: string; pool: string; smoke: string | null }> = {
-  done:    { hue: "#2fe89a", lit: "#d3ffee", glass: "url(#tsMint)", pool: "url(#tsPoolMint)", smoke: "#7dffc4" },
-  active:  { hue: "#ffb42c", lit: "#fff3d6", glass: "url(#tsGold)", pool: "url(#tsPoolGold)", smoke: "#ffd79a" },
-  pending: { hue: "#8ea6d6", lit: "#e8f0ff", glass: "url(#tsDim)",  pool: "url(#tsPoolDim)",  smoke: null },
+const THEME: Record<Status, { hue: string; lit: string; glass: string; pool: string }> = {
+  done: { hue: "#2fe89a", lit: "#d6ffe9", glass: "url(#tsMint)", pool: "url(#tsPoolMint)" },
+  active: { hue: "#ffb42c", lit: "#fff1c9", glass: "url(#tsGold)", pool: "url(#tsPoolGold)" },
+  pending: { hue: "#8ea6d6", lit: "#e4edff", glass: "url(#tsDim)", pool: "url(#tsPoolDim)" },
 };
 
 export const STAGE_LABELS = ["Ideating", "Researching", "Prototyping", "Testing", "Finalizing"];
@@ -51,28 +50,21 @@ export const STAGE_LABELS = ["Ideating", "Researching", "Prototyping", "Testing"
 const statusFor = (i: number, active: number): Status =>
   i < active ? "done" : i === active ? "active" : "pending";
 
-/* ── shapes ────────────────────────────────────────────────────────────── */
-const roundedBody = (w: number, h: number, r: number, y: number) => {
-  const x0 = -w / 2;
-  return `M${x0 + r} ${y} H${x0 + w - r} A${r} ${r} 0 0 1 ${x0 + w} ${y + r} V${y + h - r} A${r} ${r} 0 0 1 ${x0 + w - r} ${y + h} H${x0 + r} A${r} ${r} 0 0 1 ${x0} ${y + h - r} V${y + r} A${r} ${r} 0 0 1 ${x0 + r} ${y} Z`;
-};
+const STARS = Array.from({ length: 86 }, (_, i) => ({
+  x: (i * 173 + 31) % W,
+  y: (i * 97 + 18) % 168,
+  r: i % 9 === 0 ? 1.7 : i % 4 === 0 ? 1.15 : 0.7,
+  o: 0.22 + (i % 8) * 0.08,
+}));
 
-// tail car: rounded shoulder left, flat roof, aerodynamic sweep down on the right
-const tailBody = (w: number, h: number, y: number, inset = 0) => {
-  const L = -w / 2 + inset, R = w / 2 - inset, TY = y + inset, BY = y + h - inset;
-  return `M${L} ${BY} V${TY + 46} A46 46 0 0 1 ${L + 46} ${TY} H${R - 74} C${R - 26} ${TY} ${R} ${TY + 30} ${R} ${TY + 62} V${BY} Z`;
-};
-
-/* ── neon tube: colour halo → tight colour → white-hot core ────────────── */
 function Tube({ d, hue, lit, dim, scale = 1 }: { d: string; hue: string; lit: string; dim?: boolean; scale?: number }) {
-  const k = dim ? 0.34 : 1;
+  const k = dim ? 0.4 : 1;
   return (
     <g className="ts-add">
-      <path d={d} fill="none" stroke={hue} strokeWidth={30 * scale} opacity={0.26 * k} filter="url(#tsB18)" />
-      <path d={d} fill="none" stroke={hue} strokeWidth={14 * scale} opacity={0.5 * k} filter="url(#tsB9)" />
-      <path d={d} fill="none" stroke={hue} strokeWidth={6.5 * scale} opacity={0.9 * k} filter="url(#tsB4)" />
-      <path d={d} fill="none" stroke={hue} strokeWidth={3.6 * scale} opacity={k} />
-      <path d={d} fill="none" stroke={lit} strokeWidth={1.4 * scale} opacity={dim ? 0.5 : 0.95} />
+      <path d={d} fill="none" stroke={hue} strokeWidth={20 * scale} opacity={0.2 * k} filter="url(#tsB18)" />
+      <path d={d} fill="none" stroke={hue} strokeWidth={9 * scale} opacity={0.5 * k} filter="url(#tsB9)" />
+      <path d={d} fill="none" stroke={hue} strokeWidth={4.2 * scale} opacity={0.95 * k} />
+      <path d={d} fill="none" stroke={lit} strokeWidth={1.25 * scale} opacity={dim ? 0.45 : 0.95} />
     </g>
   );
 }
@@ -81,9 +73,8 @@ function Wheel({ x, hue }: { x: number; hue: string }) {
   return (
     <g>
       <circle cx={x} cy={-WR} r={WR} fill="url(#tsWheel)" />
-      <circle cx={x} cy={-WR} r={WR} fill="none" stroke={hue} strokeWidth={1.3} strokeOpacity={0.5} />
-      <circle cx={x - 3.6} cy={-WR - 3.6} r={3} fill="#c9d9f2" opacity={0.32} />
-      <circle cx={x} cy={-WR} r={3} fill="#000" opacity={0.55} />
+      <circle cx={x} cy={-WR} r={WR} fill="none" stroke={hue} strokeWidth={1.15} strokeOpacity={0.55} />
+      <circle cx={x} cy={-WR} r={3} fill="#05070d" />
     </g>
   );
 }
@@ -91,25 +82,24 @@ function Wheel({ x, hue }: { x: number; hue: string }) {
 function Bogie({ x, hue }: { x: number; hue: string }) {
   return (
     <g>
-      <rect x={x - 15} y={-WR - 3} width={30} height={6} rx={3} fill="#04080f" opacity={0.9} />
-      <Wheel x={x - 13} hue={hue} />
-      <Wheel x={x + 13} hue={hue} />
+      <rect x={x - 17} y={-WR - 5} width={34} height={7} rx={2} fill="#070b14" />
+      <Wheel x={x - 12} hue={hue} />
+      <Wheel x={x + 12} hue={hue} />
     </g>
   );
 }
 
-function Smoke({ colour, x }: { colour: string; x: number }) {
+function Smoke({ colour, x, y }: { colour: string; x: number; y: number }) {
   return (
-    <g className="ts-add" transform={`translate(${x} ${TOP + 4})`} filter="url(#tsSmoke)">
-      {[0, 1, 2, 3].map((i) => {
-        const begin = `${(i * 1.2).toFixed(2)}s`;
-        const dur = "4.8s";
+    <g className="ts-add" transform={`translate(${x} ${y})`} filter="url(#tsSmoke)">
+      {[0, 1, 2, 3, 4].map((i) => {
+        const begin = `${(i * 0.65).toFixed(2)}s`;
         return (
-          <circle key={i} cx={0} cy={0} r={4} fill={colour} opacity={0}>
-            <animate attributeName="cy" values="0;-58;-116;-168" dur={dur} begin={begin} repeatCount="indefinite" />
-            <animate attributeName="cx" values="0;7;17;30" dur={dur} begin={begin} repeatCount="indefinite" />
-            <animate attributeName="r" values="3;9;16;25" dur={dur} begin={begin} repeatCount="indefinite" />
-            <animate attributeName="opacity" values="0;.5;.24;0" dur={dur} begin={begin} repeatCount="indefinite" />
+          <circle key={i} cx={0} cy={0} r={5} fill={colour} opacity={0}>
+            <animate attributeName="cy" values="0;-40;-84;-126" dur="3.5s" begin={begin} repeatCount="indefinite" />
+            <animate attributeName="cx" values="0;10;20;32" dur="3.5s" begin={begin} repeatCount="indefinite" />
+            <animate attributeName="r" values="4;11;17;23" dur="3.5s" begin={begin} repeatCount="indefinite" />
+            <animate attributeName="opacity" values="0;.55;.2;0" dur="3.5s" begin={begin} repeatCount="indefinite" />
           </circle>
         );
       })}
@@ -117,261 +107,248 @@ function Smoke({ colour, x }: { colour: string; x: number }) {
   );
 }
 
-function StageIcon({ status, lit }: { status: Status; lit: string }) {
-  if (status === "done")
-    return (
-      <g className="ts-add" stroke={lit} fill="none" strokeWidth={3.1} strokeLinecap="round" strokeLinejoin="round">
-        <path d="M-6.6 .4 L-1.8 5.2 L7 -4.8" />
-      </g>
-    );
-  if (status === "active")
-    return (
-      <g className="ts-add" stroke={lit} fill="none" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round">
-        <path d="M-3.5 -7.8 h7 M-3.5 -7.8 v6.1 L-7 5.2 a2 2 0 0 0 1.7 3 h10.6 A2 2 0 0 0 7 5.2 L3.5 -1.7 V-7.8" />
-        <path d="M-4.4 3.9 h8.8" />
-      </g>
-    );
+function Windows({ hue, lit, dim }: { hue: string; lit: string; dim: boolean }) {
+  const cells = [
+    [-44, TOP + 18],
+    [6, TOP + 18],
+    [-44, TOP + 48],
+    [6, TOP + 48],
+  ];
   return (
-    <g className="ts-add" fill={lit}>
-      {[-6, 0, 6].map((dx) => <circle key={dx} cx={dx} cy={0} r={1.8} />)}
+    <g>
+      {cells.map(([x, y], i) => (
+        <g key={i}>
+          <rect x={x} y={y} width={38} height={24} rx={3} fill={dim ? "#0b111c" : "rgba(8,14,24,.78)"} stroke={hue} strokeWidth={1.15} opacity={dim ? 0.58 : 1} />
+          <line x1={x + 19} y1={y + 2} x2={x + 19} y2={y + 22} stroke={hue} strokeWidth={0.8} opacity={0.35} />
+          <line x1={x + 2} y1={y + 12} x2={x + 36} y2={y + 12} stroke={hue} strokeWidth={0.8} opacity={0.35} />
+          <rect x={x + 3} y={y + 3} width={12} height={7} rx={1.5} fill={lit} opacity={dim ? 0.08 : 0.22} />
+        </g>
+      ))}
     </g>
   );
 }
 
-/* ── a single carriage ─────────────────────────────────────────────────── */
 function Car({ label, status, index }: { label: string; status: Status; index: number }) {
   const x = carX(index);
   const t = THEME[status];
   const dim = status === "pending";
-  const outer = dim ? tailBody(CAR_W, CAR_H, TOP) : roundedBody(CAR_W, CAR_H, RX, TOP);
-  const inner = dim ? tailBody(CAR_W, CAR_H, TOP, 9) : roundedBody(CAR_W - 18, CAR_H - 18, RX - 9, TOP + 9);
-  const bx = -CAR_W / 2 + 46;
+  const body = `M${-CAR_W / 2 + RX} ${TOP} H${CAR_W / 2 - RX} A${RX} ${RX} 0 0 1 ${CAR_W / 2} ${TOP + RX} V${BOT - RX} A${RX} ${RX} 0 0 1 ${CAR_W / 2 - RX} ${BOT} H${-CAR_W / 2 + RX} A${RX} ${RX} 0 0 1 ${-CAR_W / 2} ${BOT - RX} V${TOP + RX} A${RX} ${RX} 0 0 1 ${-CAR_W / 2 + RX} ${TOP} Z`;
 
   return (
     <g transform={`translate(${x} ${rail(x)}) rotate(${tilt(x).toFixed(2)})`}>
       {status === "active" && (
-        <>
-          <ellipse className="ts-add" cx={0} cy={MID} rx={250} ry={155} fill="url(#tsAura)" opacity={0.5} />
-          <g className="ts-add" fill="none" stroke="#ffb42c">
-            {[96, 132, 168].map((r) => <circle key={r} cx={0} cy={MID} r={r} strokeWidth={1} opacity={0.22} />)}
-            <circle cx={0} cy={MID} r={96} strokeWidth={1.4} opacity={0.5}>
-              <animate attributeName="r" values="96;185" dur="3.4s" repeatCount="indefinite" />
-              <animate attributeName="opacity" values=".5;0" dur="3.4s" repeatCount="indefinite" />
-            </circle>
-          </g>
-          <rect className="ts-add" x={-360} y={MID - 2} width={720} height={4} fill="url(#tsFlare)" filter="url(#tsB4)" opacity={0.5}>
-            <animate attributeName="opacity" values=".28;.75;.28" dur="2.6s" repeatCount="indefinite" />
-          </rect>
-        </>
+        <ellipse className="ts-add" cx={0} cy={TOP + CAR_H / 2} rx={200} ry={110} fill="url(#tsAura)" opacity={0.5} />
       )}
-
-      {t.smoke && <Smoke colour={t.smoke} x={-CAR_W / 4} />}
-
-      {/* wheels first, so the body's bottom neon edge crosses in front of them */}
-      <Bogie x={-CAR_W / 2 + 54} hue={t.hue} />
-      <Bogie x={CAR_W / 2 - 54} hue={t.hue} />
-
-      <path d={outer} fill={t.glass} />
-      <path d={outer} fill="none" stroke={t.hue} strokeWidth={15} opacity={dim ? 0.07 : 0.18} filter="url(#tsB9)" />
-      <Tube d={outer} hue={t.hue} lit={t.lit} dim={dim} />
-      <path d={inner} fill="none" stroke={t.lit} strokeWidth={1.1} opacity={dim ? 0.3 : 0.42} />
-      <rect x={-CAR_W / 2 + 20} y={TOP + 8} width={CAR_W - 40} height={15} rx={7.5} fill="url(#tsSheen)" opacity={dim ? 0.3 : 0.55} />
-
-      {dim && (
-        <path
-          d={`M${CAR_W / 2 - 58} ${TOP + 6} C${CAR_W / 2 - 54} ${TOP + 34} ${CAR_W / 2 - 54} ${BOT - 22} ${CAR_W / 2 - 58} ${BOT}`}
-          fill="none" stroke={t.lit} strokeWidth={1} opacity={0.3}
-        />
-      )}
-
-      <circle cx={bx} cy={MID} r={18.5} fill="rgba(0,4,10,.4)" />
-      {dim ? (
-        <circle className="ts-add" cx={bx} cy={MID} r={18.5} fill="none" stroke={t.lit}
-                strokeWidth={1.6} strokeDasharray="2 5" strokeLinecap="round" opacity={0.75} />
-      ) : (
-        <Tube d={`M${bx} ${MID - 18.5} A18.5 18.5 0 1 1 ${bx - 0.01} ${MID - 18.5} Z`} hue={t.hue} lit={t.lit} scale={0.62} />
-      )}
-      <g transform={`translate(${bx} ${MID})`}><StageIcon status={status} lit={t.lit} /></g>
-
-      <text x={bx + 32} y={MID} dominantBaseline="central" fontSize={21} fontWeight={650}
-            letterSpacing="-.3" fill={dim ? "#dbe6fb" : "#fff"}>
+      <Bogie x={-CAR_W / 2 + 50} hue={t.hue} />
+      <Bogie x={CAR_W / 2 - 50} hue={t.hue} />
+      <rect x={-CAR_W / 2 + 8} y={BOT - 6} width={CAR_W - 16} height={8} rx={2} fill="#070b14" opacity={0.85} />
+      <path d={body} fill={t.glass} />
+      <Tube d={body} hue={t.hue} lit={t.lit} dim={dim} />
+      <rect x={-CAR_W / 2 + 10} y={TOP - 7} width={CAR_W - 20} height={8} rx={3} fill={t.glass} stroke={t.hue} strokeWidth={1.2} opacity={0.9} />
+      <rect x={-CAR_W / 2 + 16} y={TOP + 6} width={CAR_W - 32} height={10} rx={4} fill="url(#tsSheen)" opacity={dim ? 0.16 : 0.4} />
+      <line x1={0} y1={TOP + 14} x2={0} y2={BOT - 8} stroke={t.lit} strokeWidth={1} opacity={0.22} />
+      <Windows hue={t.hue} lit={t.lit} dim={dim} />
+      <text x={0} y={28} textAnchor="middle" fontSize={15} fontWeight={700} letterSpacing="0.3" fill={dim ? "#9aafd4" : t.lit}>
         {label}
       </text>
     </g>
   );
 }
 
-/* ── locomotive: wedge nose, right edge flush against car 1 ────────────── */
-function Locomotive() {
-  const x = START + LOCO / 2;
+function Locomotive({ lit }: { lit: boolean }) {
+  const x = START + LOCO_W / 2;
   const t = THEME.done;
-  const h = CAR_H - 4;
-  const top = BOT - h;
-  const L = -LOCO / 2;
-  const R = LOCO / 2;
-  const shell = (o: number) =>
-    `M${R} ${BOT - o} V${top + o} H${L + 34 + o} C${L + 13 + o} ${top + o} ${L + o} ${top + 26 + o} ${L + o} ${BOT - o} Z`;
+  const L = -LOCO_W / 2;
+  const R = LOCO_W / 2;
+  const cabL = R - 60;
+  const boilerTop = TOP + 12;
+  const hull = `M${L + 24} ${BOT} V${boilerTop + 16} C${L + 24} ${boilerTop} ${L + 44} ${boilerTop - 8} ${L + 68} ${boilerTop - 8} H${cabL} V${TOP} H${R - 8} A8 8 0 0 1 ${R} ${TOP + 8} V${BOT} Z`;
 
   return (
     <g transform={`translate(${x} ${rail(x)}) rotate(${tilt(x).toFixed(2)})`}>
-      <Bogie x={-20} hue={t.hue} />
-      <Bogie x={22} hue={t.hue} />
-      <path d={shell(0)} fill={t.glass} />
-      <path d={shell(0)} fill="none" stroke={t.hue} strokeWidth={14} opacity={0.26} filter="url(#tsB9)" />
-      <Tube d={shell(0)} hue={t.hue} lit={t.lit} />
-      {/* nose ribs, generated from the same sweep so they stay parallel */}
-      {[7, 14, 21].map((o, k) => (
-        <path key={o} fill="none" stroke={t.lit} strokeWidth={1} opacity={0.38 - k * 0.1}
-              d={`M${L + 34 + o} ${top + o} C${L + 13 + o} ${top + o} ${L + o} ${top + 26 + o} ${L + o} ${BOT - o}`} />
-      ))}
-      <g className="ts-add">
-        <ellipse cx={L + 9} cy={BOT - 14} rx={15} ry={9} fill="#ffb0a0" opacity={0.28} filter="url(#tsB9)" />
-        <circle cx={L + 9} cy={BOT - 14} r={2.6} fill="#ff8a7a" opacity={0.95} />
-      </g>
+      {lit && <Smoke colour="#7dffc4" x={L + 54} y={boilerTop - 30} />}
+      <Bogie x={L + 48} hue={t.hue} />
+      <Bogie x={R - 38} hue={t.hue} />
+      <polygon points={`${L + 8},${BOT} ${L - 18},${BOT + 16} ${L + 36},${BOT + 16} ${L + 42},${BOT}`} fill="#081018" stroke={t.hue} strokeWidth={1.4} />
+      <path d={hull} fill={t.glass} />
+      <Tube d={hull} hue={t.hue} lit={t.lit} />
+      <rect x={L + 46} y={boilerTop - 36} width={16} height={32} rx={3} fill={t.glass} stroke={t.hue} strokeWidth={2.1} />
+      <rect x={L + 43} y={boilerTop - 40} width={22} height={6} rx={2} fill={t.hue} opacity={0.9} />
+      <circle cx={L + 30} cy={boilerTop + 22} r={10} fill="#0b1018" stroke={t.lit} strokeWidth={2} />
+      <circle cx={L + 30} cy={boilerTop + 22} r={5} fill="#fff6d0" />
+      <circle className="ts-add" cx={L + 30} cy={boilerTop + 22} r={15} fill="#ffd27a" opacity={0.28} filter="url(#tsB9)" />
+      <rect x={cabL + 8} y={TOP + 14} width={18} height={22} rx={3} fill="#102018" stroke={t.lit} strokeWidth={1.2} />
+      <rect x={cabL + 30} y={TOP + 14} width={18} height={22} rx={3} fill="#102018" stroke={t.lit} strokeWidth={1.2} />
     </g>
   );
 }
 
-function Coupler({ index, nextStatus }: { index: number; nextStatus: Status }) {
+function Coupler({ index }: { index: number }) {
   const a = carX(index) + CAR_W / 2;
   const b = carX(index + 1) - CAR_W / 2;
   const m = (a + b) / 2;
   const wd = b - a;
-  const t = THEME[nextStatus === "pending" ? "active" : nextStatus];
-  const hot = nextStatus === "active" || nextStatus === "pending";
-
   return (
     <g transform={`translate(${m} ${rail(m)}) rotate(${tilt(m).toFixed(2)})`}>
-      <Tube d={`M${-wd / 2} ${MID} H${wd / 2}`} hue={t.hue} lit={t.lit} scale={0.5} />
-      <rect className="ts-add" x={-5} y={MID - 5} width={10} height={10} rx={2.5} fill="#060c17" stroke={t.hue} strokeWidth={1.2} />
-      {hot &&
-        [0, 1, 2, 3, 4, 5, 6, 7].map((k) => {
-          const begin = `${(k * 0.38).toFixed(2)}s`;
-          return (
-            <circle key={k} className="ts-add" cx={-wd / 2} cy={MID + ((k % 3) - 1) * 7}
-                    r={(k % 3) * 0.8 + 1.4} fill="#fff3d4" opacity={0}>
-              <animate attributeName="cx" values={`${-wd / 2};${wd / 2 + 30}`} dur="1.8s" begin={begin} repeatCount="indefinite" />
-              <animate attributeName="opacity" values="0;1;0" dur="1.8s" begin={begin} repeatCount="indefinite" />
-            </circle>
-          );
-        })}
+      <rect x={-wd / 2} y={BOT - 20} width={wd} height={7} rx={2.5} fill="#0b1220" stroke="#6f8ec8" strokeWidth={1} opacity={0.9} />
     </g>
   );
 }
 
-/* ── scene ─────────────────────────────────────────────────────────────── */
+function Platform() {
+  return (
+    <g>
+      <path d={closedBand(10, 78)} fill="url(#tsPlatFront)" />
+      <path d={closedBand(4, 44)} fill="url(#tsPlatTop)" />
+      <path d={railPath(8)} fill="none" stroke="#c9a227" strokeWidth={3.2} opacity={0.85} />
+      <path d={railPath(12)} fill="none" stroke="#f5e6a3" strokeWidth={1.1} opacity={0.55} />
+      {Array.from({ length: 18 }, (_, i) => {
+        const x = 40 + i * 82;
+        const y = rail(x) + 18;
+        return <line key={x} x1={x} y1={y} x2={x + 28} y2={y} stroke="#3d5478" strokeWidth={1.4} strokeDasharray="6 8" opacity={0.35} />;
+      })}
+      <path d={closedBand(44, 78)} fill="none" stroke="#1b2c4a" strokeWidth={1.2} opacity={0.7} />
+    </g>
+  );
+}
+
 export default function TrainScene({ activeStageIndex }: { activeStageIndex: number }) {
-  const active = Math.max(0, Math.min(STAGE_LABELS.length - 1, activeStageIndex));
+  const active = activeStageIndex < 0 ? -1 : Math.max(0, Math.min(STAGE_LABELS.length - 1, activeStageIndex));
 
   return (
     <svg
-      viewBox={`0 0 ${W} 330`}
+      viewBox={`0 0 ${W} 400`}
       preserveAspectRatio="xMidYMid meet"
       role="img"
-      aria-label={`Analysis pipeline. Current stage: ${STAGE_LABELS[active]}.`}
-      style={{ display: "block", width: "100%", height: "100%", minHeight: 120, overflow: "visible", isolation: "isolate" }}
+      aria-label={`Analysis pipeline. Current stage: ${active < 0 ? "idle" : STAGE_LABELS[active]}.`}
+      style={{ display: "block", width: "100%", height: "100%", minHeight: 168, overflow: "visible", isolation: "isolate" }}
     >
       <style>{`
         .ts-add { mix-blend-mode: plus-lighter; }
         @supports not (mix-blend-mode: plus-lighter) { .ts-add { mix-blend-mode: screen; } }
         @media (prefers-reduced-motion: reduce) { svg animate { display: none; } }
       `}</style>
-
       <defs>
         <linearGradient id="tsRib" x1="0" y1="0" x2="1" y2="0">
           <stop offset="0" stopColor="#3ec9e0" stopOpacity="0" />
-          <stop offset=".14" stopColor="#43d8ec" stopOpacity=".9" />
-          <stop offset=".48" stopColor="#4da6ff" stopOpacity="1" />
-          <stop offset=".8" stopColor="#8f7bff" stopOpacity="1" />
-          <stop offset="1" stopColor="#b07bff" stopOpacity=".55" />
+          <stop offset=".2" stopColor="#43d8ec" stopOpacity=".9" />
+          <stop offset=".55" stopColor="#4da6ff" stopOpacity="1" />
+          <stop offset="1" stopColor="#b07bff" stopOpacity=".45" />
         </linearGradient>
         <linearGradient id="tsCore" x1="0" y1="0" x2="1" y2="0">
           <stop offset="0" stopColor="#fff" stopOpacity=".05" />
-          <stop offset=".34" stopColor="#fff" stopOpacity="1" />
-          <stop offset=".8" stopColor="#eef4ff" stopOpacity=".95" />
-          <stop offset="1" stopColor="#dcc9ff" stopOpacity=".25" />
+          <stop offset=".4" stopColor="#fff" stopOpacity="1" />
+          <stop offset="1" stopColor="#dcc9ff" stopOpacity=".2" />
         </linearGradient>
-        <linearGradient id="tsGround" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#4f9dff" stopOpacity=".4" />
-          <stop offset="1" stopColor="#4f9dff" stopOpacity="0" />
-        </linearGradient>
-
-        {/* glass shells stay genuinely translucent — the rail reads through them */}
         <linearGradient id="tsMint" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#a6ffdd" stopOpacity=".22" />
-          <stop offset=".45" stopColor="#0fbb80" stopOpacity=".12" />
-          <stop offset="1" stopColor="#00120c" stopOpacity=".30" />
+          <stop offset="0" stopColor="#b6ffe4" stopOpacity=".3" />
+          <stop offset=".5" stopColor="#0fbb80" stopOpacity=".16" />
+          <stop offset="1" stopColor="#03140e" stopOpacity=".62" />
         </linearGradient>
         <linearGradient id="tsGold" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#fff0c6" stopOpacity=".30" />
-          <stop offset=".45" stopColor="#e59a10" stopOpacity=".18" />
-          <stop offset="1" stopColor="#1c0f00" stopOpacity=".34" />
+          <stop offset="0" stopColor="#fff0c6" stopOpacity=".36" />
+          <stop offset=".5" stopColor="#e59a10" stopOpacity=".2" />
+          <stop offset="1" stopColor="#1c0f00" stopOpacity=".6" />
         </linearGradient>
         <linearGradient id="tsDim" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#dfeaff" stopOpacity=".13" />
-          <stop offset=".45" stopColor="#8fa6d8" stopOpacity=".05" />
-          <stop offset="1" stopColor="#01050e" stopOpacity=".26" />
+          <stop offset="0" stopColor="#dfeaff" stopOpacity=".16" />
+          <stop offset=".5" stopColor="#8fa6d8" stopOpacity=".08" />
+          <stop offset="1" stopColor="#01050e" stopOpacity=".55" />
         </linearGradient>
         <linearGradient id="tsSheen" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#fff" stopOpacity=".6" />
+          <stop offset="0" stopColor="#fff" stopOpacity=".55" />
           <stop offset="1" stopColor="#fff" stopOpacity="0" />
         </linearGradient>
-        <linearGradient id="tsFlare" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0" stopColor="#ffc247" stopOpacity="0" />
-          <stop offset=".5" stopColor="#fff4dc" stopOpacity=".85" />
-          <stop offset="1" stopColor="#ffc247" stopOpacity="0" />
+        <linearGradient id="tsPlatTop" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#0b1730" stopOpacity=".55" />
+          <stop offset=".45" stopColor="#081224" stopOpacity=".92" />
+          <stop offset="1" stopColor="#050a16" stopOpacity="1" />
         </linearGradient>
-
+        <linearGradient id="tsPlatFront" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#152445" />
+          <stop offset="1" stopColor="#070d18" />
+        </linearGradient>
         <radialGradient id="tsWheel" cx=".34" cy=".28" r=".9">
           <stop offset="0" stopColor="#4d5f7d" />
-          <stop offset=".4" stopColor="#131c2c" />
+          <stop offset=".45" stopColor="#131c2c" />
           <stop offset="1" stopColor="#01030a" />
         </radialGradient>
-        <radialGradient id="tsPoolMint"><stop offset="0" stopColor="#4dffb4" stopOpacity=".75" /><stop offset="1" stopColor="#4dffb4" stopOpacity="0" /></radialGradient>
-        <radialGradient id="tsPoolGold"><stop offset="0" stopColor="#ffc247" stopOpacity=".95" /><stop offset="1" stopColor="#ffc247" stopOpacity="0" /></radialGradient>
-        <radialGradient id="tsPoolDim"><stop offset="0" stopColor="#93a9d6" stopOpacity=".3" /><stop offset="1" stopColor="#93a9d6" stopOpacity="0" /></radialGradient>
+        <radialGradient id="tsPoolMint">
+          <stop offset="0" stopColor="#4dffb4" stopOpacity=".7" />
+          <stop offset="1" stopColor="#4dffb4" stopOpacity="0" />
+        </radialGradient>
+        <radialGradient id="tsPoolGold">
+          <stop offset="0" stopColor="#ffc247" stopOpacity=".9" />
+          <stop offset="1" stopColor="#ffc247" stopOpacity="0" />
+        </radialGradient>
+        <radialGradient id="tsPoolDim">
+          <stop offset="0" stopColor="#93a9d6" stopOpacity=".28" />
+          <stop offset="1" stopColor="#93a9d6" stopOpacity="0" />
+        </radialGradient>
         <radialGradient id="tsAura">
-          <stop offset="0" stopColor="#ffbb33" stopOpacity=".7" />
-          <stop offset=".5" stopColor="#ff9500" stopOpacity=".16" />
+          <stop offset="0" stopColor="#ffbb33" stopOpacity=".65" />
+          <stop offset=".55" stopColor="#ff9500" stopOpacity=".14" />
           <stop offset="1" stopColor="#ff9500" stopOpacity="0" />
         </radialGradient>
-
-        <filter id="tsB4" x="-160%" y="-160%" width="420%" height="420%"><feGaussianBlur stdDeviation="4" /></filter>
-        <filter id="tsB9" x="-200%" y="-200%" width="500%" height="500%"><feGaussianBlur stdDeviation="9" /></filter>
-        <filter id="tsB18" x="-260%" y="-260%" width="620%" height="620%"><feGaussianBlur stdDeviation="18" /></filter>
-        <filter id="tsB34" x="-300%" y="-300%" width="700%" height="700%"><feGaussianBlur stdDeviation="34" /></filter>
-        <filter id="tsSmoke" x="-400%" y="-400%" width="900%" height="900%"><feGaussianBlur stdDeviation="7" /></filter>
+        <filter id="tsB9" x="-200%" y="-200%" width="500%" height="500%">
+          <feGaussianBlur stdDeviation="9" />
+        </filter>
+        <filter id="tsB18" x="-260%" y="-260%" width="620%" height="620%">
+          <feGaussianBlur stdDeviation="18" />
+        </filter>
+        <filter id="tsSmoke" x="-400%" y="-400%" width="900%" height="900%">
+          <feGaussianBlur stdDeviation="7" />
+        </filter>
       </defs>
 
-      {/* rail — deliberately light; additive layers sum, so heavy strokes blow out to a slab */}
-      <path className="ts-add" fill="url(#tsGround)" opacity={0.16} filter="url(#tsB34)"
-            d={`${railPath(6)} L${W + 70} ${rail(W + 70) + 130} L-50 ${rail(-50) + 130} Z`} />
-      <g className="ts-add">
-        <path d={railPath(0)} fill="none" stroke="url(#tsRib)" strokeWidth={26} opacity={0.1} filter="url(#tsB34)" />
-        <path d={railPath(1)} fill="none" stroke="url(#tsRib)" strokeWidth={9} opacity={0.22} filter="url(#tsB9)" />
-        <path d={railPath(0)} fill="none" stroke="url(#tsRib)" strokeWidth={2.6} opacity={0.55} />
-        <path d={railPath(0)} fill="none" stroke="url(#tsCore)" strokeWidth={1.1} opacity={0.8} />
-        <path d={railPath(22)} fill="none" stroke="url(#tsRib)" strokeWidth={1.1} opacity={0.26} />
-        <path d={railPath(0)} fill="none" stroke="#fff" strokeWidth={2.2} strokeLinecap="round"
-              strokeDasharray="110 2700" opacity={0.7} filter="url(#tsB4)">
-          <animate attributeName="stroke-dashoffset" from="2810" to="0" dur="6.2s" repeatCount="indefinite" />
-        </path>
-      </g>
-
-      {/* light pooled on the rail beneath each carriage */}
-      {STAGE_LABELS.map((_, i) => {
-        const x = carX(i);
+      {STARS.map((s, i) => (
+        <circle key={i} cx={s.x} cy={s.y} r={s.r} fill="#e8f0ff" opacity={s.o} />
+      ))}
+      {[0, 1, 2, 3, 4, 5].map((i) => {
+        const x = 180 + i * 220;
+        const y = 28 + (i % 3) * 22;
         return (
-          <ellipse key={`pool-${i}`} className="ts-add" cx={x} cy={rail(x) + 3}
-                   rx={CAR_W * 0.6} ry={14} fill={THEME[statusFor(i, active)].pool} filter="url(#tsB18)" />
+          <g key={`sp-${i}`} className="ts-add" transform={`translate(${x} ${y})`} opacity={0.45}>
+            <path d="M0 -6 L1.1 -1.1 L6 0 L1.1 1.1 L0 6 L-1.1 1.1 L-6 0 L-1.1 -1.1 Z" fill="#c4b5fd" />
+          </g>
         );
       })}
 
-      <Locomotive />
+      <Platform />
+
+      {Array.from({ length: 40 }, (_, i) => {
+        const x = -30 + i * 40;
+        const y = rail(x);
+        return <line key={x} x1={x} y1={y + 2} x2={x} y2={y + 14} stroke="#6a86b8" strokeWidth={3.2} opacity={0.32} />;
+      })}
+      <g className="ts-add">
+        <path d={railPath(0)} fill="none" stroke="url(#tsRib)" strokeWidth={8} opacity={0.3} filter="url(#tsB9)" />
+        <path d={railPath(0)} fill="none" stroke="url(#tsCore)" strokeWidth={2.4} opacity={0.95} />
+        <path d={railPath(15)} fill="none" stroke="url(#tsRib)" strokeWidth={8} opacity={0.24} filter="url(#tsB9)" />
+        <path d={railPath(15)} fill="none" stroke="url(#tsCore)" strokeWidth={2.2} opacity={0.8} />
+      </g>
+
+      {STAGE_LABELS.map((_, i) => {
+        const x = carX(i);
+        return (
+          <ellipse
+            key={`pool-${i}`}
+            className="ts-add"
+            cx={x}
+            cy={rail(x) + 6}
+            rx={CAR_W * 0.56}
+            ry={14}
+            fill={THEME[statusFor(i, active)].pool}
+            filter="url(#tsB18)"
+          />
+        );
+      })}
+
+      <Locomotive lit={active >= 0} />
       {STAGE_LABELS.map((label, i) => (
         <Fragment key={label}>
           <Car label={label} status={statusFor(i, active)} index={i} />
-          {i < STAGE_LABELS.length - 1 && <Coupler index={i} nextStatus={statusFor(i + 1, active)} />}
+          {i < STAGE_LABELS.length - 1 && <Coupler index={i} />}
         </Fragment>
       ))}
     </svg>
