@@ -49,6 +49,7 @@ export default function HomeScreen({ idea, setIdea, onLaunch, error, onNavigate 
         fontFamily: "'Inter', sans-serif",
       }}
     >
+      <div className="app-stars" />
       <Sidebar activeNav={activeNav} onNavChange={handleNavChange} />
 
       <div className="flex flex-col flex-1 min-h-screen overflow-y-auto">
@@ -149,9 +150,7 @@ export default function HomeScreen({ idea, setIdea, onLaunch, error, onNavigate 
             </div>
           )}
 
-          <div className="train-stage mt-10 w-full max-w-5xl opacity-95">
-            <div className="app-stars" />
-            <div className="app-floor" />
+          <div className="train-stage mt-10 w-full">
             <TrainScene activeStageIndex={-1} />
           </div>
         </main>

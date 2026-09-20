@@ -273,17 +273,16 @@ export default function LoadingScreen({ activeStageIndex, sourceCount: _sourceCo
   const progressPct = Math.min(100, Math.round(((activeStageIndex + 1) / STAGE_LABELS.length) * 100));
 
   return (
-    <div className="flex w-full overflow-hidden"
+    <div className="relative flex w-full overflow-hidden"
       style={{ height: "100dvh", background: "radial-gradient(ellipse 80% 60% at 75% 5%, rgba(90,60,180,0.18) 0%, #050c1a 55%)", fontFamily: "'Inter', sans-serif" }}>
       <ShortViewportStyles />
+      <div className="app-stars" style={{ position: "absolute", inset: 0 }} />
       <Sidebar activeNav={activeNav} onNavChange={handleNavChange} />
       <div className="flex flex-col flex-1 min-h-screen overflow-y-auto">
         <TopBar />
         <main className="flex-1 flex flex-col min-h-0">
           <HeroSection />
-          <div className="train-stage" style={{ flex: "1 1 auto", minHeight: 0, display: "flex", alignItems: "center" }}>
-            <div className="app-stars" />
-            <div className="app-floor" />
+          <div className="train-stage">
             <TrainScene activeStageIndex={activeStageIndex} />
           </div>
           <OverallProgress value={progressPct} />
