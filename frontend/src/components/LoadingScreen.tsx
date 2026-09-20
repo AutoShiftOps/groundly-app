@@ -281,7 +281,9 @@ export default function LoadingScreen({ activeStageIndex, sourceCount: _sourceCo
         <TopBar />
         <main className="flex-1 flex flex-col min-h-0">
           <HeroSection />
-          <div style={{ flex: "1 1 auto", minHeight: 0, display: "flex", alignItems: "center" }}>
+          <div className="train-stage" style={{ flex: "1 1 auto", minHeight: 0, display: "flex", alignItems: "center" }}>
+            <div className="app-stars" />
+            <div className="app-floor" />
             <TrainScene activeStageIndex={activeStageIndex} />
           </div>
           <OverallProgress value={progressPct} />

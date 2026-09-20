@@ -149,7 +149,9 @@ export default function HomeScreen({ idea, setIdea, onLaunch, error, onNavigate 
             </div>
           )}
 
-          <div className="mt-10 w-full max-w-4xl opacity-90">
+          <div className="train-stage mt-10 w-full max-w-5xl opacity-95">
+            <div className="app-stars" />
+            <div className="app-floor" />
             <TrainScene activeStageIndex={-1} />
           </div>
         </main>
