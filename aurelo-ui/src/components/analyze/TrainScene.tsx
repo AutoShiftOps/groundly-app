@@ -171,7 +171,7 @@ export default function TrainScene({ activeStageIndex }: { activeStageIndex: num
       preserveAspectRatio="xMidYMid meet"
       role="img"
       aria-label={`Analysis pipeline. Current stage: ${active < 0 ? "idle" : STAGE_LABELS[active]}.`}
-      style={{ display: "block", width: "100%", height: "auto", overflow: "visible" }}
+      style={{ display: "block", height: "100%", width: "auto", minWidth: 1100, overflow: "visible" }}
     >
       <style>{`
         .ts-add { mix-blend-mode: plus-lighter; }
