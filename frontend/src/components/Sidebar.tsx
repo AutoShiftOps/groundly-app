@@ -33,7 +33,7 @@ function NavItem({ icon: Icon, label, active, onClick }: {
 
 export default function Sidebar({ activeNav, onNavChange }: { activeNav: string; onNavChange: (l: string) => void }) {
   return (
-    <aside className="relative flex flex-col items-center w-[76px] min-h-screen py-4 gap-1 shrink-0"
+    <aside className="relative hidden md:flex flex-col items-center w-[76px] min-h-screen py-4 gap-1 shrink-0"
       style={{ background: "#080f1e", borderRight: "1px solid rgba(99,140,255,0.1)" }}>
       <div className="flex flex-col items-center gap-1 mb-6 mt-2">
         <div className="w-9 h-9 rounded-xl flex items-center justify-center"

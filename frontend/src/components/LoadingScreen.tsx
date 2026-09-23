@@ -87,7 +87,7 @@ function TopBar() {
 
 function HeroSection() {
   return (
-    <div className="flex-none px-8 pt-5 pb-1">
+    <div className="flex-none px-4 sm:px-8 pt-4 pb-1">
       <h1 className="ls-hero-h1 font-extrabold leading-[1.15] text-white" style={{ letterSpacing: "-0.025em" }}>
         Analyzing your business{" "}
         <span style={{ background: "linear-gradient(90deg,#4a8fff,#2dd4bf)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>idea</span>{" "}

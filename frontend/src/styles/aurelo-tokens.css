@@ -76,20 +76,28 @@
 .train-stage {
   position: relative;
   width: 100%;
-  max-width: none;
-  margin-inline: auto;
+  height: clamp(220px, 34vh, 420px);
   min-height: 220px;
-  overflow: visible;
-  padding-inline: 8px 16px;
-  flex: 1 1 auto;
-  display: flex;
-  align-items: center;
+  margin: 0;
+  padding: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex: 0 0 auto;
+  display: block;
+  -webkit-overflow-scrolling: touch;
 }
 
 .train-stage svg {
-  overflow: visible !important;
-  width: 100%;
-  max-height: 320px;
+  display: block;
+  height: 100%;
+  width: auto;
+  min-width: 1100px;
+  max-height: none;
+}
+
+@media (max-width: 700px) {
+  .ls-hero-h1 { font-size: 1.55rem !important; }
+  .train-stage { height: 230px; }
 }
 
 .app-stars {
