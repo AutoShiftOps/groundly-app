@@ -30,7 +30,7 @@ export default function TrainScene({ activeStageIndex }: { activeStageIndex: num
           const status = statusFor(i, active);
           return (
             <figure key={label} className={`pod pod-${status}`}>
-              <img src={POD[status]} alt="" />
+              <img src={POD[status]} alt="" draggable={false} />
               <figcaption>{label}</figcaption>
             </figure>
           );
