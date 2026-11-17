@@ -1,40 +1,11 @@
-# Node
 node_modules/
-frontend/dist/
-frontend/.env
-frontend/.env.local
-npm-debug.log*
-frontend/tests/.generated/
-frontend/.preview-tmp/
-aurelo-ui/.preview-tmp/
-
-# Python test artifacts
-.pytest_cache/
-
-# Python
-*/__pycache__
-*.pyc
-venv/
-.venv/
-backend/.env
-*.egg-info/
-
-# AWS / IaC
-.aws-sam/
-cdk.out/
-*.tfstate
-*.tfstate.backup
-.terraform/
-
-# General
+build/
+dist/
+coverage/
 .DS_Store
 *.log
-.vscode/
-.idea/
-dist/
-build/
-
-# env files
-.env
-.env.local
-.env.*.local
+.env*
+!.env.example
+.venv
+__pycache__/
+.aistudio

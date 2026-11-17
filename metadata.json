@@ -1,0 +1,8 @@
+{
+  "name": "Groundly",
+  "description": "Grounded business idea validation platform with an interactive 3D analysis train and a 10-framework strategic report workspace.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

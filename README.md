@@ -1,38 +1,20 @@
-# Groundly (working name) — AI-Grounded Business Decision Platform
+<div align="center">
+<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
+</div>
 
-Grounded, multi-framework business analysis reports (PESTEL, Porter's Five Forces, SWOT, TAM/SAM/SOM, STP, BCG, Ansoff, Value Chain, BMC, Balanced Scorecard) synthesized into one decision-ready recommendation, backed by RAG-based citations to reduce hallucination.
+# Run and deploy your AI Studio app
 
-## Tech Stack
-- Frontend: React + Vite + Framer Motion (train progress UI, dashboard)
-- Backend: Python + FastAPI on AWS Lambda (via API Gateway)
-- Retrieval: PostgreSQL + pgvector (RAG store)
-- LLM: OpenAI / AWS Bedrock (pluggable)
-- Deploy: Vercel (frontend), AWS SAM/CDK (backend)
-- Analytics: Google Analytics 4
+This contains everything you need to run your app locally.
 
-## Repo Structure
-```
-/frontend        React app (dashboard, train UI, report viewer)
-/backend         FastAPI app + Lambda handlers
-/agents          RAG pipeline + framework generation agents
-/infra           AWS CDK/Terraform IaC
-/docs            PRD, specs, positioning docs
-/data            source ingestion configs, citation schema
-```
+View your app in AI Studio: https://ai.studio/apps/efd4245e-8330-4c96-a41e-1ff91948f717
 
-## Local Setup
-```bash
-# Frontend
-cd frontend
-npm install
-npm run dev
+## Run Locally
 
-# Backend
-cd backend
-python -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-uvicorn main:app --reload
-```
+**Prerequisites:**  Node.js
 
-## Deployment
-See `docs/deploy-vercel.md` and `docs/deploy-ga4.md`.
+
+1. Install dependencies:
+   `npm install`
+2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+3. Run the app:
+   `npm run dev`
