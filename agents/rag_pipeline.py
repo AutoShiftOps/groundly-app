@@ -93,13 +93,33 @@ def _chunk_has_numeric_market_figure(chunk_text: str) -> bool:
     return bool(_DOLLAR_FIGURE_PATTERN.search(chunk_text) or _PERCENTAGE_PATTERN.search(chunk_text))
 
 
+# Canonical "unsupported tier" shape -- always an object, never a bare
+# None, so the API response can carry an explicit, honest label instead
+# of leaving the frontend to invent its own placeholder text for a
+# missing tier. A directory citation (agents/mississauga_data.py) never
+# contains a dollar figure, so a tam/sam/som tier can never legitimately
+# attribute itself to one -- it always lands here in that case, exactly
+# as intended ("never attach a figure to a citation that doesn't contain
+# it").
+_TIER_NOT_FOUND = {
+    "value_usd": None,
+    "label": "Not found in sources",
+    "citation_index": None,
+    "cagr_pct": None,
+    "tier_description": None,
+}
+
+
 def _null_out_unsupported_tam_tiers(market_sizing: dict, context_chunks: list) -> dict:
     """
     Deterministic backstop, not a rewrite of the model's own reasoning:
     for each tam/sam/som tier the model populated, confirm the chunk it
     cited as citation_index actually contains a real dollar figure or
-    percentage. If it doesn't, null the whole tier out -- same
-    null-when-ungrounded discipline as everywhere else in this schema.
+    percentage. If it doesn't, or if the model left the tier null
+    outright, normalize it to _TIER_NOT_FOUND -- same null-when-
+    ungrounded discipline as everywhere else in this schema, just always
+    expressed as an object with an explicit label rather than a bare
+    None.
 
     Citations themselves and the narrative text are untouched by this: a
     numeric-free chunk can still be real, legitimate supporting context
@@ -114,7 +134,7 @@ def _null_out_unsupported_tam_tiers(market_sizing: dict, context_chunks: list) -
     for tier in ("tam", "sam", "som"):
         tier_value = market_sizing.get(tier)
         if tier_value is None:
-            validated[tier] = None
+            validated[tier] = dict(_TIER_NOT_FOUND)
             continue
         citation_index = tier_value.get("citation_index")
         if not citation_index or not (1 <= citation_index <= len(context_chunks)):
@@ -129,8 +149,20 @@ def _null_out_unsupported_tam_tiers(market_sizing: dict, context_chunks: list) -
                 "(dollar amount/percentage) -- nulling out as unsupported (was: %r).",
                 tier, citation_index, tier_value,
             )
-            validated[tier] = None
+            validated[tier] = dict(_TIER_NOT_FOUND)
     return validated
+
+
+def _cap_assumptions_actions(value) -> list[str]:
+    # Enforced deterministically here rather than via schema constraint
+    # (OpenAI's strict structured-output mode doesn't support minItems/
+    # maxItems) -- the prompt asks for 2-3 items; this only ever trims an
+    # overlong list down to 3. It never pads a short list, since there's
+    # no real content to pad it WITH -- 0 or 1 real items is just what the
+    # model had to say, left as-is rather than fabricated up to a count.
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if isinstance(item, str) and item.strip()][:3]
 
 
 GROUNDING_SYSTEM_PROMPT = """You are a grounded business-analysis assistant.
@@ -142,6 +174,48 @@ Rules you must follow strictly:
 4. Do not fabricate numbers, company names, or sources under any circumstance.
 5. Write as a confident, specific business analyst, not a generic summary generator — lead sentences with the conclusion, not the setup; use concrete numbers over vague qualifiers where the CONTEXT supports them. This rule is about register only — it never overrides rules 1-4.
 """
+
+# Every structured framework also gets assumptions/actions -- 2-3 short
+# items each, appended as a shared suffix on top of whatever framework-
+# specific suffix it already has, and merged into every schema via
+# _with_assumptions_actions() below. Deliberately instructed to be
+# specific to THIS idea's actual analysis, not generic startup advice:
+# the two fields previously shipped on the frontend (removed in the
+# unify/1-frontend port) always fell back to the exact same two canned
+# bullets for every single idea, since the backend never generated real
+# ones -- this is what makes them real instead of reintroducing that.
+ASSUMPTIONS_ACTIONS_SUFFIX = """
+Additionally, populate two more fields:
+- "assumptions": 2-3 short, specific assumptions a founder should
+  validate before trusting this section's conclusions -- grounded in
+  gaps, uncertainties, or unstated conditions the CONTEXT itself reveals
+  for THIS specific idea. Never generic startup-advice boilerplate that
+  could apply to any venture (e.g. not "customers will want this").
+- "actions": 2-3 short, specific next steps grounded in what THIS
+  framework's analysis actually found for THIS idea -- each action
+  should clearly follow from a point made in the narrative above, not a
+  generic recommendation that could apply to any venture.
+"""
+
+# OpenAI's strict structured-output mode doesn't support minItems/maxItems
+# -- the "2-3 items" constraint lives in the prompt suffix above, not the
+# schema; _null_out_assumptions_actions_count() below enforces it
+# deterministically on the response instead.
+_ASSUMPTIONS_ACTIONS_SCHEMA_PROPS = {
+    "assumptions": {"type": "array", "items": {"type": "string"}},
+    "actions": {"type": "array", "items": {"type": "string"}},
+}
+
+
+def _with_assumptions_actions(schema: dict) -> dict:
+    """Merges the shared assumptions/actions array fields into a
+    framework's top-level structured-output schema (alongside "narrative"
+    and its own extra field) -- every real framework gets both, not a
+    hand-copied pair of fields per schema."""
+    merged = dict(schema)
+    merged["properties"] = {**schema["properties"], **_ASSUMPTIONS_ACTIONS_SCHEMA_PROPS}
+    merged["required"] = [*schema["required"], "assumptions", "actions"]
+    return merged
 
 # Phase 1 (TAM) + Phase 3 (PESTEL/SWOT/BMC) of docs/BUSINESS_METRICS_SPEC.md:
 # replaces the old inline bracket-tagging approach (asked the model to tag
@@ -598,7 +672,12 @@ attribute it to one specific chunk.
 # extra field name in the parsed response, the json_schema name sent to
 # OpenAI, the schema itself). A framework not in this dict (e.g. paid-tier
 # frameworks not yet migrated) uses the plain, non-structured path below.
-STRUCTURED_FRAMEWORKS = {
+#
+# Every entry's suffix gets ASSUMPTIONS_ACTIONS_SUFFIX appended and its
+# schema passed through _with_assumptions_actions() -- real per-framework
+# assumptions/actions for every structured framework, from one shared
+# definition rather than 10 hand-copied pairs of fields.
+_RAW_STRUCTURED_FRAMEWORKS = {
     "tam": (TAM_STRUCTURED_SUFFIX, "market_sizing", "grounded_market_analysis", MARKET_SIZING_SCHEMA),
     "pestel": (
         _category_instruction_suffix("PESTEL", "pestel_analysis", PESTEL_CATEGORIES),
@@ -632,6 +711,11 @@ STRUCTURED_FRAMEWORKS = {
     "ansoff": (ANSOFF_STRUCTURED_SUFFIX, "ansoff_matrix", "grounded_ansoff_analysis", ANSOFF_MATRIX_SCHEMA),
 }
 
+STRUCTURED_FRAMEWORKS = {
+    framework: (suffix + ASSUMPTIONS_ACTIONS_SUFFIX, field_name, schema_name, _with_assumptions_actions(schema))
+    for framework, (suffix, field_name, schema_name, schema) in _RAW_STRUCTURED_FRAMEWORKS.items()
+}
+
 
 async def embed_query(query: str):
     response = await client.embeddings.create(model=EMBEDDING_MODEL, input=query)
@@ -650,16 +734,52 @@ async def retrieve(query: str, top_k: int = 8, framework_tag: str | None = None)
     return await _search_similar_chunks(embedding, top_k=top_k, framework_tag=framework_tag)
 
 
-async def generate_with_citations(query: str, context_chunks: list, framework_tag: str | None = None):
-    if not context_chunks:
+def _collect_citation_indices(value) -> set[int]:
+    """Recursively collects every real (non-null) citation_index found
+    anywhere inside a parsed structured-output value (market_sizing,
+    pestel_analysis, bcg_matrix, ...) -- used to find citations referenced
+    ONLY via a structured field, not just inline [N] markers in the
+    narrative text."""
+    indices: set[int] = set()
+    if isinstance(value, dict):
+        idx = value.get("citation_index")
+        if isinstance(idx, int):
+            indices.add(idx)
+        for v in value.values():
+            indices |= _collect_citation_indices(v)
+    elif isinstance(value, list):
+        for item in value:
+            indices |= _collect_citation_indices(item)
+    return indices
+
+
+def _filter_referenced_citations(citations: list, text: str, extra_value=None) -> list:
+    # A framework's citations list previously included every chunk it was
+    # GIVEN as context, regardless of whether the model's narrative or
+    # structured output actually cited it -- a chunk the model silently
+    # ignored still showed up in Sources & Citations as if it had been
+    # used. Keep only citations the output actually references: an
+    # inline [N] marker in the narrative, or a citation_index anywhere in
+    # the structured field (TAM tiers, category points, etc.).
+    referenced = {int(m) for m in re.findall(r"\[(\d+)\]", text)}
+    referenced |= _collect_citation_indices(extra_value)
+    return [c for c in citations if c["index"] in referenced]
+
+
+async def generate_with_citations(query: str, context_chunks: list, framework_tag: str | None = None,
+                                   extra_context_chunks: list | None = None):
+    all_chunks = [*context_chunks, *(extra_context_chunks or [])]
+    if not all_chunks:
         return {
             "text": "Insufficient grounded data available for this section.",
             "citations": [],
+            "assumptions": [],
+            "actions": [],
         }
 
     context_block = "\n\n".join(
         f"[{i+1}] {c['chunk_text']} (source: {c.get('source_title') or c.get('source_url', 'unknown')})"
-        for i, c in enumerate(context_chunks)
+        for i, c in enumerate(all_chunks)
     )
 
     citations = [
@@ -668,9 +788,14 @@ async def generate_with_citations(query: str, context_chunks: list, framework_ta
             "source_url": c.get("source_url"),
             "source_title": c.get("source_title"),
             "confidence_score": c.get("confidence_score"),
+            # Real pgvector cosine score for vector-retrieved chunks (local
+            # corpus or web-retrieval content re-matched after ingestion);
+            # explicitly None for directory citations (agents/
+            # mississauga_data.py), which never go through pgvector --
+            # never synthesized here either way.
             "similarity": c.get("similarity"),
         }
-        for i, c in enumerate(context_chunks)
+        for i, c in enumerate(all_chunks)
     ]
 
     structured = STRUCTURED_FRAMEWORKS.get(framework_tag)
@@ -696,6 +821,8 @@ async def generate_with_citations(query: str, context_chunks: list, framework_ta
             parsed = json.loads(raw)
             text = parsed["narrative"]
             extra_value = parsed[field_name]
+            assumptions = _cap_assumptions_actions(parsed.get("assumptions"))
+            actions = _cap_assumptions_actions(parsed.get("actions"))
         except (json.JSONDecodeError, KeyError, TypeError):
             # Should not happen under strict schema mode, but this must never
             # crash the request -- degrade to the same shape a non-structured
@@ -703,9 +830,11 @@ async def generate_with_citations(query: str, context_chunks: list, framework_ta
             logger.exception("generate_with_citations: failed to parse structured %r response, raw=%r", framework_tag, raw)
             text = raw
             extra_value = None
+            assumptions = []
+            actions = []
 
         if framework_tag == "tam" and extra_value:
-            extra_value = _null_out_unsupported_tam_tiers(extra_value, context_chunks)
+            extra_value = _null_out_unsupported_tam_tiers(extra_value, all_chunks)
         elif framework_tag == "bcg" and extra_value:
             extra_value = _null_out_unsupported_bcg_quadrant(extra_value)
         elif framework_tag == "balanced_scorecard" and extra_value:
@@ -713,7 +842,8 @@ async def generate_with_citations(query: str, context_chunks: list, framework_ta
         elif framework_tag == "ansoff" and extra_value:
             extra_value = _null_out_unsupported_ansoff_quadrant(extra_value)
 
-        return {"text": text, "citations": citations, field_name: extra_value}
+        filtered_citations = _filter_referenced_citations(citations, text, extra_value)
+        return {"text": text, "citations": filtered_citations, "assumptions": assumptions, "actions": actions, field_name: extra_value}
 
     completion = await client.chat.completions.create(
         model=CHAT_MODEL,
@@ -724,11 +854,22 @@ async def generate_with_citations(query: str, context_chunks: list, framework_ta
         temperature=0.2,
     )
     text = completion.choices[0].message.content
-    return {"text": text, "citations": citations}
+    filtered_citations = _filter_referenced_citations(citations, text, None)
+    return {"text": text, "citations": filtered_citations, "assumptions": [], "actions": []}
 
 
-def verify_claims(generated_text: str, citations: list):
-    has_markers = any(f"[{c['index']}]" in generated_text for c in citations)
+def verify_claims(generated_text: str, citations: list, extra_value=None):
+    # citations is already filtered down to only what's actually
+    # referenced (see _filter_referenced_citations) -- so "has_markers"
+    # here is really "is there at least one real citation this output
+    # draws from", counting a structured citation_index (e.g. a TAM tier,
+    # or a directory-sourced point) exactly the same as an inline [N]
+    # marker in the narrative. A directory citation counts the same as
+    # any other real citation -- there's nothing directory-specific to
+    # exempt it from.
+    referenced = {int(m) for m in re.findall(r"\[(\d+)\]", generated_text)}
+    referenced |= _collect_citation_indices(extra_value)
+    has_markers = any(c["index"] in referenced for c in citations)
     if not citations:
         unsupported = ["No grounded sources retrieved for this section"]
     elif not has_markers:
@@ -741,7 +882,21 @@ def verify_claims(generated_text: str, citations: list):
     }
 
 
-async def run_pipeline(query: str, framework_tag: str | None = None):
+async def run_pipeline(query: str, framework_tag: str | None = None, directory_context: dict | None = None):
+    # directory_context (agents/mississauga_data.py's query_directory()
+    # result, computed once per /api/analyze request, not once per
+    # framework) is checked BEFORE the web-retrieval fallback below -- a
+    # real directory citation already gives this framework something
+    # grounded to work with, so there's no need to spend a Tavily call on
+    # top of it. It never participates in the similarity-threshold math
+    # (it has no pgvector score at all), only in the "do we already have
+    # something real" decision and, later, the actual generation context.
+    directory_chunks = [
+        {**citation, "chunk_text": citation.get("snippet") or ""}
+        for citation in (directory_context or {}).get("citations", [])
+    ]
+    has_directory_grounding = bool(directory_chunks)
+
     embedding = await embed_query(query)
     chunks = await _search_similar_chunks(embedding, framework_tag=framework_tag)
 
@@ -749,7 +904,7 @@ async def run_pipeline(query: str, framework_tag: str | None = None):
     is_empty = not chunks
     is_weak = bool(chunks) and best_local_similarity < LIVE_RETRIEVAL_TRIGGER_THRESHOLD
 
-    if (is_empty or is_weak) and framework_tag:
+    if (is_empty or is_weak) and framework_tag and not has_directory_grounding:
         # Local grounding is either empty, or non-empty but weak (best match
         # below LIVE_RETRIEVAL_TRIGGER_THRESHOLD -- see constant above). Try
         # live web retrieval before falling through to "insufficient
@@ -821,6 +976,9 @@ async def run_pipeline(query: str, framework_tag: str | None = None):
                 )
             chunks = [c for c in chunks if c["similarity"] >= MIN_CONTEXT_SIMILARITY]
 
-    result = await generate_with_citations(query, chunks, framework_tag=framework_tag)
-    verification = verify_claims(result["text"], result["citations"])
+    result = await generate_with_citations(
+        query, chunks, framework_tag=framework_tag, extra_context_chunks=directory_chunks,
+    )
+    extra_value = result.get(STRUCTURED_FRAMEWORKS[framework_tag][1]) if framework_tag in STRUCTURED_FRAMEWORKS else None
+    verification = verify_claims(result["text"], result["citations"], extra_value)
     return {**result, "verification": verification}

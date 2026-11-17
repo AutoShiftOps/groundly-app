@@ -22,7 +22,10 @@ def test_ansoff_registered_in_structured_frameworks():
     _suffix, field_name, schema_name, schema = STRUCTURED_FRAMEWORKS["ansoff"]
     assert field_name == "ansoff_matrix"
     assert schema_name == "grounded_ansoff_analysis"
-    assert schema is ANSOFF_MATRIX_SCHEMA
+    # Wrapped with the shared assumptions/actions fields -- no longer the
+    # same object, but ansoff's own part of the schema is unchanged.
+    assert schema["properties"]["ansoff_matrix"] == ANSOFF_MATRIX_SCHEMA["properties"]["ansoff_matrix"]
+    assert "assumptions" in schema["properties"] and "actions" in schema["properties"]
 
 
 def _matrix(quadrant="market_penetration", market_dimension=None, product_dimension=None):

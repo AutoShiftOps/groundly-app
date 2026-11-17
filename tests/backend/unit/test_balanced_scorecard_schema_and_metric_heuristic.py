@@ -25,7 +25,11 @@ def test_balanced_scorecard_registered_in_structured_frameworks():
     _suffix, field_name, schema_name, schema = STRUCTURED_FRAMEWORKS["balanced_scorecard"]
     assert field_name == "balanced_scorecard"
     assert schema_name == "grounded_balanced_scorecard_analysis"
-    assert schema is BALANCED_SCORECARD_SCHEMA
+    # Wrapped with the shared assumptions/actions fields -- no longer the
+    # same object, but balanced_scorecard's own part of the schema is
+    # unchanged.
+    assert schema["properties"]["balanced_scorecard"] == BALANCED_SCORECARD_SCHEMA["properties"]["balanced_scorecard"]
+    assert "assumptions" in schema["properties"] and "actions" in schema["properties"]
 
 
 def test_balanced_scorecard_item_schema_has_metric_fields_all_nullable():

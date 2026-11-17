@@ -170,7 +170,11 @@ def _derive_market_size(results: dict, allowed: list[str]) -> dict | None:
     if "tam" not in allowed:
         return None
     tam_tier = ((results.get("tam") or {}).get("market_sizing") or {}).get("tam")
-    if not tam_tier:
+    # agents/rag_pipeline.py's _null_out_unsupported_tam_tiers always
+    # returns an object now (never a bare None) -- an unsupported tier is
+    # {"value_usd": None, "label": "Not found in sources", ...}, which is
+    # truthy as a dict. Check value_usd specifically, not tam_tier itself.
+    if not tam_tier or tam_tier.get("value_usd") is None:
         return None
     return {
         "label": tam_tier["label"],

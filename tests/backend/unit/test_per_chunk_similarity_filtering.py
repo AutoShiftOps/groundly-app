@@ -36,14 +36,14 @@ def _run_with_mocked_chunks(chunks, monkeypatch):
     async def fake_search_similar_chunks(embedding, framework_tag=None):
         return chunks
 
-    async def fake_generate_with_citations(query, context_chunks, framework_tag=None):
+    async def fake_generate_with_citations(query, context_chunks, framework_tag=None, extra_context_chunks=None):
         captured["context_chunks"] = context_chunks
         return {"text": "Some grounded analysis [1].", "citations": [{"index": i + 1} for i in range(len(context_chunks))]}
 
     monkeypatch.setattr(rag_pipeline, "embed_query", AsyncMock(return_value=[0.0] * 3))
     monkeypatch.setattr(rag_pipeline, "_search_similar_chunks", fake_search_similar_chunks)
     monkeypatch.setattr(rag_pipeline, "generate_with_citations", fake_generate_with_citations)
-    monkeypatch.setattr(rag_pipeline, "verify_claims", lambda text, citations: {"verified": True, "unsupported_claims": []})
+    monkeypatch.setattr(rag_pipeline, "verify_claims", lambda text, citations, extra_value=None: {"verified": True, "unsupported_claims": []})
     # Not exercising the web-retrieval path in this file -- these fixtures
     # always have a chunk that clears LIVE_RETRIEVAL_TRIGGER_THRESHOLD, so
     # it's never invoked, but stub it defensively so a fixture change here
