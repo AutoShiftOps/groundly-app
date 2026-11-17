@@ -1,171 +1,284 @@
-// frontend/src/App.tsx
-//
-// Restored router. The Figma import commit replaced this entire file with
-// just the static loading-screen mockup (hardcoded stage 4 "active", 72%
-// progress, no idea input, no API call, no report view). This rebuild:
-// - Keeps the exact same real /api/analyze contract and stage-timer logic
-//   from the working version before the Figma import.
-// - Routes between HomeScreen -> LoadingScreen -> ReportView based on real
-//   state (idea / isAnalyzing / report), same pattern as before.
-// - Passes real activeStageIndex + sourceCount into LoadingScreen instead
-//   of the hardcoded constants that were in the Figma export.
-
-import { useState, useEffect } from "react";
-import HomeScreen from "./components/HomeScreen";
-import LoadingScreen from "./components/LoadingScreen";
-import ReportView from "./components/ReportView";
-import ProjectsScreen from "./components/ProjectsScreen";
-import InsightsScreen from "./components/InsightsScreen";
-import MarketScreen from "./components/MarketScreen";
-import ReportsScreen from "./components/ReportsScreen";
-import { trackEvent } from "./lib/ga4";
-import { decodeReportLinkFromHash, clearSharedHash } from "./lib/reportLink";
-import { loadProjects, saveProject } from "./lib/projectsStore";
+import { useEffect, useRef, useState } from "react";
+import {
+  deleteProject,
+  loadProjects,
+  saveProject,
+} from "./lib/projectsStore";
+import {
+  clearSharedHash,
+  decodeReportLinkFromHash,
+} from "./lib/reportLink";
 import { hydrateReport } from "./lib/hydrate";
-import "./styles/theme.css";
+import { trackEvent } from "./lib/ga4";
+import {
+  formatIdeaTitle,
+  stageIndexFromProgress,
+} from "./lib/reportStats";
+import { FRAMEWORKS, type GroundlyReport, type SavedProject } from "./types/groundly";
+import ReportView from "./components/report/ReportView";
+import { AnalyzeScreen } from "./components/workspace/AnalyzeScreen";
+import {
+  InsightsScreen,
+  MarketScreen,
+  ProjectsScreen,
+} from "./components/workspace/SecondaryScreens";
+import { TopNav, type WorkspaceTab } from "./components/workspace/TopNav";
 
-const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || "http://localhost:8000";
+const API_BASE_URL =
+  (import.meta as any).env?.VITE_API_BASE_URL || "http://localhost:8000";
 
-const STAGE_COUNT = 5;
-const SIMULATED_STAGE_INTERVAL_MS = 2000;
-
-type Page = "home" | "projects" | "insights" | "market" | "reports";
+const STAGE_INTERVAL_MS = 220;
 
 export default function App() {
-  const [idea, setIdea] = useState("");
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [activeStage, setActiveStage] = useState(0);
-  const [report, setReport] = useState<any>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [page, setPage] = useState<Page>("home");
-  // GitHub visual-port task (Projects/Insights/Market/Reports nav):
-  // real history of completed analyses, persisted to this browser's
-  // localStorage (lib/projectsStore.js) -- loaded once on mount, then
-  // grown in memory as real analyses complete below. Not fabricated;
-  // every entry is a real past /api/analyze response.
-  const [projects, setProjects] = useState<any[]>(() => loadProjects());
+  const [projects, setProjects] = useState<SavedProject[]>(() => loadProjects());
+  const [activeProject, setActiveProject] = useState<SavedProject | null>(
+    () => loadProjects()[0] ?? null,
+  );
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>("analyze");
 
-  // GitHub issue #17 (Share): a shared link encodes the whole report
-  // directly in the URL hash (see lib/reportLink.js) since there's no
-  // backend persistence -- restore it on mount if present, same as any
-  // other "load state from the URL" router would. Only runs once; a
-  // shared link is meant to open straight into its report, not run
-  // handleLaunch again.
+  const [mode, setMode] = useState<"idea" | "business">("idea");
+  const [businessName, setBusinessName] = useState("");
+  const [dataSourceUrl, setDataSourceUrl] = useState("");
+  const [idea, setIdea] = useState("");
+  const [industry, setIndustry] = useState("");
+  const [geography, setGeography] = useState("");
+  const [isRunning, setIsRunning] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+
+  const runTokenRef = useRef(0);
+
+  // Restore a shared report from the URL hash (see lib/reportLink.js --
+  // same genuine gzip-in-the-hash mechanism main already shipped for
+  // GitHub issue #17, no backend persistence involved).
   useEffect(() => {
-    let cancelled = false;
+    let mounted = true;
     (async () => {
       const shared = await decodeReportLinkFromHash();
-      if (shared && !cancelled) {
-        setIdea(shared.idea || "");
-        setReport(shared.report);
+      if (mounted && shared?.report && shared?.idea) {
+        const sharedProj: SavedProject = {
+          id: `shared-${Date.now()}`,
+          title: formatIdeaTitle(shared.idea),
+          idea: shared.idea,
+          createdAt: Date.now(),
+          versionLabel: "Shared",
+          report: shared.report,
+        };
+        setActiveProject(sharedProj);
+        setActiveTab("reports");
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      mounted = false;
+    };
   }, []);
 
-  const handleLaunch = async () => {
-    if (!idea.trim()) return;
+  async function handleLaunchAnalysis() {
+    const trimmed =
+      mode === "business"
+        ? businessName.trim() + (idea.trim() ? ` — ${idea.trim()}` : "")
+        : idea.trim();
+    if (
+      (mode === "business" ? businessName.trim().length < 2 : idea.trim().length < 12) ||
+      isRunning
+    ) {
+      return;
+    }
 
-    trackEvent("analysis_launched", { idea_length: idea.length });
-    setIsAnalyzing(true);
-    setReport(null);
+    const token = ++runTokenRef.current;
+    trackEvent("analysis_launched", { idea_length: trimmed.length });
     setError(null);
-    setActiveStage(0);
+    setIsRunning(true);
+    setProgress(8);
 
-    let stage = 0;
-    const stageTimer = setInterval(() => {
-      stage = Math.min(stage + 1, STAGE_COUNT - 1);
-      setActiveStage(stage);
-    }, SIMULATED_STAGE_INTERVAL_MS);
+    // Simulated progress heuristic (same role as main's previous 5-stage
+    // timer) -- the backend returns the full report in one response, so
+    // this is purely a "still working" indicator, never a claim about
+    // real retrieval counts. See AnalyzeScreen.tsx for the honest status
+    // strip that replaced this UI's previous fabricated telemetry.
+    const stageInterval = window.setInterval(() => {
+      setProgress((prev) => {
+        if (prev >= 92) return prev;
+        const step = prev < 45 ? 2.8 : prev < 75 ? 1.8 : 0.9;
+        return Math.min(92, prev + step);
+      });
+    }, STAGE_INTERVAL_MS);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/analyze`, {
+      const res = await fetch(`${API_BASE_URL}/api/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          idea,
-          frameworks: ["pestel", "swot", "tam", "bmc", "porter", "stp", "bcg", "value_chain", "balanced_scorecard", "ansoff"],
+          idea: idea.trim() || trimmed,
+          mode,
+          businessName: businessName.trim() || undefined,
+          industry: industry.trim() || undefined,
+          geography: geography.trim() || undefined,
+          dataSourceUrl: dataSourceUrl.trim() || undefined,
+          frameworks: [...FRAMEWORKS],
           tier: "free",
         }),
       });
-
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(
+          data.error || "Analysis service could not complete this request.",
+        );
       }
+      const report = hydrateReport(data) as GroundlyReport;
 
-      const data = await response.json();
-      clearInterval(stageTimer);
-      setActiveStage(STAGE_COUNT - 1);
-      setReport(hydrateReport(data));
+      if (runTokenRef.current !== token) return;
+
+      clearInterval(stageInterval);
+      setProgress(100);
+      await new Promise((r) => setTimeout(r, 380));
+      if (runTokenRef.current !== token) return;
+
+      const newProj: SavedProject = {
+        id: `proj-${Date.now()}`,
+        title: formatIdeaTitle(trimmed),
+        idea: trimmed,
+        industry: industry.trim() || undefined,
+        geography: geography.trim() || undefined,
+        createdAt: Date.now(),
+        versionLabel: "v1.0",
+        report,
+      };
+      const updated = saveProject(newProj);
+      setProjects(updated);
+      setActiveProject(newProj);
+      setIsRunning(false);
       trackEvent("report_completed");
-      const saved = saveProject(idea, data);
-      if (saved) setProjects((prev) => [saved, ...prev].slice(0, 24));
-    } catch (err: any) {
-      clearInterval(stageTimer);
-      setError(err.message || "Something went wrong while generating your report.");
-      trackEvent("report_failed", { error: err.message });
-      setIsAnalyzing(false);
+      setActiveTab("reports");
+    } catch (err) {
+      clearInterval(stageInterval);
+      if (runTokenRef.current !== token) return;
+      setIsRunning(false);
+      setProgress(0);
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Unable to complete analysis. Please retry.";
+      setError(message);
+      trackEvent("report_failed", { error: message });
     }
-  };
+  }
 
-  const handleReset = () => {
-    setIsAnalyzing(false);
-    setReport(null);
-    setError(null);
-    setIdea("");
-    setPage("home");
+  function handleStartNewAnalysis() {
+    runTokenRef.current += 1;
     clearSharedHash();
-  };
-
-  // GitHub visual-port task: the icon-rail Sidebar's nav items
-  // (Projects/Insights/Market/Reports) previously just highlighted
-  // themselves and did nothing -- this is the real switch. "Analyze" is
-  // handled separately by each screen's own onReset call (unchanged),
-  // matching aurelo-ui's own nav semantics.
-  const handleNavigate = (label: string) => {
-    const map: Record<string, Page> = { Projects: "projects", Insights: "insights", Market: "market", Reports: "reports" };
-    if (map[label]) setPage(map[label]);
-  };
-
-  const handleOpenProject = (project: { idea: string; report: any }) => {
-    setIdea(project.idea);
-    setReport(project.report);
+    setIsRunning(false);
+    setProgress(0);
     setError(null);
-    setIsAnalyzing(false);
-    setPage("home");
-  };
+    setActiveTab("analyze");
+  }
 
-  const sourceCount = report
-    ? Object.values(report.results || {}).reduce((sum: number, r: any) => sum + (r.citations?.length || 0), 0)
-    : 0;
+  function handleOpenProject(proj: SavedProject) {
+    setActiveProject(proj);
+    setActiveTab("reports");
+  }
 
-  if (page === "projects") {
-    return <ProjectsScreen projects={projects} onOpenProject={handleOpenProject} onNewAnalysis={handleReset} onNavigate={handleNavigate} />;
+  function handleDeleteProject(projectId: string) {
+    const updated = deleteProject(projectId);
+    setProjects(updated);
+    if (activeProject?.id === projectId) {
+      setActiveProject(updated[0] ?? null);
+    }
   }
-  if (page === "insights") {
-    return <InsightsScreen report={report ?? projects[0]?.report ?? null} onNewAnalysis={handleReset} onNavigate={handleNavigate} />;
-  }
-  if (page === "market") {
-    return <MarketScreen report={report ?? projects[0]?.report ?? null} idea={report ? idea : projects[0]?.idea ?? ""} onNewAnalysis={handleReset} onNavigate={handleNavigate} />;
-  }
-  if (page === "reports") {
-    return (
-      <ReportsScreen
-        report={report ?? projects[0]?.report ?? null}
-        idea={report ? idea : projects[0]?.idea ?? ""}
-        onNewAnalysis={handleReset}
-        onNavigate={handleNavigate}
+
+  const activeStageIndex = stageIndexFromProgress(progress);
+
+  return (
+    <div
+      className="workspace-canvas min-h-screen text-slate-100"
+      data-active-tab={activeTab}
+      data-running={isRunning ? "true" : "false"}
+    >
+      <TopNav
+        activeTab={activeTab}
+        onSelectTab={(tab) => {
+          if (tab === "reports" && !activeProject && projects.length > 0) {
+            setActiveProject(projects[0]);
+          }
+          setActiveTab(tab);
+        }}
+        onNewAnalysis={handleStartNewAnalysis}
       />
-    );
-  }
 
-  if (report) {
-    return <ReportView report={report} idea={idea} onReset={handleReset} onNavigate={handleNavigate} />;
-  }
+      {activeTab === "analyze" && (
+        <AnalyzeScreen
+          mode={mode}
+          setMode={setMode}
+          businessName={businessName}
+          setBusinessName={setBusinessName}
+          dataSourceUrl={dataSourceUrl}
+          setDataSourceUrl={setDataSourceUrl}
+          idea={idea}
+          setIdea={setIdea}
+          industry={industry}
+          setIndustry={setIndustry}
+          geography={geography}
+          setGeography={setGeography}
+          isRunning={isRunning}
+          progress={progress}
+          activeStageIndex={activeStageIndex}
+          error={error}
+          onLaunch={handleLaunchAnalysis}
+        />
+      )}
 
-  if (isAnalyzing) {
-    return <LoadingScreen activeStageIndex={activeStage} sourceCount={sourceCount} onNavigate={handleNavigate} />;
-  }
+      {activeTab === "projects" && (
+        <ProjectsScreen
+          projects={projects}
+          onOpenProject={handleOpenProject}
+          onDeleteProject={handleDeleteProject}
+          onNewAnalysis={handleStartNewAnalysis}
+        />
+      )}
 
-  return <HomeScreen idea={idea} setIdea={setIdea} onLaunch={handleLaunch} error={error} onNavigate={handleNavigate} />;
+      {activeTab === "insights" && (
+        <InsightsScreen
+          projects={projects}
+          onOpenProject={handleOpenProject}
+        />
+      )}
+
+      {activeTab === "market" && (
+        <MarketScreen
+          project={activeProject ?? projects[0] ?? null}
+          projects={projects}
+          onNewAnalysis={handleStartNewAnalysis}
+          onOpenReport={() => {
+            if (!activeProject && projects[0]) setActiveProject(projects[0]);
+            setActiveTab("reports");
+          }}
+        />
+      )}
+
+      {activeTab === "reports" &&
+        (activeProject ? (
+          <ReportView
+            project={activeProject}
+            projects={projects}
+            onStartNewAnalysis={handleStartNewAnalysis}
+          />
+        ) : (
+          <div className="mx-auto max-w-xl px-4 py-20 text-center">
+            <h1 className="font-display text-2xl font-bold text-white">
+              No active report selected
+            </h1>
+            <p className="mt-2 text-sm text-slate-400">
+              Start a new business idea validation or pick a saved project.
+            </p>
+            <button
+              type="button"
+              onClick={handleStartNewAnalysis}
+              className="mt-5 rounded-xl bg-[#4a8fff] px-5 py-2.5 text-sm font-semibold text-white"
+            >
+              Launch New Analysis
+            </button>
+          </div>
+        ))}
+    </div>
+  );
 }
