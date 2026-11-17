@@ -48,7 +48,10 @@ export interface ReportStats {
   verifiedCount: number;
   totalFrameworks: number;
   totalCitations: number;
-  avgSimilarity: number;
+  // null when every citation is a directory citation (no real pgvector
+  // score at all) -- "0% match" would misrepresent that as a bad score
+  // rather than "not applicable."
+  avgSimilarity: number | null;
   confidencePct: number;
   unverifiedCount: number;
   verdict: string;
@@ -157,14 +160,21 @@ export function computeReportStats(
         seen.add(key);
         totalCitations += 1;
       }
-      similaritySum += c.similarity;
-      similarityCount += 1;
+      // Directory citations (agents/mississauga_data.py) carry
+      // similarity: null -- they were never pgvector-matched, so
+      // averaging them in as if they scored 0% would understate the
+      // real vector-matched citations' quality. Only real scores count
+      // toward this average.
+      if (typeof c.similarity === "number") {
+        similaritySum += c.similarity;
+        similarityCount += 1;
+      }
     }
   }
 
   const avgSimilarity = similarityCount
     ? Math.round((similaritySum / similarityCount) * 100)
-    : 0;
+    : null;
   const confidencePct = totalFrameworks
     ? Math.round((verifiedCount / totalFrameworks) * 100)
     : 0;
@@ -283,7 +293,7 @@ export function computeProjectComparison(
   return {
     confidenceDelta: statsB.confidencePct - statsA.confidencePct,
     citationDelta: statsB.totalCitations - statsA.totalCitations,
-    similarityDelta: statsB.avgSimilarity - statsA.avgSimilarity,
+    similarityDelta: (statsB.avgSimilarity ?? 0) - (statsA.avgSimilarity ?? 0),
     verifiedDelta: statsB.verifiedCount - statsA.verifiedCount,
     tamA: tamSizingA?.tam?.label || "—",
     tamB: tamSizingB?.tam?.label || "—",

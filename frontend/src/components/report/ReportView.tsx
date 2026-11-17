@@ -7,10 +7,12 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  ClipboardCheck,
   Download,
   FileText,
   Info,
   LayoutGrid,
+  Lightbulb,
   Share2,
   ShieldAlert,
   ShieldCheck,
@@ -40,7 +42,7 @@ import {
 import { MethodologyModal } from "./MethodologyModal";
 import { ReportRightRail } from "./ReportRightRail";
 
-type FrameworkSubTab = "summary" | "evidence";
+type FrameworkSubTab = "summary" | "evidence" | "assumptions" | "actions";
 
 interface ReportViewProps {
   project: SavedProject;
@@ -293,6 +295,34 @@ export default function ReportView({
             <span className="font-mono tabular-nums">
               {allCitations.length} {allCitations.length === 1 ? "source" : "sources"}
             </span>
+            {report.directory_status && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span
+                  className={`font-mono ${
+                    report.directory_status === "found"
+                      ? "text-[#22f59d]"
+                      : report.directory_status === "sector_context"
+                        ? "text-[#60a5fa]"
+                        : "text-[#ffc142]"
+                  }`}
+                >
+                  {report.directory_status === "found"
+                    ? `Directory: ${report.directory_matches ?? 1} exact match`
+                    : report.directory_status === "sector_context"
+                      ? `Directory: Trade name unlisted · ${report.directory_total_sector ?? report.directory_matches ?? 0} sector peers`
+                      : "Directory: Not listed in Mississauga Open Data"}
+                </span>
+              </>
+            )}
+            {report.rag_status && report.rag_status !== "grounded" && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="font-mono text-[#ffc142]">
+                  {report.rag_status === "search_text_only" ? "Partial grounding" : "Retrieval unavailable"}
+                </span>
+              </>
+            )}
           </div>
           <h1 className="mt-1.5 font-display text-2xl font-extrabold tracking-tight text-white md:text-3xl">
             {title}
@@ -499,7 +529,8 @@ export default function ReportView({
                           {allCitations.length} grounded {allCitations.length === 1 ? "source" : "sources"}
                         </p>
                         <p className="mt-0.5 font-mono text-[11px] text-[#22f59d] tabular-nums">
-                          {stats.verifiedCount}/{stats.totalFrameworks} frameworks · {stats.avgSimilarity}% match
+                          {stats.verifiedCount}/{stats.totalFrameworks} frameworks
+                          {stats.avgSimilarity != null && ` · ${stats.avgSimilarity}% match`}
                         </p>
                       </div>
                     </div>
@@ -759,12 +790,13 @@ export default function ReportView({
 
                 {!panelCollapsed && (
                   <>
-                    {/* Sub-Tabs: Summary / Evidence. The real backend never
-                        returns assumptions/actions fields (no such data
-                        exists per framework) -- those two tabs used to
-                        fall back to the same two hardcoded generic bullets
-                        for every single idea, indistinguishable from real
-                        analysis. Removed rather than faked. */}
+                    {/* Sub-Tabs: Summary / Evidence / Assumptions / Actions.
+                        Assumptions/actions are real, per-framework LLM
+                        output now (agents/rag_pipeline.py's
+                        ASSUMPTIONS_ACTIONS_SUFFIX) -- unlike the AI Studio
+                        original, there is no generic-bullet fallback: an
+                        empty list renders an honest "none surfaced"
+                        state, never a canned placeholder. */}
                     <div
                       role="tablist"
                       aria-label="Framework views"
@@ -774,6 +806,8 @@ export default function ReportView({
                         [
                           { id: "summary", label: "Summary", Icon: LayoutGrid },
                           { id: "evidence", label: "Evidence", Icon: FileText },
+                          { id: "assumptions", label: "Assumptions", Icon: Lightbulb },
+                          { id: "actions", label: "Actions", Icon: ClipboardCheck },
                         ] as const
                       ).map((tab) => {
                         const isActive = subTab === tab.id;
@@ -882,6 +916,55 @@ export default function ReportView({
                       </div>
                     )}
 
+                    {subTab === "assumptions" && (
+                      <div className="space-y-3">
+                        <h3 className="font-display text-sm font-bold text-white">
+                          Assumptions to Validate
+                        </h3>
+                        {activeResult.assumptions && activeResult.assumptions.length > 0 ? (
+                          <ul className="space-y-2.5">
+                            {activeResult.assumptions.map((item, i) => (
+                              <li
+                                key={i}
+                                className="surface-subpanel flex items-start gap-3 rounded-xl p-3.5 text-xs leading-relaxed text-slate-200"
+                              >
+                                <span className="font-mono font-bold text-[#ffc142]">A{i + 1}</span>
+                                <span>{item}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="text-xs text-slate-400">
+                            No assumptions were surfaced for this section.
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {subTab === "actions" && (
+                      <div className="space-y-3">
+                        <h3 className="font-display text-sm font-bold text-white">
+                          Recommended Next Steps
+                        </h3>
+                        {activeResult.actions && activeResult.actions.length > 0 ? (
+                          <ul className="space-y-2.5">
+                            {activeResult.actions.map((step, i) => (
+                              <li
+                                key={i}
+                                className="surface-subpanel flex items-start gap-3 rounded-xl p-3.5 text-xs leading-relaxed text-slate-200"
+                              >
+                                <span className="font-mono font-bold text-[#22f59d]">0{i + 1}</span>
+                                <span>{step}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="text-xs text-slate-400">
+                            No action items were surfaced for this section.
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </>
                 )}
               </section>

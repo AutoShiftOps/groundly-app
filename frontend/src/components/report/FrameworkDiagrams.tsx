@@ -167,13 +167,18 @@ export function TamConcentricDiagram({
   const sam = normalizedSizing.sam;
   const som = normalizedSizing.som;
 
+  // The backend always sends a tier object now, even when unsupported --
+  // {"value_usd": null, "label": "Not found in sources", ...} -- so
+  // `label` truthiness is no longer a valid "is this tier real" check
+  // (it's always a non-empty string). value_usd is the one field that's
+  // actually null exactly when there's no real grounded figure.
+  const hasRealValue = (tier?: typeof tam) => typeof tier?.value_usd === "number" && tier.value_usd > 0;
+
   const formatRingValue = (tier?: typeof tam) => {
-    if (typeof tier?.value_usd === "number" && tier.value_usd > 0) {
-      return formatUsdCompact(tier.value_usd);
+    if (hasRealValue(tier)) {
+      return formatUsdCompact(tier!.value_usd);
     }
-    const raw = tier?.label?.trim();
-    if (!raw) return "Unverified";
-    return raw.length > 14 ? `${raw.slice(0, 13)}…` : raw;
+    return "Not found";
   };
 
   const samPct = computeShareOfParentPct(sam?.value_usd, tam?.value_usd);
@@ -236,10 +241,10 @@ export function TamConcentricDiagram({
               cx="132"
               cy="132"
               r="116"
-              fill={tam?.label ? "url(#tamGrad)" : "none"}
+              fill={hasRealValue(tam) ? "url(#tamGrad)" : "none"}
               stroke="#4a8fff"
-              strokeWidth={tam?.label ? 2 : 1.5}
-              strokeDasharray={tam?.label ? undefined : "5 5"}
+              strokeWidth={hasRealValue(tam) ? 2 : 1.5}
+              strokeDasharray={hasRealValue(tam) ? undefined : "5 5"}
             />
             <text
               x="132"
@@ -263,10 +268,10 @@ export function TamConcentricDiagram({
               cx="132"
               cy="160"
               r="82"
-              fill={sam?.label ? "url(#samGrad)" : "none"}
+              fill={hasRealValue(sam) ? "url(#samGrad)" : "none"}
               stroke="#818cf8"
-              strokeWidth={sam?.label ? 2 : 1.5}
-              strokeDasharray={sam?.label ? undefined : "5 5"}
+              strokeWidth={hasRealValue(sam) ? 2 : 1.5}
+              strokeDasharray={hasRealValue(sam) ? undefined : "5 5"}
             />
             <text
               x="132"
@@ -290,10 +295,10 @@ export function TamConcentricDiagram({
               cx="132"
               cy="189"
               r="47"
-              fill={som?.label ? "url(#somGrad)" : "none"}
+              fill={hasRealValue(som) ? "url(#somGrad)" : "none"}
               stroke="#14d8a3"
-              strokeWidth={som?.label ? 2.2 : 1.5}
-              strokeDasharray={som?.label ? undefined : "5 5"}
+              strokeWidth={hasRealValue(som) ? 2.2 : 1.5}
+              strokeDasharray={hasRealValue(som) ? undefined : "5 5"}
             />
             <text
               x="132"

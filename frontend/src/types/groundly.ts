@@ -33,7 +33,10 @@ export interface GroundlyCitation {
   index: number;
   source_title: string;
   source_url: string;
-  similarity: number;
+  // Real pgvector cosine score for vector-retrieved citations; null for
+  // directory citations (agents/mississauga_data.py), which never go
+  // through pgvector -- never synthesized on the backend either way.
+  similarity: number | null;
   snippet?: string;
 }
 
@@ -64,9 +67,12 @@ export interface StructuredPoint {
 export interface FrameworkResult {
   text: string;
   citations: GroundlyCitation[];
-  // The real FastAPI backend (backend/routers/analysis.py) never returns
-  // "assumptions" or "actions" fields -- removed rather than left optional,
-  // since nothing should be written against fields that can't exist.
+  // Real, per-framework LLM-generated fields (agents/rag_pipeline.py's
+  // ASSUMPTIONS_ACTIONS_SUFFIX) -- 2-3 items each, specific to this
+  // idea's own analysis, never a generic fallback. Optional because a
+  // framework whose generation failed to parse can still omit them.
+  assumptions?: string[];
+  actions?: string[];
   market_sizing?: MarketSizing | null;
   pestel_analysis?: Record<string, StructuredPoint[]>;
   swot_analysis?: Record<string, StructuredPoint[]>;
@@ -121,10 +127,19 @@ export interface GroundlyReport {
     business_model_fit: BusinessMetric | null;
     risk_flags: BusinessMetric | null;
   };
-  // directory_*/rag_*/source were AI-Studio-exclusive fields (a local
-  // open-data business directory lookup, and a demo-vs-real marker) with
-  // no backend equivalent -- removed rather than left as dead optional
-  // fields nothing can ever populate.
+  // Real City of Mississauga open-data business-directory lookup
+  // (agents/mississauga_data.py) -- present only when the request's
+  // geography qualified (Mississauga/GTA/Ontario); undefined/null
+  // otherwise, never a fabricated default. See ReportView.tsx's
+  // directory badge, which renders only when directory_status is set.
+  directory_status?: "found" | "sector_context" | "not_found" | null;
+  directory_matches?: number | null;
+  directory_exact_match?: boolean | null;
+  directory_total_sector?: number | null;
+  // Whole-report retrieval-health summary computed from the same real
+  // citations the UI itself renders -- "grounded" if at least one
+  // framework has a real citation, "unavailable" otherwise.
+  rag_status?: "grounded" | "search_text_only" | "unavailable" | null;
 }
 
 export interface SavedProject {

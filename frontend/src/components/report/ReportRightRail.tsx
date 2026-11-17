@@ -113,7 +113,7 @@ export function ReportRightRail({
             </button>
           ) : (
             <span className="font-mono text-xs text-slate-400 tabular-nums">
-              {citations.length} verified
+              {citations.length} sources
             </span>
           )}
         </div>
