@@ -1,57 +1,54 @@
 # docs/TEST_COVERAGE_SPEC.md #4: FREE_FRAMEWORKS (backend's real gating,
-# backend/routers/analysis.py) and the sidebar's locked-placeholder set
-# (frontend/src/components/ReportView.jsx) both encode the same product
-# decision -- "PESTEL/SWOT/TAM/BMC are real, everything else is a
-# placeholder" -- from two different files in two different languages.
-# A mismatch there would mean either a real framework rendering as locked,
+# backend/routers/analysis.py) and the frontend's framework nav list both
+# encode the same product decision -- which frameworks are real and
+# available -- from two different files in two different languages. A
+# mismatch there would mean either a real framework missing from the nav,
 # or a fake one rendering as available. This asserts the two sides agree.
 #
-# Cross-language, so this reads frontend/.../ReportView.jsx as plain text
-# and regex-extracts its constants rather than executing JS. The
-# extraction target is tied to a specific, named constant and fails loudly
-# (via a clear assertion message) if it doesn't match at all, so a future
+# Cross-language, so this reads the frontend source as plain text and
+# regex-extracts its constants rather than executing JS. The extraction
+# target is tied to a specific, named constant and fails loudly (via a
+# clear assertion message) if it doesn't match at all, so a future
 # reformat of that file breaks this test visibly instead of silently
 # passing on stale extracted data.
 #
-# Follow-up note: the sidebar nav restructure that added fixed mock-order
-# (PESTEL, Porter's Five Forces, SWOT, TAM SAM SOM, STP, BCG Matrix, Value
-# Chain, Business Model Canvas, Balanced Scorecard) and STP as a new
-# locked placeholder collapsed the old FRAMEWORK_NAV_ICONS/
-# FRAMEWORK_LABELS/LOCKED_FRAMEWORKS trio (three separately-declared
-# object/array literals) into one single source of truth,
-# SIDEBAR_FRAMEWORK_NAV, with FRAMEWORK_NAV_ICONS/FRAMEWORK_LABELS now
-# derived from it via Object.fromEntries(...) rather than written out
-# literally. That changed what this file needed to regex out of the
-# source (there's no more literal `const FRAMEWORK_NAV_ICONS = {...}` to
-# match) -- this file was updated accordingly; the three test *names* and
-# what they assert are unchanged, only the extraction target moved to the
-# new single-source-of-truth constant.
+# Follow-up note: the frontend/ port from the aistudio branch (unify/1-
+# frontend) replaced ReportView.jsx's own SIDEBAR_FRAMEWORK_NAV (which
+# used to mix real entries with locked/`key: null` placeholders for
+# frameworks not yet built) with
+# frontend/src/components/report/frameworkMeta.ts's FRAMEWORK_NAV_ITEMS --
+# the single source of truth for the nav shared across the report view and
+# the new Projects/Insights/Market screens. There are no more locked
+# placeholders at all now: all 10 frameworks in FREE_FRAMEWORKS are real,
+# so every nav entry has a real key. The locked/null-key assertions below
+# are kept (now vacuously true) as a tripwire against ever reintroducing a
+# fake placeholder without this test catching it.
 import re
 from pathlib import Path
 
 from routers.analysis import FREE_FRAMEWORKS
 
-REPORT_VIEW_PATH = (
-    Path(__file__).resolve().parents[3] / "frontend" / "src" / "components" / "ReportView.jsx"
+FRAMEWORK_META_PATH = (
+    Path(__file__).resolve().parents[3]
+    / "frontend" / "src" / "components" / "report" / "frameworkMeta.ts"
 )
 
 
 def _report_view_source() -> str:
-    assert REPORT_VIEW_PATH.exists(), f"ReportView.jsx not found at {REPORT_VIEW_PATH}"
-    return REPORT_VIEW_PATH.read_text(encoding="utf-8")
+    assert FRAMEWORK_META_PATH.exists(), f"frameworkMeta.ts not found at {FRAMEWORK_META_PATH}"
+    return FRAMEWORK_META_PATH.read_text(encoding="utf-8")
 
 
 def _extract_sidebar_nav_entries(source: str) -> list[tuple[str | None, str]]:
-    # const SIDEBAR_FRAMEWORK_NAV = [
-    #   { key: "pestel", label: "PESTEL", icon: Globe },
-    #   { key: null, label: "Porter's Five Forces", icon: Shield },
+    # export const FRAMEWORK_NAV_ITEMS = [
+    #   { key: "pestel", label: "PESTEL", shortLabel: "PESTEL", icon: Globe, color: "#4a8fff" },
     #   ...
-    # ];
+    # ] as const;
     # Returns a list of (key_or_None, label) tuples, one per entry, in
     # source order.
-    match = re.search(r"const SIDEBAR_FRAMEWORK_NAV\s*=\s*\[(.*?)\n\];", source, re.DOTALL)
+    match = re.search(r"const FRAMEWORK_NAV_ITEMS\s*=\s*\[(.*?)\n\]", source, re.DOTALL)
     assert match, (
-        "Could not find `const SIDEBAR_FRAMEWORK_NAV = [...]` in ReportView.jsx -- "
+        "Could not find `const FRAMEWORK_NAV_ITEMS = [...]` in frameworkMeta.ts -- "
         "this test's extraction regex needs updating to match the current source."
     )
     body = match.group(1)
@@ -59,7 +56,7 @@ def _extract_sidebar_nav_entries(source: str) -> list[tuple[str | None, str]]:
         r'\{\s*key:\s*(null|"(\w+)")\s*,\s*label:\s*"((?:[^"\\]|\\.)*)"',
         body,
     )
-    assert entries, "SIDEBAR_FRAMEWORK_NAV matched but no {key, label} entries were extracted -- check the regex."
+    assert entries, "FRAMEWORK_NAV_ITEMS matched but no {key, label} entries were extracted -- check the regex."
     result = []
     for raw_key, quoted_key, label in entries:
         key = quoted_key if quoted_key else None
@@ -73,7 +70,7 @@ def test_free_frameworks_matches_sidebar_nav_icon_keys():
     nav_icon_keys = {key for key, _label in entries if key}
     assert nav_icon_keys == FREE_FRAMEWORKS, (
         f"backend FREE_FRAMEWORKS {FREE_FRAMEWORKS} and frontend "
-        f"SIDEBAR_FRAMEWORK_NAV's real (non-null-key) entries {nav_icon_keys} have "
+        f"FRAMEWORK_NAV_ITEMS's real (non-null-key) entries {nav_icon_keys} have "
         f"drifted apart -- either a real framework is missing from the nav list, or "
         f"a non-existent one has a real key."
     )
@@ -88,7 +85,7 @@ def test_no_real_framework_label_also_listed_as_locked():
     overlap = real_labels & locked_labels
     assert not overlap, (
         f"These labels appear as BOTH a real (unlocked) entry and a locked-placeholder "
-        f"entry in SIDEBAR_FRAMEWORK_NAV: {overlap} -- a real framework would render "
+        f"entry in FRAMEWORK_NAV_ITEMS: {overlap} -- a real framework would render "
         f"with a lock icon, or a fake one would render as if it were real."
     )
 
@@ -115,7 +112,7 @@ def test_stp_present_and_now_unlocked():
     source = _report_view_source()
     entries = _extract_sidebar_nav_entries(source)
     stp_entries = [(key, label) for key, label in entries if label == "STP"]
-    assert stp_entries, "STP is missing from SIDEBAR_FRAMEWORK_NAV entirely."
+    assert stp_entries, "STP is missing from FRAMEWORK_NAV_ITEMS entirely."
     key, _label = stp_entries[0]
     assert key == "stp", f"STP should be unlocked (key: 'stp') per GitHub issue #12, found key={key!r}."
 
@@ -127,7 +124,7 @@ def test_value_chain_present_and_now_unlocked():
     source = _report_view_source()
     entries = _extract_sidebar_nav_entries(source)
     vc_entries = [(key, label) for key, label in entries if label == "Value Chain"]
-    assert vc_entries, "Value Chain is missing from SIDEBAR_FRAMEWORK_NAV entirely."
+    assert vc_entries, "Value Chain is missing from FRAMEWORK_NAV_ITEMS entirely."
     key, _label = vc_entries[0]
     assert key == "value_chain", f"Value Chain should be unlocked (key: 'value_chain') per GitHub issue #14, found key={key!r}."
 
@@ -137,7 +134,7 @@ def test_balanced_scorecard_present_and_now_unlocked():
     source = _report_view_source()
     entries = _extract_sidebar_nav_entries(source)
     bsc_entries = [(key, label) for key, label in entries if label == "Balanced Scorecard"]
-    assert bsc_entries, "Balanced Scorecard is missing from SIDEBAR_FRAMEWORK_NAV entirely."
+    assert bsc_entries, "Balanced Scorecard is missing from FRAMEWORK_NAV_ITEMS entirely."
     key, _label = bsc_entries[0]
     assert key == "balanced_scorecard", f"Balanced Scorecard should be unlocked (key: 'balanced_scorecard') per GitHub issue #15, found key={key!r}."
 
@@ -148,7 +145,7 @@ def test_ansoff_matrix_present_and_now_unlocked():
     source = _report_view_source()
     entries = _extract_sidebar_nav_entries(source)
     ansoff_entries = [(key, label) for key, label in entries if label == "Ansoff Matrix"]
-    assert ansoff_entries, "Ansoff Matrix is missing from SIDEBAR_FRAMEWORK_NAV entirely."
+    assert ansoff_entries, "Ansoff Matrix is missing from FRAMEWORK_NAV_ITEMS entirely."
     key, _label = ansoff_entries[0]
     assert key == "ansoff", f"Ansoff Matrix should be unlocked (key: 'ansoff') per GitHub issue #16, found key={key!r}."
 
