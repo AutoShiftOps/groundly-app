@@ -13,6 +13,7 @@ from agents.db import search_similar
 from agents import web_retrieval
 from agents import mississauga_data
 from agents import market_scope
+from agents import claim_repair
 from agents.claim_verifier import verify_claims  # noqa: F401  module-level name, monkeypatchable on this module
 
 logger = logging.getLogger(__name__)
@@ -259,6 +260,35 @@ _ASSUMPTIONS_ACTIONS_SCHEMA_PROPS = {
     "assumptions": {"type": "array", "items": {"type": "string"}},
     "actions": {"type": "array", "items": {"type": "string"}},
 }
+
+
+# unify/2c-claim-quality: every cited/structured point must now declare
+# whether it's a "fact" (something the CONTEXT states -- must carry a
+# real citation_index the verifier can check) or "analysis" (the
+# analyst's own judgment/inference -- must carry citation_index=null
+# and must never contain a figure, percentage, or named company; if it
+# does, it's a fact in disguise and needs a real source instead).
+# Applied once, globally, exactly like ASSUMPTIONS_ACTIONS_SUFFIX --
+# every structured framework gets the same rule rather than 10 hand-
+# copied explanations. agents/claim_verifier.py enforces both halves:
+# fact claims go through the real LLM verifier as before; analysis
+# claims are only checked for the "no hidden facts" rule.
+CLAIM_TYPE_SUFFIX = """
+Every point/tier you populate (including market_sizing tiers, matrix
+quadrants, and every category point) must also set "claim_type" to
+either "fact" or "analysis":
+- "fact": this point states something the CONTEXT explicitly says. It
+  MUST have a real citation_index pointing at the chunk that states it
+  -- never citation_index: null for a fact.
+- "analysis": this is your own judgment, inference, or synthesis, not
+  something the CONTEXT directly states. It MUST have
+  citation_index: null, and its text must NEVER contain a dollar
+  figure, a percentage, or a named company/competitor -- if you want to
+  include one of those, it's a fact and needs a real citation instead,
+  not an analysis point dressed up to avoid sourcing it.
+"""
+
+_CLAIM_TYPE_SCHEMA_PROP = {"claim_type": {"type": "string", "enum": ["fact", "analysis"]}}
 
 
 def _with_assumptions_actions(schema: dict) -> dict:
@@ -616,10 +646,25 @@ def _null_out_unsupported_ansoff_quadrant(ansoff_matrix: dict | None) -> dict | 
 # N named categories, each an array of { text, citation_index } points.
 # Built generically instead of writing the same schema 3x with different
 # category names.
+# unify/2c-claim-quality: claim_type added here (and to
+# _METRIC_CATEGORY_ITEM_SCHEMA below) -- scoped to the 7 frameworks
+# built from these two generic category-point builders (SWOT, PESTEL,
+# BMC, Porter, STP, Value Chain, Balanced Scorecard). TAM/BCG/Ansoff
+# deliberately keep their existing, already-stricter numeric-grounding
+# backstops (_null_out_unsupported_tam_tiers/_bcg_quadrant/
+# _ansoff_quadrant) instead of claim_type -- TAM in particular already
+# has its own, more specific fact/estimate distinction (a narrowed SAM/
+# SOM estimate legitimately carries a dollar figure with
+# citation_index: null, which is exactly what claim_type's "analysis"
+# rule would otherwise forbid).
 _CATEGORY_ITEM_SCHEMA = {
     "type": "object",
-    "properties": {"text": {"type": "string"}, "citation_index": {"type": ["integer", "null"]}},
-    "required": ["text", "citation_index"],
+    "properties": {
+        "text": {"type": "string"},
+        "citation_index": {"type": ["integer", "null"]},
+        **_CLAIM_TYPE_SCHEMA_PROP,
+    },
+    "required": ["text", "citation_index", "claim_type"],
     "additionalProperties": False,
 }
 
@@ -658,8 +703,9 @@ _METRIC_CATEGORY_ITEM_SCHEMA = {
             "type": ["string", "null"],
             "description": "The metric's real, CONTEXT-supported target/goal value if one is explicitly stated -- null if no target is given, even when metric_value is present.",
         },
+        **_CLAIM_TYPE_SCHEMA_PROP,
     },
-    "required": ["text", "citation_index", "metric_name", "metric_value", "target_value"],
+    "required": ["text", "citation_index", "metric_name", "metric_value", "target_value", "claim_type"],
     "additionalProperties": False,
 }
 
@@ -733,12 +779,13 @@ def _category_instruction_suffix(kind_label: str, field_name: str, categories: t
 Additionally, since this is a {kind_label} analysis, also populate the
 {field_name} object with one array per category ({", ".join(categories)}).
 Each item is one specific point: {{ "text": "...", "citation_index": N or
-null }}. Only include a point if the CONTEXT actually supports it -- an
-empty array for a category is fine and expected if the CONTEXT doesn't
-cover it. citation_index is the number of the CONTEXT chunk (matching the
-[N] citation markers you use in narrative) that supports that specific
-point, or null if you can't attribute it to one specific chunk.
-"""
+null, "claim_type": "fact" or "analysis" }}. Only include a point if the
+CONTEXT actually supports it -- an empty array for a category is fine
+and expected if the CONTEXT doesn't cover it. citation_index is the
+number of the CONTEXT chunk (matching the [N] citation markers you use
+in narrative) that supports that specific point, or null if you can't
+attribute it to one specific chunk.
+""" + CLAIM_TYPE_SUFFIX
 
 
 SWOT_CATEGORIES = ("strengths", "weaknesses", "opportunities", "threats")
@@ -785,20 +832,21 @@ Additionally, since this is a Balanced Scorecard analysis, also populate
 the balanced_scorecard object with one array per perspective ({", ".join(BALANCED_SCORECARD_CATEGORIES)}).
 Each item is one specific point: {{ "text": "...", "citation_index": N or
 null, "metric_name": "..." or null, "metric_value": "..." or null,
-"target_value": "..." or null }}. Only include a point if the CONTEXT
-actually supports it -- an empty array for a perspective is fine and
-expected if the CONTEXT doesn't cover it. Most points are purely
-qualitative (leave metric_name/metric_value/target_value all null) --
-only set metric_name AND metric_value together, and only when the
-CONTEXT states a real, specific number for that exact point (e.g. an
-actual revenue figure, retention rate, cycle time, or training hours
-number). Never invent a plausible-sounding metric or target to fill
-these fields -- a point with no real number attached should have all
-three metric fields null, not a fabricated one. citation_index is the
-number of the CONTEXT chunk (matching the [N] citation markers you use
-in narrative) that supports that specific point, or null if you can't
-attribute it to one specific chunk.
-"""
+"target_value": "..." or null, "claim_type": "fact" or "analysis" }}.
+Only include a point if the CONTEXT actually supports it -- an empty
+array for a perspective is fine and expected if the CONTEXT doesn't
+cover it. Most points are purely qualitative (leave metric_name/
+metric_value/target_value all null) -- only set metric_name AND
+metric_value together, and only when the CONTEXT states a real,
+specific number for that exact point (e.g. an actual revenue figure,
+retention rate, cycle time, or training hours number). Never invent a
+plausible-sounding metric or target to fill these fields -- a point
+with no real number attached should have all three metric fields
+null, not a fabricated one. citation_index is the number of the
+CONTEXT chunk (matching the [N] citation markers you use in narrative)
+that supports that specific point, or null if you can't attribute it
+to one specific chunk.
+""" + CLAIM_TYPE_SUFFIX
 
 # framework_tag -> (extra suffix appended to GROUNDING_SYSTEM_PROMPT, the
 # extra field name in the parsed response, the json_schema name sent to
@@ -1264,7 +1312,40 @@ async def run_pipeline(
         query, chunks, framework_tag=framework_tag, extra_context_chunks=directory_chunks,
         specific_category=specific_category, parent_category=parent_category,
     )
-    extra_value = result.get(STRUCTURED_FRAMEWORKS[framework_tag][1]) if framework_tag in STRUCTURED_FRAMEWORKS else None
+    field_name = STRUCTURED_FRAMEWORKS[framework_tag][1] if framework_tag in STRUCTURED_FRAMEWORKS else None
+    extra_value = result.get(field_name) if field_name else None
     all_chunks_for_verify = [*chunks, *directory_chunks]
     verification = await verify_claims(result["text"], result["citations"], extra_value, context_chunks=all_chunks_for_verify)
+
+    # unify/2c-claim-quality repair pass: at most one LLM call, only
+    # when there's at least one fact claim the verifier didn't already
+    # mark "supported" -- a rewrite/convert/drop attempt, then a full
+    # re-verification of the result. That re-verification is what's
+    # actually returned; the pre-repair one never reaches the caller.
+    repair_log = None
+    if any(c["verdict"] != "supported" for c in verification.get("_fact_claims", [])):
+        repaired = await claim_repair.repair_and_reverify(
+            result["text"], result["citations"], extra_value, verification, all_chunks_for_verify,
+        )
+        result = {**result, "text": repaired["text"]}
+        if field_name:
+            result[field_name] = repaired["extra_value"]
+        extra_value = repaired["extra_value"]
+        verification = repaired["verification"]
+        repair_log = repaired["repair_log"]
+        logger.info(
+            "run_pipeline: repair pass for framework=%r -- claims_before=%d supported_before=%d "
+            "supported_after=%d dropped=%d converted=%d rewritten=%d",
+            framework_tag, repair_log["claims_before"], repair_log["supported_before"],
+            repair_log["supported_after"], repair_log["dropped"], repair_log["converted"], repair_log["rewritten"],
+        )
+
+    fact_claims = verification.pop("_fact_claims", [])
+    analysis_claims = [c for c in verification.get("claims", []) if c.get("claim_type") == "analysis"]
+    verification["facts_total"] = len(fact_claims)
+    verification["facts_supported"] = sum(1 for c in fact_claims if c["verdict"] == "supported")
+    verification["analysis_count"] = len(analysis_claims)
+    if repair_log:
+        verification["repair_log"] = repair_log
+
     return {**result, "verification": verification}

@@ -173,6 +173,18 @@ export default function ReportView({
 
   const stats = useMemo(() => computeReportStats(report), [report]);
   const allCitations = useMemo(() => collectAllCitations(report), [report]);
+  // unify/2c-claim-quality: overall "X of Y facts supported" across
+  // every framework's verification, for the report header.
+  const overallFactCounts = useMemo(() => {
+    const entries = Object.values(report.verification || {});
+    return entries.reduce(
+      (acc, v) => ({
+        total: acc.total + (v.facts_total ?? 0),
+        supported: acc.supported + (v.facts_supported ?? 0),
+      }),
+      { total: 0, supported: 0 },
+    );
+  }, [report.verification]);
 
   const title = project.title || formatIdeaTitle(idea);
   const dateLabel = new Date(project.createdAt).toLocaleDateString("en-US", {
@@ -295,6 +307,14 @@ export default function ReportView({
             <span className="font-mono tabular-nums">
               {allCitations.length} {allCitations.length === 1 ? "source" : "sources"}
             </span>
+            {overallFactCounts.total > 0 && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="font-mono tabular-nums" title="Facts supported across all frameworks, per the real claim verifier">
+                  {overallFactCounts.supported} of {overallFactCounts.total} facts supported
+                </span>
+              </>
+            )}
             {report.geography && (
               <>
                 <span aria-hidden="true">·</span>
@@ -770,6 +790,13 @@ export default function ReportView({
                       )}
                       {activeVerification?.verified ? "Verified" : "Needs Sourcing"}
                     </span>
+                    {typeof activeVerification?.facts_total === "number" &&
+                      activeVerification.facts_total > 0 && (
+                        <span className="font-mono text-xs text-slate-400 tabular-nums">
+                          {activeVerification.facts_supported} of{" "}
+                          {activeVerification.facts_total} facts supported
+                        </span>
+                      )}
 
                     <button
                       type="button"
@@ -943,6 +970,11 @@ export default function ReportView({
                                         <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#ffc142]" />
                                       )}
                                       <span className="text-slate-300">
+                                        {claim.claim_type === "analysis" && (
+                                          <span className="mr-1.5 rounded border border-slate-600 px-1 py-0.5 font-mono text-[10px] uppercase tracking-wide text-slate-500">
+                                            Analysis
+                                          </span>
+                                        )}
                                         <span className="text-slate-100">
                                           {claim.text}
                                         </span>{" "}

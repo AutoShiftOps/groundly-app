@@ -34,17 +34,22 @@ def test_balanced_scorecard_registered_in_structured_frameworks():
 
 def test_balanced_scorecard_item_schema_has_metric_fields_all_nullable():
     item_schema = BALANCED_SCORECARD_SCHEMA["properties"]["balanced_scorecard"]["properties"]["financial"]["items"]
-    assert set(item_schema["properties"]) == {"text", "citation_index", "metric_name", "metric_value", "target_value"}
+    assert set(item_schema["properties"]) == {
+        "text", "citation_index", "metric_name", "metric_value", "target_value", "claim_type",
+    }
     for field in ("citation_index", "metric_name", "metric_value", "target_value"):
         assert "null" in item_schema["properties"][field]["type"], f"{field} should be nullable"
-    # All 5 required in strict-schema mode, even the nullable ones
-    assert set(item_schema["required"]) == {"text", "citation_index", "metric_name", "metric_value", "target_value"}
+    # All 6 required in strict-schema mode, even the nullable ones
+    assert set(item_schema["required"]) == {
+        "text", "citation_index", "metric_name", "metric_value", "target_value", "claim_type",
+    }
 
 
-def _item(text="x", citation_index=None, metric_name=None, metric_value=None, target_value=None):
+def _item(text="x", citation_index=None, metric_name=None, metric_value=None, target_value=None, claim_type="fact"):
     return {
         "text": text, "citation_index": citation_index,
         "metric_name": metric_name, "metric_value": metric_value, "target_value": target_value,
+        "claim_type": claim_type,
     }
 
 
