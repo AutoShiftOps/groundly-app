@@ -646,19 +646,10 @@
   padding: 12pt 0;
 }
 
-.print-callout-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8pt;
-  margin-top: 10pt;
-}
-
-.print-callout {
-  break-inside: avoid;
-  border: 1pt solid var(--pb-border);
-  border-radius: 6pt;
-  padding: 8pt;
-  background: var(--pb-card);
+/* Assumptions / Next actions: full-width lists that may flow across
+   pages, but only between items -- never through one. */
+.print-callout-section {
+  margin-top: 14pt;
 }
 
 .print-callout-title {
@@ -668,6 +659,30 @@
   letter-spacing: 0.04em;
   color: var(--pb-heading);
   margin-bottom: 4pt;
+  padding-bottom: 3pt;
+  border-bottom: 1pt solid var(--pb-border);
+}
+
+.print-callout-group {
+  margin-top: 6pt;
+}
+
+.print-callout-group-title {
+  display: flex;
+  align-items: center;
+  gap: 5pt;
+  font-size: 8pt;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--pb-muted);
+  margin-bottom: 1pt;
+}
+
+.print-callout-dot {
+  width: 6pt;
+  height: 6pt;
+  border-radius: 999px;
+  flex-shrink: 0;
 }
 
 .print-callout-list {
@@ -678,9 +693,8 @@
   list-style: disc;
 }
 
-.print-callout-tag {
-  color: var(--pb-placeholder);
-  font-size: 8pt;
+.print-callout-item {
+  break-inside: avoid;
 }
 
 .print-callout-empty {
@@ -844,11 +858,14 @@
 
   /* Exactly one physical page: without an explicit height the cover
      could overflow onto a second, mostly empty page. */
+  /* Strictly shorter than the page: at exactly 11in, real Chrome's print
+     rounding overflowed by a few pixels and printed a near-empty page 2. */
   .print-cover {
     page: brochure-cover;
-    height: 11in;
+    height: calc(11in - 2px);
     min-height: 0;
     overflow: hidden;
+    margin: 0;
     break-after: page;
   }
 

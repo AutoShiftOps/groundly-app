@@ -309,12 +309,30 @@ check(
   aggHtml.split("Freelancer demand holds steady.").length - 1 === 1,
 );
 check(
-  "The de-duplicated assumption is tagged with both source frameworks",
+  "The de-duplicated assumption sits under one combined 'PESTEL · SWOT' framework subheading",
   (() => {
-    const idx = aggHtml.indexOf("Freelancer demand holds steady.");
-    const chunk = aggHtml.slice(idx, idx + 120);
-    return chunk.includes("PESTEL") && chunk.includes("SWOT");
+    const group = aggHtml.indexOf('data-group="pestel+swot"');
+    const item = aggHtml.indexOf("Freelancer demand holds steady.");
+    const heading = aggHtml.slice(group, item);
+    return group !== -1 && item > group && heading.includes("PESTEL · SWOT");
   })(),
+);
+check(
+  "Assumptions/actions are grouped under framework subheadings, not tagged '(Framework)' on every line",
+  (() => {
+    const items = fullHtml.match(/<li class="print-callout-item">[^<]*<\/li>/g) || [];
+    const groups = fullHtml.match(/class="print-callout-group"/g) || [];
+    // buildFullReport gives each of the 10 frameworks 1 assumption + 1 action.
+    return items.length === 20 && groups.length === 20 && items.every((li) => !/\([^)]*\)<\/li>$/.test(li));
+  })(),
+);
+check(
+  "CSS: each assumption/action item avoids breaking across pages or columns",
+  /break-inside:\s*avoid/.test(cssRule(".print-callout-item") || ""),
+);
+check(
+  "CSS: the printed cover is strictly shorter than one Letter page",
+  /height:\s*calc\(11in - 2px\)/.test(css) && !/\.print-cover\s*\{[^}]*height:\s*11in;/.test(css),
 );
 check(
   "No invented '90-day' or timing label appears anywhere in the brochure",

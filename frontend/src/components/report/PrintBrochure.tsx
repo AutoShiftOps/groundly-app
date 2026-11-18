@@ -181,29 +181,72 @@ function EvidenceBarChart({ report }: { report: GroundlyReport }) {
   );
 }
 
-interface AggregatedItem {
-  text: string;
-  frameworks: string[];
+interface AggregatedGroup {
+  key: string;
+  label: string;
+  color: string;
+  items: string[];
 }
 
-function aggregate(report: GroundlyReport, field: "assumptions" | "actions"): AggregatedItem[] {
-  const byText = new Map<string, AggregatedItem>();
+// De-duplicates across all 10 frameworks, then groups items by the
+// framework(s) they came from -- an item shared by PESTEL and SWOT sits
+// under one "PESTEL · SWOT" heading instead of repeating tags per line.
+function aggregate(report: GroundlyReport, field: "assumptions" | "actions"): AggregatedGroup[] {
+  const byText = new Map<string, { text: string; frameworks: (typeof FRAMEWORK_NAV_ITEMS)[number][] }>();
   for (const item of FRAMEWORK_NAV_ITEMS) {
-    const result = report.results?.[item.key];
-    const values = result?.[field];
+    const values = report.results?.[item.key]?.[field];
     if (!values) continue;
     for (const raw of values) {
       const key = raw.trim().toLowerCase();
       if (!key) continue;
       const existing = byText.get(key);
       if (existing) {
-        if (!existing.frameworks.includes(item.label)) existing.frameworks.push(item.label);
+        if (!existing.frameworks.includes(item)) existing.frameworks.push(item);
       } else {
-        byText.set(key, { text: raw.trim(), frameworks: [item.label] });
+        byText.set(key, { text: raw.trim(), frameworks: [item] });
       }
     }
   }
-  return Array.from(byText.values());
+  const groups = new Map<string, AggregatedGroup>();
+  for (const { text, frameworks } of byText.values()) {
+    const key = frameworks.map((f) => f.key).join("+");
+    const group = groups.get(key) ?? {
+      key,
+      label: frameworks.map((f) => f.label).join(" · "),
+      color: frameworks[0].color,
+      items: [],
+    };
+    group.items.push(text);
+    groups.set(key, group);
+  }
+  return Array.from(groups.values());
+}
+
+function CalloutList({ title, groups }: { title: string; groups: AggregatedGroup[] }) {
+  return (
+    <div className="print-callout-section">
+      <p className="print-callout-title print-keep-with-next">{title}</p>
+      {groups.length === 0 ? (
+        <p className="print-callout-empty">None surfaced.</p>
+      ) : (
+        groups.map((g) => (
+          <div key={g.key} className="print-callout-group" data-group={g.key}>
+            <p className="print-callout-group-title print-keep-with-next">
+              <span className="print-callout-dot" style={{ background: g.color }} />
+              {g.label}
+            </p>
+            <ul className="print-callout-list">
+              {g.items.map((text, i) => (
+                <li key={i} className="print-callout-item">
+                  {text}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))
+      )}
+    </div>
+  );
 }
 
 function sourceTypeLabel(url: string, similarity: number | null): string {
@@ -363,36 +406,8 @@ function OperationsSpread({ report }: { report: GroundlyReport }) {
         <FrameworkCard key={k} frameworkKey={k} report={report} />
       ))}
 
-      <div className="print-callout-grid">
-        <div className="print-callout">
-          <p className="print-callout-title">Key Assumptions to Validate</p>
-          {assumptions.length > 0 ? (
-            <ul className="print-callout-list">
-              {assumptions.map((a, i) => (
-                <li key={i}>
-                  {a.text} <span className="print-callout-tag">({a.frameworks.join(", ")})</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="print-callout-empty">None surfaced.</p>
-          )}
-        </div>
-        <div className="print-callout">
-          <p className="print-callout-title">Next Actions</p>
-          {actions.length > 0 ? (
-            <ul className="print-callout-list">
-              {actions.map((a, i) => (
-                <li key={i}>
-                  {a.text} <span className="print-callout-tag">({a.frameworks.join(", ")})</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="print-callout-empty">None surfaced.</p>
-          )}
-        </div>
-      </div>
+      <CalloutList title="Key Assumptions to Validate" groups={assumptions} />
+      <CalloutList title="Next Actions" groups={actions} />
     </section>
   );
 }
