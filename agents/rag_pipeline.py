@@ -885,17 +885,19 @@ def verify_claims(generated_text: str, citations: list, extra_value=None):
 async def run_pipeline(query: str, framework_tag: str | None = None, directory_context: dict | None = None):
     # directory_context (agents/mississauga_data.py's query_directory()
     # result, computed once per /api/analyze request, not once per
-    # framework) is checked BEFORE the web-retrieval fallback below -- a
-    # real directory citation already gives this framework something
-    # grounded to work with, so there's no need to spend a Tavily call on
-    # top of it. It never participates in the similarity-threshold math
-    # (it has no pgvector score at all), only in the "do we already have
-    # something real" decision and, later, the actual generation context.
+    # framework) is purely ADDITIVE context -- appended to the generation
+    # context below alongside whatever pgvector/web-retrieval chunks this
+    # framework ends up with. It never participates in the similarity-
+    # threshold math (it has no pgvector score at all) and it must never
+    # suppress the web-retrieval fallback: a directory hit (e.g. "this
+    # business is in the food-service sector") says nothing about whether
+    # THIS framework's own topic (e.g. TAM dollar figures) is actually
+    # covered, so the empty/weak decision below is local-similarity-only,
+    # exactly as it is on main.
     directory_chunks = [
         {**citation, "chunk_text": citation.get("snippet") or ""}
         for citation in (directory_context or {}).get("citations", [])
     ]
-    has_directory_grounding = bool(directory_chunks)
 
     embedding = await embed_query(query)
     chunks = await _search_similar_chunks(embedding, framework_tag=framework_tag)
@@ -904,7 +906,7 @@ async def run_pipeline(query: str, framework_tag: str | None = None, directory_c
     is_empty = not chunks
     is_weak = bool(chunks) and best_local_similarity < LIVE_RETRIEVAL_TRIGGER_THRESHOLD
 
-    if (is_empty or is_weak) and framework_tag and not has_directory_grounding:
+    if (is_empty or is_weak) and framework_tag:
         # Local grounding is either empty, or non-empty but weak (best match
         # below LIVE_RETRIEVAL_TRIGGER_THRESHOLD -- see constant above). Try
         # live web retrieval before falling through to "insufficient

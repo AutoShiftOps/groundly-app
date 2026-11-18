@@ -123,6 +123,14 @@ class AnalysisResponse(BaseModel):
     # from the same citations the frontend itself sees, not a separate
     # guess.
     rag_status: str | None = None
+    # The geography actually used for retrieval/directory lookup --
+    # always present (never None), since analyze() always resolves one
+    # even when the request sent none. geography_defaulted is true when
+    # the request itself had no geography and this server-side default
+    # was applied, so the frontend can show *why* directory data appears
+    # even though the user never typed a geography.
+    geography: str = "Mississauga, ON, Canada"
+    geography_defaulted: bool = False
 
 
 @router.post("/analyze", response_model=AnalysisResponse)
@@ -146,7 +154,8 @@ async def analyze(req: AnalysisRequest):
             return JSONResponse(status_code=400, content={"error": str(exc)})
 
     # server.ts's own default when the frontend sends no geography at all.
-    resolved_geography = req.geography.strip() if req.geography and req.geography.strip() else "Mississauga, ON, Canada"
+    geography_defaulted = not (req.geography and req.geography.strip())
+    resolved_geography = req.geography.strip() if not geography_defaulted else "Mississauga, ON, Canada"
 
     # Step 1 (matches the AI Studio source this was ported from): check
     # the real Mississauga Business Directory BEFORE any web-retrieval
@@ -218,6 +227,8 @@ async def analyze(req: AnalysisRequest):
         directory_exact_match=directory_result["exact_match"] if directory_result else None,
         directory_total_sector=directory_result["total_sector_count"] if directory_result else None,
         rag_status=rag_status,
+        geography=resolved_geography,
+        geography_defaulted=geography_defaulted,
     )
 
 

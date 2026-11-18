@@ -112,6 +112,35 @@ def test_missing_geography_defaults_to_mississauga_on_canada(api_client, monkeyp
     })
     assert resp.status_code == 200
     assert captured["geography"] == "Mississauga, ON, Canada"
+    data = resp.json()
+    # The frontend shows "<geography> (default)" so a user who never typed
+    # a geography can see why directory data appears at all -- this is
+    # the response contract that powers that badge.
+    assert data["geography"] == "Mississauga, ON, Canada"
+    assert data["geography_defaulted"] is True
+
+
+def test_explicit_geography_is_not_marked_as_defaulted(api_client, monkeypatch):
+    _install_fast_fakes(monkeypatch)
+    captured = {}
+
+    async def fake_query_directory(mode, business_name, idea, industry, geography, data_source_url):
+        captured["geography"] = geography
+        return {"status": "not_found", "matched_count": 0, "total_sector_count": None, "exact_match": False,
+                "context_snippet": "", "citations": []}
+
+    monkeypatch.setattr(analysis_module.mississauga_data, "query_directory", fake_query_directory)
+
+    resp = api_client.post("/api/analyze", json={
+        "idea": "a corner store loyalty app",
+        "geography": "Mississauga, Ontario",
+        "frameworks": ["pestel"],
+        "tier": "free",
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["geography"] == "Mississauga, Ontario"
+    assert data["geography_defaulted"] is False
 
 
 def test_rejected_data_source_url_returns_400_with_error_key_not_detail(api_client, monkeypatch):

@@ -140,6 +140,12 @@ export interface GroundlyReport {
   // citations the UI itself renders -- "grounded" if at least one
   // framework has a real citation, "unavailable" otherwise.
   rag_status?: "grounded" | "search_text_only" | "unavailable" | null;
+  // The geography actually used for retrieval/directory lookup (always
+  // present) and whether the backend applied its own default because
+  // the request sent none -- shown in the report header so a user who
+  // never typed a geography can see why directory data appears at all.
+  geography?: string;
+  geography_defaulted?: boolean;
 }
 
 export interface SavedProject {

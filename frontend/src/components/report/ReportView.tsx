@@ -295,6 +295,15 @@ export default function ReportView({
             <span className="font-mono tabular-nums">
               {allCitations.length} {allCitations.length === 1 ? "source" : "sources"}
             </span>
+            {report.geography && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="font-mono text-slate-400" title={report.geography_defaulted ? "No geography was entered -- this is the server's default." : undefined}>
+                  {report.geography}
+                  {report.geography_defaulted ? " (default)" : ""}
+                </span>
+              </>
+            )}
             {report.directory_status && (
               <>
                 <span aria-hidden="true">·</span>
