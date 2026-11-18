@@ -102,9 +102,23 @@ export interface FrameworkResult {
   } | null;
 }
 
+export interface VerifiedClaim {
+  text: string;
+  citation_indices: number[];
+  verdict: "supported" | "partially_supported" | "unsupported";
+  reason: string;
+}
+
 export interface FrameworkVerification {
   verified: boolean;
   unsupported_claims?: string[];
+  // Per-claim results from agents/claim_verifier.py's real LLM
+  // verifier -- every cited claim (narrative [N] sentences and every
+  // structured point/tier with a citation_index) gets one entry here,
+  // including ones that passed. unsupported_claims above stays the
+  // flat "what failed and why" list the Verification Flags panel
+  // already rendered; claims is the fuller per-claim breakdown.
+  claims?: VerifiedClaim[];
 }
 
 export interface BusinessMetric {
