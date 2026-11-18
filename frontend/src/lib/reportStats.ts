@@ -236,17 +236,23 @@ export function computeMetricTrends(
     const citations = report?.results?.[fw]?.citations || [];
     const seen = new Set<string>();
     let simSum = 0;
+    let simCount = 0;
     for (const c of citations) {
       const key = c.source_url || `${c.index}-${c.source_title}`;
       if (!seen.has(key)) {
         seen.add(key);
         cumulativeCitations += 1;
       }
-      simSum += c.similarity;
+      // Directory citations carry similarity: null -- never pgvector-
+      // matched, so they must never be averaged in as if they scored 0.
+      if (typeof c.similarity === "number") {
+        simSum += c.similarity;
+        simCount += 1;
+      }
     }
     citationTrend.push({ v: cumulativeCitations });
     similarityTrend.push({
-      v: citations.length ? Math.round((simSum / citations.length) * 100) : 0,
+      v: simCount ? Math.round((simSum / simCount) * 100) : 0,
     });
     if (report?.verification?.[fw]?.verified) cumulativeVerified += 1;
     else cumulativeUnverified += 1;
@@ -273,9 +279,23 @@ export function computeEvidenceScore(
   const cited = metric.citation_index
     ? citations.find((c) => c.index === metric.citation_index)
     : null;
-  const similarity = cited
-    ? cited.similarity
-    : citations.reduce((sum, c) => sum + c.similarity, 0) / citations.length;
+
+  let similarity: number | null;
+  if (cited) {
+    // A directory citation (agents/mississauga_data.py) carries
+    // similarity: null -- it was never pgvector-matched, so there is
+    // no real score to report. `null * 100` would silently coerce to
+    // 0 in JS, producing a fabricated "0.0" evidence score instead of
+    // an honest "not applicable" -- return null instead.
+    similarity = cited.similarity;
+  } else {
+    const real = citations.filter((c) => typeof c.similarity === "number");
+    similarity = real.length
+      ? real.reduce((sum, c) => sum + (c.similarity as number), 0) / real.length
+      : null;
+  }
+
+  if (typeof similarity !== "number") return null;
   return Math.round(similarity * 100) / 10;
 }
 

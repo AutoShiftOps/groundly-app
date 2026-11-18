@@ -139,6 +139,33 @@ test("computeEvidenceScore computes /10 score from citation similarity", () => {
   assert.equal(score, 8.6);
 });
 
+test("computeEvidenceScore returns null (never a fabricated 0) when the cited citation's similarity is null", () => {
+  // `null * 100` silently coerces to 0 in JS -- the real bug this
+  // guards against: a directory citation (similarity: null) must never
+  // produce a fake "0.0" evidence score.
+  const report = makeSampleReport(["tam"]);
+  report.results.tam.citations = [
+    { index: 1, source_title: "Mississauga Business Directory", source_url: "https://arcgis.example.com", similarity: null },
+  ];
+  report.business_metrics.market_size = { label: "$1B", rationale: "x", citation_index: 1, source_framework: "tam" };
+  const score = computeEvidenceScore(report.business_metrics.market_size, report);
+  assert.equal(score, null);
+});
+
+test("computeEvidenceScore's fallback average skips null similarities instead of averaging them in as 0", () => {
+  const report = makeSampleReport(["tam"]);
+  report.results.tam.citations = [
+    { index: 1, source_title: "Directory", source_url: "https://arcgis.example.com", similarity: null },
+    { index: 2, source_title: "Web", source_url: "https://example.com/2", similarity: 0.8 },
+  ];
+  // No citation_index -- computeEvidenceScore falls back to averaging
+  // every citation's similarity; only the one real score (0.8) should
+  // count, not (null + 0.8) / 2.
+  report.business_metrics.market_size = { label: "$1B", rationale: "x", citation_index: null, source_framework: "tam" };
+  const score = computeEvidenceScore(report.business_metrics.market_size, report);
+  assert.equal(score, 8);
+});
+
 test("stage progression helpers map progress to passed/active/pending while waiting", () => {
   assert.equal(stageIndexFromProgress(0), 0);
   assert.equal(stageIndexFromProgress(35), 1);

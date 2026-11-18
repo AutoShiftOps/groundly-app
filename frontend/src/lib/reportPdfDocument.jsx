@@ -332,20 +332,28 @@ function CategoryGrid({ blocks, data }) {
 }
 
 function KeyTakeawayAndSources({ result }) {
-  const takeaway = stripMarketTags(lastSentence(result.text));
+  // Already real content (the narrative's own last sentence, never a
+  // hardcoded fallback) -- this just adds "hide when there isn't one"
+  // for parity with FrameworkDiagrams.tsx's TamConcentricDiagram fix.
+  const takeaway = stripMarketTags(lastSentence(result.text)).trim();
   const topCitations = dedupeCitations(result.citations).slice(0, 3);
+  if (!takeaway && topCitations.length === 0) return null;
   return (
     <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: COLOR.border, flexDirection: "row", gap: 16 }} wrap={false}>
-      <View style={{ flex: 1 }}>
-        <Text style={[s.categoryLabel, { color: COLOR.amber }]}>Key Takeaway</Text>
-        <Text style={{ fontSize: 8.5, color: COLOR.textSecondary, lineHeight: 1.5 }}>{takeaway}</Text>
-      </View>
-      <View style={{ width: 170 }}>
-        <Text style={[s.categoryLabel, { color: COLOR.textMuted }]}>Top Citations</Text>
-        {topCitations.map((c, i) => (
-          <Text key={i} style={{ fontSize: 7.5, color: COLOR.blue, marginBottom: 2 }}>[{c.index}] {c.source_title || c.source_url}</Text>
-        ))}
-      </View>
+      {takeaway && (
+        <View style={{ flex: 1 }}>
+          <Text style={[s.categoryLabel, { color: COLOR.amber }]}>Key Takeaway</Text>
+          <Text style={{ fontSize: 8.5, color: COLOR.textSecondary, lineHeight: 1.5 }}>{takeaway}</Text>
+        </View>
+      )}
+      {topCitations.length > 0 && (
+        <View style={{ width: 170 }}>
+          <Text style={[s.categoryLabel, { color: COLOR.textMuted }]}>Top Citations</Text>
+          {topCitations.map((c, i) => (
+            <Text key={i} style={{ fontSize: 7.5, color: COLOR.blue, marginBottom: 2 }}>[{c.index}] {c.source_title || c.source_url}</Text>
+          ))}
+        </View>
+      )}
     </View>
   );
 }

@@ -209,12 +209,31 @@ export function TamConcentricDiagram({
   ];
 
   const topCitations = (result?.citations || []).slice(0, 3);
+  // "Key Takeaway" used to always fall through to a hardcoded sentence
+  // ("Bottom-up serviceable sizing isolates your realistic 3-year
+  // wedge.") on every single report, since MarketTier.note is a legacy
+  // field the backend never actually populates -- confirmed dead code,
+  // not a real fallback. Real content instead: the narrative's own
+  // first sentence (same text the Summary tab already shows, just
+  // truncated to one line), stripped of its [N] markers since this is
+  // a short-form card, not the full cited narrative. Hidden entirely
+  // when there's no real narrative to pull from, rather than inventing
+  // one.
+  const takeaway = (() => {
+    const text = (result?.text || "").trim();
+    if (!text || text.startsWith("Insufficient grounded data")) return null;
+    const firstSentence = text.split(/(?<=[.!?])\s+/)[0];
+    return firstSentence ? firstSentence.replace(/\s*\[\d+\]/g, "").trim() : null;
+  })();
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-12 xl:items-center">
+    // Container queries, not viewport breakpoints: the card's own width
+    // (narrowed by the report's side rails, or the printed page) decides
+    // whether the legend has room beside the rings and the table.
+    <div className="@container space-y-4">
+      <div className="grid grid-cols-1 gap-6 @5xl:grid-cols-12 @5xl:items-center">
         {/* Left Concentric Diagram + Legend */}
-        <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-center xl:col-span-5">
+        <div className="flex flex-col items-center gap-5 @md:flex-row @md:justify-center @5xl:col-span-6">
           <svg
             viewBox="0 0 264 264"
             className="h-60 w-60 shrink-0"
@@ -318,9 +337,9 @@ export function TamConcentricDiagram({
             </text>
           </svg>
 
-          <div className="space-y-3 text-xs">
+          <div className="tam-legend min-w-0 max-w-xs flex-1 space-y-3 text-xs">
             {rows.map((r) => (
-              <div key={r.key} className="max-w-[190px]">
+              <div key={r.key}>
                 <div className="flex items-center gap-2 font-display font-bold text-white">
                   <span
                     className="h-2.5 w-2.5 shrink-0 rounded-full"
@@ -337,9 +356,9 @@ export function TamConcentricDiagram({
         </div>
 
         {/* Right Financial Table */}
-        <div className="surface-subpanel overflow-x-auto rounded-xl xl:col-span-7">
+        <div className="surface-subpanel overflow-x-auto rounded-xl @5xl:col-span-6">
           <table className="w-full text-left text-xs">
-            <thead className="border-b border-slate-800/90 bg-[#0b152c]/90 font-mono text-[10px] uppercase tracking-wider text-slate-400">
+            <thead className="tam-table-head border-b border-slate-800/90 bg-[#0b152c]/90 font-mono text-[10px] uppercase tracking-wider text-slate-400">
               <tr>
                 <th className="px-4 py-3">Metric</th>
                 <th className="px-3 py-3 text-right">Value (USD)</th>
@@ -393,22 +412,21 @@ export function TamConcentricDiagram({
       </div>
 
       {/* Key Takeaway & Top Citations Bar matching report-ux-mock.png */}
-      {(som?.note || topCitations.length > 0) && (
-        <div className="surface-subpanel flex flex-col gap-3 rounded-xl px-4 py-3.5 md:flex-row md:items-center md:justify-between">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-[#22f59d]">
-              <Lightbulb className="h-3.5 w-3.5" />
-              <span>Key Takeaway</span>
+      {(takeaway || topCitations.length > 0) && (
+        <div className="tam-takeaway-bar surface-subpanel flex flex-col gap-3 rounded-xl px-4 py-3.5">
+          {takeaway && (
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-[#22f59d]">
+                <Lightbulb className="h-3.5 w-3.5" />
+                <span>Key Takeaway</span>
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-slate-300">
+                {takeaway}
+              </p>
             </div>
-            <p className="mt-1 text-xs leading-relaxed text-slate-300">
-              {som?.note ||
-                sam?.note ||
-                tam?.note ||
-                "Bottom-up serviceable sizing isolates your realistic 3-year wedge."}
-            </p>
-          </div>
+          )}
           {topCitations.length > 0 && (
-            <div className="shrink-0">
+            <div className={takeaway ? "border-t border-slate-800/70 pt-3" : undefined}>
               <p className="mb-1.5 font-mono text-[10px] uppercase tracking-wider text-slate-400">
                 Top Citations
               </p>
@@ -418,7 +436,7 @@ export function TamConcentricDiagram({
                     key={c.index}
                     type="button"
                     onClick={() => onSelectCitation?.(c.index, "tam")}
-                    className="rounded-lg border border-slate-700/80 bg-[#0b152c] px-2.5 py-1 font-mono text-[11px] text-[#93c5fd] transition-colors hover:border-[#4a8fff] hover:text-white"
+                    className="tam-citation-chip rounded-lg border border-slate-700/80 bg-[#0b152c] px-2.5 py-1 font-mono text-[11px] text-[#93c5fd] transition-colors hover:border-[#4a8fff] hover:text-white"
                   >
                     [{c.index}] {c.source_title.split("—")[0]?.trim().slice(0, 22)}
                   </button>
@@ -601,7 +619,8 @@ export function FrameworkDiagramBody({
       { key: "positioning", label: "03. Positioning", color: "#14d8a3", Icon: MapPin },
     ];
     return (
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+      <div className="@container">
+      <div className="grid grid-cols-1 gap-3 @xl:grid-cols-3">
         {cols.map((c) => (
           <div key={c.key} className="surface-subpanel rounded-xl p-4">
             <div
@@ -624,6 +643,7 @@ export function FrameworkDiagramBody({
           </div>
         ))}
       </div>
+      </div>
     );
   }
 
@@ -636,15 +656,16 @@ export function FrameworkDiagramBody({
       { key: "cash_cow", label: "Cash Cow", color: "#4a8fff", hint: "Low growth · High share" },
     ];
     return (
-      <div className="grid grid-cols-1 gap-5 md:grid-cols-12">
-        <div className="md:col-span-6">
+      <div className="@container">
+      <div className="grid grid-cols-1 gap-5 @xl:grid-cols-12">
+        <div className="@xl:col-span-6">
           <div className="grid grid-cols-2 gap-2.5">
             {cells.map((cell) => {
               const active = bcg.quadrant === cell.key;
               return (
                 <div
                   key={cell.key}
-                  className="flex min-h-[96px] flex-col items-center justify-center rounded-xl p-3 text-center transition-colors"
+                  className={`flex min-h-[96px] flex-col items-center justify-center rounded-xl p-3 text-center transition-colors${active ? "" : " matrix-cell-idle"}`}
                   style={
                     active
                       ? {
@@ -677,7 +698,7 @@ export function FrameworkDiagramBody({
             <span>High Share →</span>
           </div>
         </div>
-        <div className="surface-subpanel space-y-3 rounded-xl p-4 md:col-span-6">
+        <div className="surface-subpanel space-y-3 rounded-xl p-4 @xl:col-span-6">
           <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
             <span className="text-xs text-slate-400">Market Growth Rate</span>
             <span className="font-mono text-sm font-bold text-[#14d8a3] tabular-nums">
@@ -702,6 +723,7 @@ export function FrameworkDiagramBody({
           </p>
         </div>
       </div>
+      </div>
     );
   }
 
@@ -714,14 +736,15 @@ export function FrameworkDiagramBody({
       { key: "diversification", label: "Diversification", hint: "New Product · New Market", color: "#f5b041" },
     ];
     return (
-      <div className="grid grid-cols-1 gap-5 md:grid-cols-12">
-        <div className="grid grid-cols-2 gap-2.5 md:col-span-6">
+      <div className="@container">
+      <div className="grid grid-cols-1 gap-5 @xl:grid-cols-12">
+        <div className="grid grid-cols-2 gap-2.5 @xl:col-span-6">
           {cells.map((cell) => {
             const active = ansoff.quadrant === cell.key;
             return (
               <div
                 key={cell.key}
-                className="flex min-h-[96px] flex-col items-center justify-center rounded-xl p-3 text-center"
+                className={`flex min-h-[96px] flex-col items-center justify-center rounded-xl p-3 text-center${active ? "" : " matrix-cell-idle"}`}
                 style={
                   active
                     ? {
@@ -749,7 +772,7 @@ export function FrameworkDiagramBody({
             );
           })}
         </div>
-        <div className="surface-subpanel space-y-3 rounded-xl p-4 md:col-span-6">
+        <div className="surface-subpanel space-y-3 rounded-xl p-4 @xl:col-span-6">
           <div>
             <span className="text-xs text-slate-400">Market Dimension</span>
             <p className="mt-0.5 text-sm font-semibold text-white">
@@ -771,6 +794,7 @@ export function FrameworkDiagramBody({
             />
           </p>
         </div>
+      </div>
       </div>
     );
   }
