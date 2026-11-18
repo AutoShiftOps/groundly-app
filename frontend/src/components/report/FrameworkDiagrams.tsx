@@ -227,10 +227,13 @@ export function TamConcentricDiagram({
   })();
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-12 xl:items-center">
+    // Container queries, not viewport breakpoints: the card's own width
+    // (narrowed by the report's side rails, or the printed page) decides
+    // whether the legend has room beside the rings and the table.
+    <div className="@container space-y-4">
+      <div className="grid grid-cols-1 gap-6 @5xl:grid-cols-12 @5xl:items-center">
         {/* Left Concentric Diagram + Legend */}
-        <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-center xl:col-span-5">
+        <div className="flex flex-col items-center gap-5 @md:flex-row @md:justify-center @5xl:col-span-6">
           <svg
             viewBox="0 0 264 264"
             className="h-60 w-60 shrink-0"
@@ -334,9 +337,9 @@ export function TamConcentricDiagram({
             </text>
           </svg>
 
-          <div className="space-y-3 text-xs">
+          <div className="tam-legend min-w-0 max-w-xs flex-1 space-y-3 text-xs">
             {rows.map((r) => (
-              <div key={r.key} className="max-w-[190px]">
+              <div key={r.key}>
                 <div className="flex items-center gap-2 font-display font-bold text-white">
                   <span
                     className="h-2.5 w-2.5 shrink-0 rounded-full"
@@ -353,7 +356,7 @@ export function TamConcentricDiagram({
         </div>
 
         {/* Right Financial Table */}
-        <div className="surface-subpanel overflow-x-auto rounded-xl xl:col-span-7">
+        <div className="surface-subpanel overflow-x-auto rounded-xl @5xl:col-span-6">
           <table className="w-full text-left text-xs">
             <thead className="tam-table-head border-b border-slate-800/90 bg-[#0b152c]/90 font-mono text-[10px] uppercase tracking-wider text-slate-400">
               <tr>
