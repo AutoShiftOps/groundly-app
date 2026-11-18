@@ -42,8 +42,11 @@ def test_grounded_urls_are_fetched_and_ingested_not_built_from_metadata(monkeypa
         AsyncMock(return_value=[("https://example.com/report", "Market Report")]),
     )
     monkeypatch.setattr(
-        web_retrieval, "_fetch_page_text",
-        AsyncMock(return_value="The tax preparation software market was valued at $17.6 billion in 2024."),
+        web_retrieval, "_fetch_page",
+        AsyncMock(return_value=web_retrieval.FetchedPage(
+            "https://example.com/report", "Market Report",
+            "The tax preparation software market was valued at $17.6 billion in 2024.",
+        )),
     )
     monkeypatch.setattr(web_retrieval, "ingest_content", lambda text, title, url, framework_tag: 2)
 
@@ -70,9 +73,9 @@ def test_a_url_that_fails_to_fetch_is_skipped_not_fatal(monkeypatch):
     async def fake_fetch(url):
         if "dead" in url:
             raise RuntimeError("404")
-        return "Real page text with a figure of $5 million."
+        return web_retrieval.FetchedPage(url, "OK", "Real page text with a figure of $5 million.")
 
-    monkeypatch.setattr(web_retrieval, "_fetch_page_text", fake_fetch)
+    monkeypatch.setattr(web_retrieval, "_fetch_page", fake_fetch)
     monkeypatch.setattr(web_retrieval, "ingest_content", lambda text, title, url, framework_tag: 1)
 
     result = asyncio.run(web_retrieval.search_and_ingest_gemini_grounding("some query", "tam"))
@@ -149,3 +152,97 @@ def test_grounding_url_extraction_from_a_fake_gemini_response():
         lp._get_genai_client = original_get_client
 
     assert urls == [("https://example.com/a", "A"), ("https://example.com/b", "B")]
+
+
+# --- Grounding redirects: cite the final page, never Google's redirector ---
+
+_REDIRECT = "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AbC123"
+
+
+def _mock_http(monkeypatch, handler):
+    import httpx
+
+    transport = httpx.MockTransport(handler)
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(web_retrieval.httpx, "AsyncClient", lambda **kw: real_client(transport=transport, **kw))
+
+
+def _ingest_spy(monkeypatch):
+    calls = []
+
+    def fake_ingest(text, title, url, framework_tag):
+        calls.append({"text": text, "title": title, "url": url})
+        return 1
+
+    monkeypatch.setattr(web_retrieval, "ingest_content", fake_ingest)
+    return calls
+
+
+def test_grounded_redirect_is_followed_and_the_final_url_and_page_title_are_stored(monkeypatch):
+    import httpx
+
+    monkeypatch.setattr(config, "LLM_PROVIDER", "gemini")
+    monkeypatch.setattr(config, "GEMINI_API_KEY", "fake-key-for-test")
+    # Gemini's web.title is just the domain here.
+    monkeypatch.setattr(
+        web_retrieval.llm_provider, "google_search_grounding_urls",
+        AsyncMock(return_value=[(_REDIRECT, "austintexas.gov")]),
+    )
+
+    def handler(request):
+        if request.url.host == "vertexaisearch.cloud.google.com":
+            return httpx.Response(302, headers={"Location": "https://www.austintexas.gov/economic/freelance-report"})
+        return httpx.Response(200, html="<html><head><title>Austin Freelance Economy Report &amp; Data</title></head>"
+                                        "<body><p>Austin had 182,000 self-employed workers in 2024.</p></body></html>")
+
+    _mock_http(monkeypatch, handler)
+    calls = _ingest_spy(monkeypatch)
+
+    result = asyncio.run(web_retrieval.search_and_ingest_gemini_grounding("austin freelancers", "tam"))
+
+    assert result["urls_ingested"] == ["https://www.austintexas.gov/economic/freelance-report"]
+    assert calls[0]["url"] == "https://www.austintexas.gov/economic/freelance-report"
+    assert "vertexaisearch" not in calls[0]["url"]
+    assert calls[0]["title"] == "Austin Freelance Economy Report & Data"
+    assert "182,000 self-employed" in calls[0]["text"]
+
+
+def test_a_real_grounding_title_is_kept_over_the_page_title(monkeypatch):
+    import httpx
+
+    monkeypatch.setattr(config, "LLM_PROVIDER", "gemini")
+    monkeypatch.setattr(config, "GEMINI_API_KEY", "fake-key-for-test")
+    monkeypatch.setattr(
+        web_retrieval.llm_provider, "google_search_grounding_urls",
+        AsyncMock(return_value=[(_REDIRECT, "Self-Employment in Texas, 2024 Annual Review")]),
+    )
+    _mock_http(monkeypatch, lambda request: (
+        httpx.Response(302, headers={"Location": "https://example.org/review"})
+        if request.url.host == "vertexaisearch.cloud.google.com"
+        else httpx.Response(200, html="<title>Home | Example</title><p>Real text.</p>")
+    ))
+    calls = _ingest_spy(monkeypatch)
+
+    asyncio.run(web_retrieval.search_and_ingest_gemini_grounding("q", "tam"))
+
+    assert calls[0]["title"] == "Self-Employment in Texas, 2024 Annual Review"
+    assert calls[0]["url"] == "https://example.org/review"
+
+
+def test_a_page_that_never_leaves_googles_redirect_is_skipped(monkeypatch):
+    import httpx
+
+    monkeypatch.setattr(config, "LLM_PROVIDER", "gemini")
+    monkeypatch.setattr(config, "GEMINI_API_KEY", "fake-key-for-test")
+    monkeypatch.setattr(
+        web_retrieval.llm_provider, "google_search_grounding_urls",
+        AsyncMock(return_value=[(_REDIRECT, "example.org")]),
+    )
+    # The redirector answers 200 itself (e.g. an interstitial) -- no real page.
+    _mock_http(monkeypatch, lambda request: httpx.Response(200, html="<title>Redirecting</title><p>Please wait</p>"))
+    calls = _ingest_spy(monkeypatch)
+
+    result = asyncio.run(web_retrieval.search_and_ingest_gemini_grounding("q", "tam"))
+
+    assert result == {"total_chunks": 0, "urls_ingested": []}
+    assert calls == []

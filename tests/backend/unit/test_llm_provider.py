@@ -331,6 +331,28 @@ def test_schema_conversion_handles_nested_array_of_objects_with_enum():
     assert item_schema["required"] == ["text", "claim_type"]
 
 
+def test_nullable_enum_drops_none_and_sets_nullable():
+    converted = llm_provider.json_schema_to_gemini(
+        {"type": ["string", "null"], "enum": ["existing", "new", None]}
+    )
+    assert converted == {"type": "STRING", "nullable": True, "enum": ["existing", "new"]}
+
+
+def test_every_real_schema_passes_the_sdks_own_schema_validation():
+    # The SDK only validates response_schema when it builds the request
+    # (a dict passes GenerateContentConfig untouched), so validate the
+    # converted schema the same way the SDK does. The Ansoff schema's
+    # enum [..., None] failed here on every live Gemini run.
+    from google.genai import types
+    from agents import claim_verifier, claim_repair, synthesis
+
+    schemas = [schema for (_s, _f, _n, schema) in rag_pipeline.STRUCTURED_FRAMEWORKS.values()]
+    schemas += [claim_verifier._VERIFIER_SCHEMA, claim_repair._REPAIR_SCHEMA,
+                rag_pipeline._MARKET_CATEGORY_SCHEMA, synthesis.BUSINESS_METRICS_SCHEMA]
+    for schema in schemas:
+        types.Schema.model_validate(llm_provider.json_schema_to_gemini(schema))
+
+
 def test_schema_conversion_accepted_for_every_real_framework_schema():
     # Every one of the 10 framework schemas, plus the verifier and
     # repair schemas, must convert without raising and keep their

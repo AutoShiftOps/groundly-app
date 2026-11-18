@@ -229,7 +229,12 @@ def json_schema_to_gemini(schema):
         result["type"] = _GEMINI_TYPE_MAP.get(node_type, node_type.upper())
 
     if "enum" in schema:
-        result["enum"] = schema["enum"]
+        # OpenAI strict mode lists None in a nullable field's enum; Gemini
+        # only accepts string enum values and expresses null as nullable.
+        values = schema["enum"]
+        result["enum"] = [v for v in values if v is not None]
+        if None in values:
+            result["nullable"] = True
     if "description" in schema:
         result["description"] = schema["description"]
     if "properties" in schema:
