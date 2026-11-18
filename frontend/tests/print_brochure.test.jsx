@@ -321,6 +321,38 @@ check(
   !/90-day/i.test(fullHtml) && !/90 day/i.test(fullHtml),
 );
 
+// --- TAM takeaway takes the box's full width, Top Citations stacked below ---
+check(
+  "TAM takeaway bar stacks takeaway above Top Citations (never a side-by-side row)",
+  (() => {
+    const m = fullHtml.match(/<div class="tam-takeaway-bar[^"]*"/);
+    if (!m || /flex-row/.test(m[0])) return false;
+    const bar = fullHtml.indexOf(m[0]);
+    const takeawayAt = fullHtml.indexOf("Key Takeaway", bar);
+    const citesAt = fullHtml.indexOf("Top Citations", bar);
+    return takeawayAt !== -1 && citesAt > takeawayAt;
+  })(),
+);
+
+// --- Ink saver hooks: TAM header and idle matrix cells carry the classes
+// the .brochure-light overrides target ---
+check(
+  "TAM table header and unselected BCG/Ansoff cells carry Ink saver hook classes",
+  fullHtml.includes("tam-table-head") &&
+    (() => {
+      const r = buildFullReport();
+      r.results.bcg.bcg_matrix = { quadrant: "star", market_growth_rate_pct: 10, market_share_position: "x", citation_index: 1, rationale: "y" };
+      r.results.ansoff.ansoff_matrix = { quadrant: "market_penetration", market_dimension: "existing", product_dimension: "existing", citation_index: 1, rationale: "z" };
+      const html = renderToStaticMarkup(<PrintBrochure report={r} idea="i" title="t" date="d" theme="light" />);
+      return (html.match(/matrix-cell-idle/g) || []).length === 6;
+    })(),
+);
+check(
+  "CSS: Ink saver lightens the TAM header and idle matrix cells",
+  /#f1f5f9/.test(cssRule(".brochure-light .tam-table-head") || "") &&
+    /#f8fafc/.test(cssRule(".brochure-light .matrix-cell-idle") || ""),
+);
+
 // --- No hardcoded TAM "Key Takeaway" fallback sentence anywhere ---
 check(
   "The old hardcoded TAM takeaway sentence never renders",

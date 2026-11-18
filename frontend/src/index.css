@@ -321,6 +321,25 @@
   fill: #1e293b !important;
 }
 
+.brochure-light .tam-table-head {
+  background: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  color: #475569 !important;
+}
+
+.brochure-light .tam-citation-chip {
+  background: #eff6ff !important;
+  border-color: #bfdbfe !important;
+  color: #1d4ed8 !important;
+}
+
+/* Unselected BCG/Ansoff cells set a dark background inline. */
+.brochure-light .matrix-cell-idle {
+  background-color: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  opacity: 0.85 !important;
+}
+
 /* Interior spreads have no background of their own, so the page (the
    @page background in print, the sheet colour in the preview) shows
    through with no visible box edge. */

@@ -355,7 +355,7 @@ export function TamConcentricDiagram({
         {/* Right Financial Table */}
         <div className="surface-subpanel overflow-x-auto rounded-xl xl:col-span-7">
           <table className="w-full text-left text-xs">
-            <thead className="border-b border-slate-800/90 bg-[#0b152c]/90 font-mono text-[10px] uppercase tracking-wider text-slate-400">
+            <thead className="tam-table-head border-b border-slate-800/90 bg-[#0b152c]/90 font-mono text-[10px] uppercase tracking-wider text-slate-400">
               <tr>
                 <th className="px-4 py-3">Metric</th>
                 <th className="px-3 py-3 text-right">Value (USD)</th>
@@ -410,9 +410,9 @@ export function TamConcentricDiagram({
 
       {/* Key Takeaway & Top Citations Bar matching report-ux-mock.png */}
       {(takeaway || topCitations.length > 0) && (
-        <div className="surface-subpanel flex flex-col gap-3 rounded-xl px-4 py-3.5 md:flex-row md:items-center md:justify-between">
+        <div className="tam-takeaway-bar surface-subpanel flex flex-col gap-3 rounded-xl px-4 py-3.5">
           {takeaway && (
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0">
               <div className="flex items-center gap-1.5 text-xs font-semibold text-[#22f59d]">
                 <Lightbulb className="h-3.5 w-3.5" />
                 <span>Key Takeaway</span>
@@ -423,7 +423,7 @@ export function TamConcentricDiagram({
             </div>
           )}
           {topCitations.length > 0 && (
-            <div className="shrink-0">
+            <div className={takeaway ? "border-t border-slate-800/70 pt-3" : undefined}>
               <p className="mb-1.5 font-mono text-[10px] uppercase tracking-wider text-slate-400">
                 Top Citations
               </p>
@@ -433,7 +433,7 @@ export function TamConcentricDiagram({
                     key={c.index}
                     type="button"
                     onClick={() => onSelectCitation?.(c.index, "tam")}
-                    className="rounded-lg border border-slate-700/80 bg-[#0b152c] px-2.5 py-1 font-mono text-[11px] text-[#93c5fd] transition-colors hover:border-[#4a8fff] hover:text-white"
+                    className="tam-citation-chip rounded-lg border border-slate-700/80 bg-[#0b152c] px-2.5 py-1 font-mono text-[11px] text-[#93c5fd] transition-colors hover:border-[#4a8fff] hover:text-white"
                   >
                     [{c.index}] {c.source_title.split("—")[0]?.trim().slice(0, 22)}
                   </button>
@@ -659,7 +659,7 @@ export function FrameworkDiagramBody({
               return (
                 <div
                   key={cell.key}
-                  className="flex min-h-[96px] flex-col items-center justify-center rounded-xl p-3 text-center transition-colors"
+                  className={`flex min-h-[96px] flex-col items-center justify-center rounded-xl p-3 text-center transition-colors${active ? "" : " matrix-cell-idle"}`}
                   style={
                     active
                       ? {
@@ -736,7 +736,7 @@ export function FrameworkDiagramBody({
             return (
               <div
                 key={cell.key}
-                className="flex min-h-[96px] flex-col items-center justify-center rounded-xl p-3 text-center"
+                className={`flex min-h-[96px] flex-col items-center justify-center rounded-xl p-3 text-center${active ? "" : " matrix-cell-idle"}`}
                 style={
                   active
                     ? {
