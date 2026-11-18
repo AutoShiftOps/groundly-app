@@ -8,7 +8,7 @@
 # cheap regex backstop, tam-only, that nulls a market_sizing tier whose
 # cited chunk has no real dollar/percentage figure -- deterministic, no
 # extra LLM call.
-from agents.rag_pipeline import _chunk_has_numeric_market_figure, _null_out_unsupported_tam_tiers
+from agents.rag_pipeline import _chunk_has_numeric_market_figure, _null_out_unsupported_tam_tiers, _TIER_NOT_FOUND
 
 TOC_ONLY_CHUNK = (
     "The total addressable market (TAM) analysis section defines and estimates the "
@@ -57,9 +57,13 @@ def test_null_out_unsupported_tiers_nulls_toc_only_citation():
     }
     context_chunks = [{"chunk_text": TOC_ONLY_CHUNK}]
     result = _null_out_unsupported_tam_tiers(market_sizing, context_chunks)
-    assert result["tam"] is None, "tam tier cited a numeric-free chunk -- must be nulled"
-    assert result["sam"] is None
-    assert result["som"] is None
+    # Unsupported tiers are now always the canonical "Not found in
+    # sources" object, never a bare None -- so the API response can carry
+    # an explicit, honest label instead of leaving the frontend to invent
+    # its own placeholder for a missing tier.
+    assert result["tam"] == _TIER_NOT_FOUND, "tam tier cited a numeric-free chunk -- must be normalized to 'Not found in sources'"
+    assert result["sam"] == _TIER_NOT_FOUND
+    assert result["som"] == _TIER_NOT_FOUND
 
 
 def test_null_out_unsupported_tiers_keeps_real_numeric_citation():
@@ -101,8 +105,8 @@ def test_null_out_unsupported_tiers_handles_multiple_tiers_independently():
     context_chunks = [{"chunk_text": REAL_DOLLAR_CHUNK}, {"chunk_text": TOC_ONLY_CHUNK}]
     result = _null_out_unsupported_tam_tiers(market_sizing, context_chunks)
     assert result["tam"] == market_sizing["tam"]
-    assert result["sam"] is None
-    assert result["som"] is None
+    assert result["sam"] == _TIER_NOT_FOUND
+    assert result["som"] == _TIER_NOT_FOUND
 
 
 def test_null_out_unsupported_tiers_handles_out_of_range_citation_index_gracefully():

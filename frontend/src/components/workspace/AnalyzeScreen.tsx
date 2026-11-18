@@ -488,22 +488,28 @@ export function AnalyzeScreen({
               </div>
             </div>
 
-            <div className="mt-3">
-              <label
-                htmlFor="datasource-url-input"
-                className="block text-[11px] font-medium text-slate-400"
-              >
-                Business Directory Source URL (optional — not yet used by analysis)
-              </label>
-              <input
-                id="datasource-url-input"
-                type="url"
-                value={dataSourceUrl}
-                onChange={(e) => setDataSourceUrl(e.target.value)}
-                placeholder="https://..."
-                className="mt-1 w-full rounded-lg border border-slate-700/80 bg-[#050a18] px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:border-[#4a8fff] focus:outline-none"
-              />
-            </div>
+            {mode === "business" && (
+              <div className="mt-3">
+                <label
+                  htmlFor="datasource-url-input"
+                  className="block text-[11px] font-medium text-slate-400"
+                >
+                  Advanced: Business Directory Source URL (optional)
+                </label>
+                <input
+                  id="datasource-url-input"
+                  type="url"
+                  value={dataSourceUrl}
+                  onChange={(e) => setDataSourceUrl(e.target.value)}
+                  placeholder="https://services6.arcgis.com/.../FeatureServer/0/query"
+                  className="mt-1 w-full rounded-lg border border-slate-700/80 bg-[#050a18] px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:border-[#4a8fff] focus:outline-none"
+                />
+                <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
+                  Only a real City of Mississauga or Esri ArcGIS open-data URL is accepted; anything
+                  else is rejected before analysis runs. Leave blank to use the default directory.
+                </p>
+              </div>
+            )}
 
             <div className="mt-4 border-t border-slate-800/80 pt-4">
               <p className="text-[11px] font-medium text-slate-400">

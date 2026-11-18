@@ -2,6 +2,7 @@ import asyncio
 import sys
 from pathlib import Path
 from fastapi import APIRouter
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 # Allow importing the sibling top-level 'agents' package (repo_root/agents)
@@ -13,6 +14,7 @@ if str(REPO_ROOT) not in sys.path:
 from agents.rag_pipeline import run_pipeline, STRUCTURED_FRAMEWORKS  # noqa: E402
 from agents.synthesis import synthesize_business_metrics  # noqa: E402
 from agents.report_qa import answer_report_question  # noqa: E402
+from agents import mississauga_data  # noqa: E402
 
 router = APIRouter()
 
@@ -81,8 +83,20 @@ def build_analysis_query(idea: str, framework: str, industry: str | None = None,
 
 class AnalysisRequest(BaseModel):
     idea: str
+    # GitHub "unify backend" follow-up: these 4 camelCase fields match
+    # exactly what frontend/src/App.tsx already sends on every /api/analyze
+    # call (mode/businessName/dataSourceUrl were previously silently
+    # dropped by pydantic's default extra="ignore" behavior -- declaring
+    # them here is what actually wires them up).
+    mode: str = "idea"  # "idea" or "business"
+    businessName: str | None = None
     industry: str | None = None
     geography: str | None = None
+    # Only an https:// URL on a real City of Mississauga/Esri ArcGIS
+    # open-data host is accepted -- validated in analyze() below via
+    # agents.mississauga_data.validate_data_source_url(), which raises
+    # 400 for anything else before any network call is made.
+    dataSourceUrl: str | None = None
     frameworks: list[str] = ["pestel", "swot", "tam", "bmc", "porter", "stp", "bcg", "value_chain", "balanced_scorecard", "ansoff"]
     tier: str = "free"  # "free" or "paid"
 
@@ -94,6 +108,29 @@ class AnalysisResponse(BaseModel):
     results: dict
     verification: dict
     business_metrics: dict  # Phase 2 of docs/BUSINESS_METRICS_SPEC.md; keys: market_size, competitive_pressure, customer_segment, business_model_fit, risk_flags -- each a dict or None
+    # Real City of Mississauga open-data business-directory lookup
+    # (agents/mississauga_data.py) -- None whenever the geography doesn't
+    # qualify (Mississauga/GTA/Ontario) and the feature never ran at all;
+    # the frontend renders its directory badge only when directory_status
+    # is non-None.
+    directory_status: str | None = None  # "found" | "sector_context" | "not_found" | None
+    directory_matches: int | None = None
+    directory_exact_match: bool | None = None
+    directory_total_sector: int | None = None
+    # Whole-report retrieval-health summary: "grounded" if at least one
+    # framework ended up with a real citation (vector-matched or
+    # directory), "unavailable" if none did. Never fabricated -- computed
+    # from the same citations the frontend itself sees, not a separate
+    # guess.
+    rag_status: str | None = None
+    # The geography actually used for retrieval/directory lookup --
+    # always present (never None), since analyze() always resolves one
+    # even when the request sent none. geography_defaulted is true when
+    # the request itself had no geography and this server-side default
+    # was applied, so the frontend can show *why* directory data appears
+    # even though the user never typed a geography.
+    geography: str = "Mississauga, ON, Canada"
+    geography_defaulted: bool = False
 
 
 @router.post("/analyze", response_model=AnalysisResponse)
@@ -104,22 +141,61 @@ async def analyze(req: AnalysisRequest):
     else:
         allowed = req.frameworks
 
+    if req.dataSourceUrl:
+        try:
+            mississauga_data.validate_data_source_url(req.dataSourceUrl)
+        except mississauga_data.DataSourceUrlError as exc:
+            # {"error": ...}, not FastAPI's default {"detail": ...} --
+            # frontend/src/App.tsx reads `data.error` on a non-ok response
+            # (the same shape the AI Studio source's server.ts used for
+            # its own 400s), so this must match that shape to actually
+            # surface the real message instead of falling back to a
+            # generic one.
+            return JSONResponse(status_code=400, content={"error": str(exc)})
+
+    # server.ts's own default when the frontend sends no geography at all.
+    geography_defaulted = not (req.geography and req.geography.strip())
+    resolved_geography = req.geography.strip() if not geography_defaulted else "Mississauga, ON, Canada"
+
+    # Step 1 (matches the AI Studio source this was ported from): check
+    # the real Mississauga Business Directory BEFORE any web-retrieval
+    # fallback, and only for a Mississauga/GTA/Ontario geography -- a
+    # Mississauga-specific open-data lookup is meaningless context for
+    # a business based somewhere else.
+    directory_result = None
+    if mississauga_data.is_mississauga_scope(resolved_geography):
+        directory_result = await mississauga_data.query_directory(
+            mode=req.mode,
+            business_name=req.businessName,
+            idea=req.idea,
+            industry=req.industry,
+            geography=resolved_geography,
+            data_source_url=req.dataSourceUrl,
+        )
+
     results = {}
     verification = {}
 
     def build_query(framework: str) -> str:
-        return build_analysis_query(req.idea, framework, req.industry, req.geography)
+        return build_analysis_query(req.idea, framework, req.industry, resolved_geography)
 
     # Run every requested framework's pipeline concurrently instead of
-    # blocking on 4 serial OpenAI calls.
+    # blocking on 4 serial OpenAI calls. Every framework gets the same
+    # directory_result -- it was fetched once above, not once per
+    # framework.
     pipeline_outputs = await asyncio.gather(
-        *(run_pipeline(build_query(framework), framework_tag=framework) for framework in allowed)
+        *(run_pipeline(
+            build_query(framework), framework_tag=framework, directory_context=directory_result,
+            idea=req.idea, industry=req.industry, business_name=req.businessName, geography=resolved_geography,
+        ) for framework in allowed)
     )
 
     for framework, pipeline_output in zip(allowed, pipeline_outputs):
         results[framework] = {
             "text": pipeline_output["text"],
             "citations": pipeline_output["citations"],
+            "assumptions": pipeline_output.get("assumptions", []),
+            "actions": pipeline_output.get("actions", []),
         }
         for key in STRUCTURED_RESULT_KEYS:
             if key in pipeline_output:
@@ -138,6 +214,9 @@ async def analyze(req: AnalysisRequest):
         business_metrics = {key: None for key in
                              ("market_size", "competitive_pressure", "customer_segment", "business_model_fit", "risk_flags")}
 
+    has_any_real_citation = any(results[fw]["citations"] for fw in allowed)
+    rag_status = "grounded" if has_any_real_citation else "unavailable"
+
     return AnalysisResponse(
         stage="finalizing",
         frameworks_requested=req.frameworks,
@@ -145,6 +224,13 @@ async def analyze(req: AnalysisRequest):
         results=results,
         verification=verification,
         business_metrics=business_metrics,
+        directory_status=directory_result["status"] if directory_result else None,
+        directory_matches=directory_result["matched_count"] if directory_result else None,
+        directory_exact_match=directory_result["exact_match"] if directory_result else None,
+        directory_total_sector=directory_result["total_sector_count"] if directory_result else None,
+        rag_status=rag_status,
+        geography=resolved_geography,
+        geography_defaulted=geography_defaulted,
     )
 
 

@@ -94,6 +94,33 @@ test("computeReportStats calculates confidence, verdict, and deduplicated citati
   assert.equal(holdStats.tone, "red");
 });
 
+// agents/mississauga_data.py's directory citations carry similarity:
+// null (never pgvector-matched) -- averaging them in as 0% would
+// misrepresent a report that's fully grounded in real, cited directory
+// data as having a "0% match" quality score. avgSimilarity must ignore
+// null-similarity citations entirely, and report null itself (not 0)
+// when there's no real vector-matched citation anywhere to average.
+test("computeReportStats never averages a directory citation's null similarity in as 0%", () => {
+  const report = makeSampleReport(["pestel"]);
+  report.results.pestel.citations = [
+    { index: 1, source_title: "Directory", source_url: "https://services6.arcgis.com/x", similarity: null },
+  ];
+  const stats = computeReportStats(report);
+  // Other frameworks still have real 0.86/0.74 citations, so the real
+  // average must be unaffected by pestel's null-similarity citation.
+  assert.equal(stats.avgSimilarity, 80);
+
+  const allDirectoryReport = makeSampleReport([]);
+  for (const key of Object.keys(allDirectoryReport.results)) {
+    allDirectoryReport.results[key].citations = [
+      { index: 1, source_title: "Directory", source_url: "https://services6.arcgis.com/x", similarity: null },
+    ];
+  }
+  const allDirectoryStats = computeReportStats(allDirectoryReport);
+  assert.equal(allDirectoryStats.avgSimilarity, null, "with zero real vector-matched citations, avgSimilarity must be null (not a fabricated 0%)");
+  assert.equal(allDirectoryStats.totalCitations, 4, "directory citations still count toward totalCitations -- they're real, just not similarity-scored");
+});
+
 test("dedupeCitations removes duplicate source_url entries preserving order", () => {
   const deduped = dedupeCitations([
     { index: 1, source_title: "A", source_url: "https://a.com", similarity: 0.9 },

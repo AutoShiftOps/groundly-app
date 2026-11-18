@@ -29,7 +29,12 @@ def test_value_chain_registered_in_structured_frameworks():
     _suffix, field_name, schema_name, schema = STRUCTURED_FRAMEWORKS["value_chain"]
     assert field_name == "value_chain"
     assert schema_name == "grounded_value_chain_analysis"
-    assert schema is VALUE_CHAIN_SCHEMA
+    # STRUCTURED_FRAMEWORKS' schema is VALUE_CHAIN_SCHEMA plus the shared
+    # assumptions/actions fields merged in (_with_assumptions_actions) --
+    # no longer the exact same object, but value_chain's own part of the
+    # schema must be unchanged.
+    assert schema["properties"]["value_chain"] == VALUE_CHAIN_SCHEMA["properties"]["value_chain"]
+    assert "assumptions" in schema["properties"] and "actions" in schema["properties"]
 
 
 def test_value_chain_schema_requires_narrative_and_all_nine_categories():
