@@ -1,13 +1,19 @@
-// Print-only brochure layout (feature/print-brochure). Rendered inside
-// ReportView.tsx, hidden on screen (.print-only), visible only in
-// @media print (frontend/src/index.css). Reuses the real report
-// components and data -- TamConcentricDiagram, FrameworkDiagramBody,
-// renderTextWithInlineCitations, CitationChip, FRAMEWORK_NAV_ITEMS
-// order, reportStats -- so print and screen can never show different
-// numbers. Every value here comes from the real `report` object; a
+// Print brochure (feature/print-brochure). PrintBrochureContent is the
+// one real layout -- PrintBrochure portals it into document.body as a
+// print-only sibling of #root (so Ctrl+P or the Print Report button
+// prints the brochure alone, never the on-screen report underneath),
+// and BrochurePreview renders the exact same content inline, on
+// screen, for the "Brochure View" toggle. Same component either way --
+// print and preview can never show different content. Reuses the real
+// report components and data -- TamConcentricDiagram,
+// FrameworkDiagramBody, renderTextWithInlineCitations, CitationChip,
+// FRAMEWORK_NAV_ITEMS order, reportStats, ConfidenceRing -- so nothing
+// here can drift from what the on-screen report itself shows. A
 // framework with no grounding prints its real empty state, never a
-// placeholder.
+// placeholder; nothing here is sample/invented content.
+import { createPortal } from "react-dom";
 import { CheckCircle2, ShieldAlert } from "lucide-react";
+import { ConfidenceRing, TONE_HEX } from "./ReportView";
 import {
   CitationChip,
   FrameworkDiagramBody,
@@ -32,6 +38,18 @@ const PROVIDER_LABELS: Record<string, string> = {
   mixed: "Generated with Gemini and OpenAI (mixed)",
 };
 
+// Only these 5 keys are ever real (agents/synthesis.py's
+// BUSINESS_METRICS_SCHEMA) -- execution_risk/revenue_potential or any
+// other card some earlier mock showed don't exist on the backend and
+// must never be invented here.
+const REAL_BUSINESS_METRIC_KEYS = [
+  "market_size",
+  "competitive_pressure",
+  "customer_segment",
+  "business_model_fit",
+  "risk_flags",
+] as const;
+
 function factsLine(report: GroundlyReport, fw: string): string | null {
   const v = report.verification?.[fw];
   if (!v || typeof v.facts_total !== "number" || v.facts_total <= 0) return null;
@@ -52,123 +70,20 @@ function VerificationBadge({ verified }: { verified?: boolean }) {
   );
 }
 
-function CoverPage({ report, idea, title, date }: PrintBrochureProps) {
-  const stats = computeReportStats(report);
-  const allCitations = collectAllCitations(report);
-  const factsTotal = Object.values(report.verification || {}).reduce(
-    (sum, v) => sum + (v.facts_total ?? 0),
-    0,
-  );
-  const factsSupported = Object.values(report.verification || {}).reduce(
-    (sum, v) => sum + (v.facts_supported ?? 0),
-    0,
-  );
-
+function SpreadHeader({ kicker, title }: { kicker: string; title: string }) {
   return (
-    <section className="print-page print-cover">
-      <div className="print-cover-inner">
-        <div className="print-cover-brand">
-          <span className="print-cover-hex" aria-hidden="true">
-            <svg viewBox="0 0 20 20" className="h-6 w-6" fill="none">
-              <path d="M10 2L17 6V14L10 18L3 14V6L10 2Z" stroke="currentColor" strokeWidth="1.7" />
-              <path d="M10 6.5V10L13.2 11.8" stroke="#34d399" strokeWidth="1.7" strokeLinecap="round" />
-            </svg>
-          </span>
-          Groundly
-        </div>
-
-        <h1 className="print-cover-title">{title}</h1>
-        <p className="print-cover-idea">{idea}</p>
-
-        <div className="print-cover-meta">
-          <span>{date}</span>
-          {report.geography && (
-            <span>
-              {report.geography}
-              {report.geography_defaulted ? " (default)" : ""}
-            </span>
-          )}
-        </div>
-
-        {factsTotal > 0 && (
-          <p className="print-cover-summary">
-            {stats.verifiedCount} of {stats.totalFrameworks} frameworks verified · {factsSupported} of{" "}
-            {factsTotal} facts supported · {allCitations.length}{" "}
-            {allCitations.length === 1 ? "source" : "sources"}
-          </p>
-        )}
-      </div>
-    </section>
+    <div className="print-spread-header">
+      <span className="print-spread-kicker">{kicker}</span>
+      <h2 className="print-h2">{title}</h2>
+    </div>
   );
 }
 
-function ExecutiveSummaryPage({ report }: { report: GroundlyReport }) {
-  return (
-    <section className="print-page print-light">
-      <h2 className="print-h2">Executive Summary</h2>
-
-      <div className="print-metric-grid">
-        {BUSINESS_METRIC_CARDS.map((card) => {
-          const metric = report.business_metrics?.[card.key];
-          const Icon = card.icon;
-          return (
-            <div key={card.key} className="print-metric-card" style={{ borderColor: card.accent }}>
-              <div className="print-metric-head" style={{ color: card.accent }}>
-                <Icon className="h-4 w-4" />
-                {card.label}
-              </div>
-              {metric ? (
-                <>
-                  <p className="print-metric-label">{metric.label}</p>
-                  <p className="print-metric-rationale">
-                    {metric.rationale}
-                    <CitationChip index={metric.citation_index} />
-                  </p>
-                </>
-              ) : (
-                <p className="print-metric-empty">Not enough data</p>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {report.results?.tam?.market_sizing && (
-        <div className="print-tam-wrap">
-          <TamConcentricDiagram
-            marketSizing={report.results.tam.market_sizing}
-            result={report.results.tam}
-          />
-        </div>
-      )}
-
-      <h3 className="print-h3">Verification at a Glance</h3>
-      <div className="print-verify-strip">
-        {FRAMEWORK_NAV_ITEMS.filter((item) => report.results?.[item.key]).map((item) => {
-          const v = report.verification?.[item.key];
-          const facts = factsLine(report, item.key);
-          return (
-            <div key={item.key} className="print-verify-row">
-              <span className="print-verify-name" style={{ color: item.color }}>
-                {item.label}
-              </span>
-              <VerificationBadge verified={v?.verified} />
-              {facts && <span className="print-verify-facts">{facts}</span>}
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-function FrameworkSection({
-  frameworkKey,
-  report,
-}: {
-  frameworkKey: FrameworkKey;
-  report: GroundlyReport;
-}) {
+// One framework's real content -- diagram, narrative, badge, fact
+// count, or the honest empty state. Used standalone (Market spread)
+// and inside the Strategy spread's 2x2 grid; never a different shape
+// in either place.
+function FrameworkCard({ frameworkKey, report }: { frameworkKey: FrameworkKey; report: GroundlyReport }) {
   const item = FRAMEWORK_NAV_ITEMS.find((i) => i.key === frameworkKey)!;
   const result = report.results?.[frameworkKey];
   const verification = report.verification?.[frameworkKey];
@@ -177,9 +92,9 @@ function FrameworkSection({
   const hasGrounding = Boolean(result?.citations?.length);
 
   return (
-    <section className="print-page print-light print-framework-section" data-framework={frameworkKey}>
+    <div className="print-fw-card" data-framework={frameworkKey}>
       <div className="print-fw-band" style={{ background: item.color }}>
-        <Icon className="h-5 w-5 text-white" />
+        <Icon className="h-4 w-4 text-white" />
         <span className="print-fw-band-title">{item.label}</span>
         <span className="print-fw-band-badge">
           <VerificationBadge verified={verification?.verified} />
@@ -192,41 +107,66 @@ function FrameworkSection({
       ) : (
         <>
           <p className="print-body-text">{renderTextWithInlineCitations(result.text)}</p>
-
           <div className="print-diagram-wrap">
             <FrameworkDiagramBody frameworkKey={frameworkKey} result={result} />
           </div>
-
-          <div className="print-callout-grid">
-            <div className="print-callout">
-              <p className="print-callout-title">Assumptions</p>
-              {result.assumptions && result.assumptions.length > 0 ? (
-                <ul className="print-callout-list">
-                  {result.assumptions.map((a, i) => (
-                    <li key={i}>{a}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="print-callout-empty">None surfaced.</p>
-              )}
-            </div>
-            <div className="print-callout">
-              <p className="print-callout-title">Actions</p>
-              {result.actions && result.actions.length > 0 ? (
-                <ul className="print-callout-list">
-                  {result.actions.map((a, i) => (
-                    <li key={i}>{a}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="print-callout-empty">None surfaced.</p>
-              )}
-            </div>
-          </div>
         </>
       )}
-    </section>
+    </div>
   );
+}
+
+function EvidenceBarChart({ report }: { report: GroundlyReport }) {
+  const items = FRAMEWORK_NAV_ITEMS.filter((item) => report.results?.[item.key]);
+  return (
+    <div className="print-evidence-chart">
+      {items.map((item) => {
+        const v = report.verification?.[item.key];
+        const total = v?.facts_total ?? 0;
+        const supported = v?.facts_supported ?? 0;
+        const pct = total > 0 ? Math.round((supported / total) * 100) : 0;
+        return (
+          <div key={item.key} className="print-evidence-row">
+            <span className="print-evidence-label">{item.label}</span>
+            <div className="print-evidence-track">
+              <div
+                className="print-evidence-fill"
+                style={{ width: `${pct}%`, background: item.color }}
+              />
+            </div>
+            <span className="print-evidence-count">
+              {total > 0 ? `${supported}/${total}` : "—"}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+interface AggregatedItem {
+  text: string;
+  frameworks: string[];
+}
+
+function aggregate(report: GroundlyReport, field: "assumptions" | "actions"): AggregatedItem[] {
+  const byText = new Map<string, AggregatedItem>();
+  for (const item of FRAMEWORK_NAV_ITEMS) {
+    const result = report.results?.[item.key];
+    const values = result?.[field];
+    if (!values) continue;
+    for (const raw of values) {
+      const key = raw.trim().toLowerCase();
+      if (!key) continue;
+      const existing = byText.get(key);
+      if (existing) {
+        if (!existing.frameworks.includes(item.label)) existing.frameworks.push(item.label);
+      } else {
+        byText.set(key, { text: raw.trim(), frameworks: [item.label] });
+      }
+    }
+  }
+  return Array.from(byText.values());
 }
 
 function sourceTypeLabel(url: string, similarity: number | null): string {
@@ -237,13 +177,203 @@ function sourceTypeLabel(url: string, similarity: number | null): string {
   return "Web";
 }
 
-function SourcesAppendixPage({ report }: { report: GroundlyReport }) {
+function CoverAndSummarySpread({ report, idea, title, date }: PrintBrochureProps) {
+  const stats = computeReportStats(report);
+  const allCitations = collectAllCitations(report);
+
+  return (
+    <>
+      <section className="print-page print-cover">
+        <div className="print-cover-inner">
+          <div className="print-cover-brand">
+            <span className="print-cover-hex" aria-hidden="true">
+              <svg viewBox="0 0 20 20" className="h-6 w-6" fill="none">
+                <path d="M10 2L17 6V14L10 18L3 14V6L10 2Z" stroke="currentColor" strokeWidth="1.7" />
+                <path d="M10 6.5V10L13.2 11.8" stroke="#34d399" strokeWidth="1.7" strokeLinecap="round" />
+              </svg>
+            </span>
+            Groundly
+          </div>
+          <h1 className="print-cover-title">{title}</h1>
+          <p className="print-cover-idea">{idea}</p>
+          <div className="print-cover-meta">
+            <span>{date}</span>
+            {report.geography && (
+              <span>
+                {report.geography}
+                {report.geography_defaulted ? " (default)" : ""}
+              </span>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="print-page print-light">
+        <SpreadHeader kicker="SUMMARY" title="Evidence Verdict" />
+
+        <div className="print-summary-top">
+          <ConfidenceRing
+            pct={stats.confidencePct}
+            tone={stats.tone}
+            verifiedCount={stats.verifiedCount}
+            totalFrameworks={stats.totalFrameworks}
+          />
+          <div className="print-summary-verdict">
+            <p className="print-summary-verdict-label">{stats.verdict}</p>
+            <p className="print-summary-verdict-sub">{stats.verdictSub}</p>
+            <p className="print-summary-verdict-meta">
+              {allCitations.length} {allCitations.length === 1 ? "source" : "sources"}
+            </p>
+          </div>
+        </div>
+
+        <h3 className="print-h3">Business Metrics</h3>
+        <div className="print-metric-grid">
+          {BUSINESS_METRIC_CARDS.filter((card) =>
+            (REAL_BUSINESS_METRIC_KEYS as readonly string[]).includes(card.key),
+          ).map((card) => {
+            const metric = report.business_metrics?.[card.key];
+            const Icon = card.icon;
+            return (
+              <div key={card.key} className="print-metric-card" style={{ borderColor: card.accent }}>
+                <div className="print-metric-head" style={{ color: card.accent }}>
+                  <Icon className="h-4 w-4" />
+                  {card.label}
+                </div>
+                {metric ? (
+                  <>
+                    <p className="print-metric-label">{metric.label}</p>
+                    <p className="print-metric-rationale">
+                      {metric.rationale}
+                      <CitationChip index={metric.citation_index} />
+                    </p>
+                  </>
+                ) : (
+                  <p className="print-metric-empty">Not enough data</p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <h3 className="print-h3">Facts Supported by Framework</h3>
+        <EvidenceBarChart report={report} />
+      </section>
+    </>
+  );
+}
+
+function MarketSpread({ report }: { report: GroundlyReport }) {
+  const hasTam = Boolean(report.results?.tam);
+  const hasPestel = Boolean(report.results?.pestel);
+  const hasPorter = Boolean(report.results?.porter);
+  if (!hasTam && !hasPestel && !hasPorter) return null;
+
+  return (
+    <section className="print-page print-light">
+      <SpreadHeader kicker="01 / MARKET" title="Market Sizing &amp; Context" />
+      {hasTam && report.results!.tam.market_sizing && (
+        <div className="print-fw-card" data-framework="tam">
+          <div className="print-fw-band" style={{ background: FRAMEWORK_NAV_ITEMS.find((i) => i.key === "tam")!.color }}>
+            <span className="print-fw-band-title">TAM SAM SOM</span>
+            <span className="print-fw-band-badge">
+              <VerificationBadge verified={report.verification?.tam?.verified} />
+              {factsLine(report, "tam") && (
+                <span className="print-verify-facts print-fw-band-facts">{factsLine(report, "tam")}</span>
+              )}
+            </span>
+          </div>
+          <div className="print-diagram-wrap">
+            <TamConcentricDiagram marketSizing={report.results!.tam.market_sizing} result={report.results!.tam} />
+          </div>
+        </div>
+      )}
+      {hasPestel && <FrameworkCard frameworkKey="pestel" report={report} />}
+      {hasPorter && <FrameworkCard frameworkKey="porter" report={report} />}
+    </section>
+  );
+}
+
+function StrategySpread({ report }: { report: GroundlyReport }) {
+  const keys: FrameworkKey[] = ["swot", "bcg", "ansoff", "stp"];
+  const present = keys.filter((k) => report.results?.[k]);
+  if (present.length === 0) return null;
+
+  return (
+    <section className="print-page print-light">
+      <SpreadHeader kicker="02 / STRATEGY" title="Strategic Position" />
+      <div className="print-strategy-grid">
+        {present.map((k) => (
+          <FrameworkCard key={k} frameworkKey={k} report={report} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function OperationsSpread({ report }: { report: GroundlyReport }) {
+  const keys: FrameworkKey[] = ["value_chain", "bmc", "balanced_scorecard"];
+  const present = keys.filter((k) => report.results?.[k]);
+  const assumptions = aggregate(report, "assumptions");
+  const actions = aggregate(report, "actions");
+  if (present.length === 0 && assumptions.length === 0 && actions.length === 0) return null;
+
+  return (
+    <section className="print-page print-light">
+      <SpreadHeader kicker="03 / OPERATIONS" title="Operating Model" />
+      {present.map((k) => (
+        <FrameworkCard key={k} frameworkKey={k} report={report} />
+      ))}
+
+      <div className="print-callout-grid">
+        <div className="print-callout">
+          <p className="print-callout-title">Key Assumptions to Validate</p>
+          {assumptions.length > 0 ? (
+            <ul className="print-callout-list">
+              {assumptions.map((a, i) => (
+                <li key={i}>
+                  {a.text} <span className="print-callout-tag">({a.frameworks.join(", ")})</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="print-callout-empty">None surfaced.</p>
+          )}
+        </div>
+        <div className="print-callout">
+          <p className="print-callout-title">Next Actions</p>
+          {actions.length > 0 ? (
+            <ul className="print-callout-list">
+              {actions.map((a, i) => (
+                <li key={i}>
+                  {a.text} <span className="print-callout-tag">({a.frameworks.join(", ")})</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="print-callout-empty">None surfaced.</p>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SourcesBackCover({ report }: { report: GroundlyReport }) {
   const allCitations = collectAllCitations(report);
   const providerUsed = (report as GroundlyReport & { provider_used?: string | null }).provider_used;
 
   return (
     <section className="print-page print-light">
-      <h2 className="print-h2">Sources</h2>
+      <SpreadHeader kicker="04 / SOURCES" title="Sources &amp; Methodology" />
+
+      {(report.directory_status || report.rag_status) && (
+        <p className="print-status-line">
+          {report.directory_status && <span>Directory: {report.directory_status}</span>}
+          {report.rag_status && <span>Retrieval: {report.rag_status}</span>}
+        </p>
+      )}
+
       <ol className="print-sources-list">
         {allCitations.map((c, i) => (
           <li key={`${c.framework}-${c.index}-${i}`} className="print-source-item">
@@ -275,17 +405,34 @@ function SourcesAppendixPage({ report }: { report: GroundlyReport }) {
   );
 }
 
-export function PrintBrochure({ report, idea, title, date }: PrintBrochureProps) {
-  const frameworkItems = FRAMEWORK_NAV_ITEMS.filter((item) => report.results?.[item.key]);
-
+export function PrintBrochureContent({ report, idea, title, date }: PrintBrochureProps) {
   return (
+    <>
+      <CoverAndSummarySpread report={report} idea={idea} title={title} date={date} />
+      <MarketSpread report={report} />
+      <StrategySpread report={report} />
+      <OperationsSpread report={report} />
+      <SourcesBackCover report={report} />
+    </>
+  );
+}
+
+export function PrintBrochure(props: PrintBrochureProps) {
+  const content = (
     <div className="print-only print-brochure">
-      <CoverPage report={report} idea={idea} title={title} date={date} />
-      <ExecutiveSummaryPage report={report} />
-      {frameworkItems.map((item) => (
-        <FrameworkSection key={item.key} frameworkKey={item.key as FrameworkKey} report={report} />
-      ))}
-      <SourcesAppendixPage report={report} />
+      <PrintBrochureContent {...props} />
+    </div>
+  );
+  // SSR (tests via react-dom/server) has no `document` -- render inline
+  // instead of portaling, same markup either way.
+  if (typeof document === "undefined") return content;
+  return createPortal(content, document.body);
+}
+
+export function BrochurePreview(props: PrintBrochureProps) {
+  return (
+    <div className="print-brochure brochure-preview">
+      <PrintBrochureContent {...props} />
     </div>
   );
 }

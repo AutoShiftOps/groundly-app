@@ -209,6 +209,22 @@ export function TamConcentricDiagram({
   ];
 
   const topCitations = (result?.citations || []).slice(0, 3);
+  // "Key Takeaway" used to always fall through to a hardcoded sentence
+  // ("Bottom-up serviceable sizing isolates your realistic 3-year
+  // wedge.") on every single report, since MarketTier.note is a legacy
+  // field the backend never actually populates -- confirmed dead code,
+  // not a real fallback. Real content instead: the narrative's own
+  // first sentence (same text the Summary tab already shows, just
+  // truncated to one line), stripped of its [N] markers since this is
+  // a short-form card, not the full cited narrative. Hidden entirely
+  // when there's no real narrative to pull from, rather than inventing
+  // one.
+  const takeaway = (() => {
+    const text = (result?.text || "").trim();
+    if (!text || text.startsWith("Insufficient grounded data")) return null;
+    const firstSentence = text.split(/(?<=[.!?])\s+/)[0];
+    return firstSentence ? firstSentence.replace(/\s*\[\d+\]/g, "").trim() : null;
+  })();
 
   return (
     <div className="space-y-4">
@@ -393,20 +409,19 @@ export function TamConcentricDiagram({
       </div>
 
       {/* Key Takeaway & Top Citations Bar matching report-ux-mock.png */}
-      {(som?.note || topCitations.length > 0) && (
+      {(takeaway || topCitations.length > 0) && (
         <div className="surface-subpanel flex flex-col gap-3 rounded-xl px-4 py-3.5 md:flex-row md:items-center md:justify-between">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-[#22f59d]">
-              <Lightbulb className="h-3.5 w-3.5" />
-              <span>Key Takeaway</span>
+          {takeaway && (
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-[#22f59d]">
+                <Lightbulb className="h-3.5 w-3.5" />
+                <span>Key Takeaway</span>
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-slate-300">
+                {takeaway}
+              </p>
             </div>
-            <p className="mt-1 text-xs leading-relaxed text-slate-300">
-              {som?.note ||
-                sam?.note ||
-                tam?.note ||
-                "Bottom-up serviceable sizing isolates your realistic 3-year wedge."}
-            </p>
-          </div>
+          )}
           {topCitations.length > 0 && (
             <div className="shrink-0">
               <p className="mb-1.5 font-mono text-[10px] uppercase tracking-wider text-slate-400">

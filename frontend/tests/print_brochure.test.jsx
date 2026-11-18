@@ -6,7 +6,7 @@
 // FrameworkDiagramBody, CitationChip) the on-screen report uses.
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { PrintBrochure } from "../src/components/report/PrintBrochure.tsx";
+import { BrochurePreview, PrintBrochure } from "../src/components/report/PrintBrochure.tsx";
 import { FRAMEWORK_NAV_ITEMS } from "../src/components/report/frameworkMeta.ts";
 import { check, finish } from "./lib/ssr-assert.mjs";
 
@@ -80,11 +80,16 @@ check(
   "All 10 framework section bands are present",
   FRAMEWORK_NAV_ITEMS.every((item) => sectionIndex(fullHtml, item.key) !== -1),
 );
+// Addendum B's editorial layout groups frameworks into themed spreads
+// with their own explicit order (Market: TAM, PESTEL, Porter; Strategy:
+// SWOT, BCG, Ansoff, STP; Operations: Value Chain, BMC, Balanced
+// Scorecard) -- not a single global FRAMEWORK_NAV_ITEMS sequence.
 check(
-  "Framework sections appear in FRAMEWORK_NAV_ITEMS order",
+  "Framework sections appear in the spec's editorial spread order",
   (() => {
-    const positions = FRAMEWORK_NAV_ITEMS.map((item) => sectionIndex(fullHtml, item.key));
-    return positions.every((pos, i) => i === 0 || pos > positions[i - 1]);
+    const order = ["tam", "pestel", "porter", "swot", "bcg", "ansoff", "stp", "value_chain", "bmc", "balanced_scorecard"];
+    const positions = order.map((key) => sectionIndex(fullHtml, key));
+    return positions.every((pos, i) => pos !== -1 && (i === 0 || pos > positions[i - 1]));
   })(),
 );
 
@@ -161,6 +166,80 @@ check(
 check(
   "A real pgvector citation still shows its real % match",
   /70% match/.test(directoryHtml),
+);
+
+// --- Addendum A1/C: print wrapper carries print-only + the portal's
+// SSR fallback, so #root-hiding + .print-only visibility CSS actually
+// targets this structure; the preview wrapper carries neither, since
+// it must stay visible on screen without relying on print media. ---
+check(
+  "Print output is wrapped in print-only.print-brochure (the structure @media print's #root/.print-only rules target)",
+  /<div class="print-only print-brochure">/.test(fullHtml),
+);
+const previewHtml = renderToStaticMarkup(
+  <BrochurePreview report={fullReport} idea="A test idea" title="Test Venture" date="Nov 18, 2026" />,
+);
+check(
+  "Brochure preview uses the same content but never carries print-only (it must stay visible on screen)",
+  previewHtml.includes('class="print-brochure brochure-preview"') && !previewHtml.includes("print-only"),
+);
+check(
+  "Preview and print render the identical framework section markup (same component, cannot differ)",
+  (() => {
+    const printInner = fullHtml.slice(fullHtml.indexOf('data-framework="tam"'));
+    const previewInner = previewHtml.slice(previewHtml.indexOf('data-framework="tam"'));
+    return printInner === previewInner;
+  })(),
+);
+
+// --- Only the 5 real business_metrics keys ever render a card -- an
+// invented key (e.g. "execution_risk", never real per agents/
+// synthesis.py's BUSINESS_METRICS_SCHEMA) must never appear. ---
+const extraKeyReport = buildFullReport();
+extraKeyReport.business_metrics.execution_risk = { label: "High", rationale: "invented", citation_index: null, source_framework: "swot" };
+const extraKeyHtml = renderToStaticMarkup(
+  <PrintBrochure report={extraKeyReport} idea="A test idea" title="Test Venture" date="Nov 18, 2026" />,
+);
+check(
+  "An invented business-metric key (execution_risk) never renders a card",
+  !extraKeyHtml.includes("execution_risk") && !/EXECUTION RISK/i.test(extraKeyHtml),
+);
+check(
+  "All 5 real business-metric cards (Market Size, Competitive Pressure, Best Customer Segment, Business Model Fit, Risk Flags) are present",
+  ["Market Size", "Competitive Pressure", "Best Customer Segment", "Business Model Fit", "Risk Flags"].every(
+    (label) => fullHtml.includes(label),
+  ),
+);
+
+// --- Aggregated assumptions/actions: a duplicate assumption shared by
+// two frameworks appears once, tagged with both source frameworks. ---
+const aggReport = buildFullReport();
+aggReport.results.pestel.assumptions = ["Freelancer demand holds steady."];
+aggReport.results.swot.assumptions = ["Freelancer demand holds steady."];
+const aggHtml = renderToStaticMarkup(
+  <PrintBrochure report={aggReport} idea="A test idea" title="Test Venture" date="Nov 18, 2026" />,
+);
+check(
+  "A duplicate assumption shared by two frameworks appears once, not twice",
+  aggHtml.split("Freelancer demand holds steady.").length - 1 === 1,
+);
+check(
+  "The de-duplicated assumption is tagged with both source frameworks",
+  (() => {
+    const idx = aggHtml.indexOf("Freelancer demand holds steady.");
+    const chunk = aggHtml.slice(idx, idx + 120);
+    return chunk.includes("PESTEL") && chunk.includes("SWOT");
+  })(),
+);
+check(
+  "No invented '90-day' or timing label appears anywhere in the brochure",
+  !/90-day/i.test(fullHtml) && !/90 day/i.test(fullHtml),
+);
+
+// --- No hardcoded TAM "Key Takeaway" fallback sentence anywhere ---
+check(
+  "The old hardcoded TAM takeaway sentence never renders",
+  !fullHtml.includes("Bottom-up serviceable sizing isolates your realistic 3-year wedge."),
 );
 
 finish("PrintBrochure: real data only, honest empty states, correct framework order");
