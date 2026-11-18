@@ -186,7 +186,36 @@
   animation: groundlySparkStream 0.75s linear -0.6s infinite;
 }
 
+.print-only {
+  display: none;
+}
+
+@page {
+  size: Letter;
+  margin: 14mm 12mm;
+  @bottom-left {
+    content: "Groundly";
+  }
+  @bottom-right {
+    content: "Page " counter(page);
+  }
+}
+
+/* Full-bleed cover: zero margins so the brand gradient background can
+   reach every edge of the first page. Unsupported in some engines
+   (Firefox has no :first support for named margin content) -- falls
+   back to the normal @page margin there, which is a minor cosmetic
+   loss, not a broken layout. */
+@page :first {
+  margin: 0;
+}
+
 @media print {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+
   body,
   .workspace-canvas {
     background: #ffffff !important;
@@ -198,9 +227,360 @@
     display: none !important;
   }
 
+  canvas {
+    display: none !important;
+  }
+
   .print-reset {
     background: #ffffff !important;
     color: #0f172a !important;
     border-color: #cbd5e1 !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  .print-brochure {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    font-family: var(--font-body);
+  }
+
+  .print-page {
+    break-before: page;
+    break-inside: avoid;
+  }
+
+  .print-brochure > .print-page:first-child {
+    break-before: avoid;
+  }
+
+  .print-brochure .surface-panel,
+  .print-brochure .surface-subpanel {
+    background: #ffffff !important;
+    border: 1px solid #cbd5e1 !important;
+    box-shadow: none !important;
+  }
+
+  .print-brochure .text-white,
+  .print-brochure .text-slate-100,
+  .print-brochure .text-slate-200,
+  .print-brochure .text-slate-300 {
+    color: #1e293b !important;
+  }
+
+  .print-brochure .text-slate-400,
+  .print-brochure .text-slate-500 {
+    color: #475569 !important;
+  }
+
+  .print-cover {
+    background: linear-gradient(160deg, #030712 0%, #0b1736 46%, #102046 100%);
+    color: #ffffff;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .print-cover-inner {
+    max-width: 480px;
+    padding: 0 24mm;
+    text-align: center;
+  }
+
+  .print-cover-brand {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: 16pt;
+    color: #ffffff;
+  }
+
+  .print-cover-hex {
+    display: inline-flex;
+    color: #60a5fa;
+  }
+
+  .print-cover-title {
+    margin-top: 1.5rem;
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: 26pt;
+    line-height: 1.15;
+  }
+
+  .print-cover-idea {
+    margin-top: 0.75rem;
+    font-size: 11pt;
+    color: #cbd5e1;
+  }
+
+  .print-cover-meta {
+    margin-top: 1.5rem;
+    display: flex;
+    gap: 0.75rem;
+    justify-content: center;
+    font-size: 9.5pt;
+    color: #94a3b8;
+  }
+
+  .print-cover-summary {
+    margin-top: 2rem;
+    font-size: 10pt;
+    color: #e2e8f0;
+    border-top: 1px solid rgba(148, 163, 184, 0.3);
+    padding-top: 1rem;
+  }
+
+  .print-light {
+    background: #ffffff;
+    color: #1e293b;
+    padding: 4mm 0;
+  }
+
+  .print-h2 {
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: 16pt;
+    color: #0f172a;
+    margin-bottom: 8pt;
+  }
+
+  .print-h3 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 12pt;
+    color: #0f172a;
+    margin-top: 12pt;
+    margin-bottom: 6pt;
+  }
+
+  .print-metric-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8pt;
+  }
+
+  .print-metric-card {
+    break-inside: avoid;
+    border: 1.5pt solid #cbd5e1;
+    border-radius: 6pt;
+    padding: 8pt;
+  }
+
+  .print-metric-head {
+    display: flex;
+    align-items: center;
+    gap: 6pt;
+    font-weight: 700;
+    font-size: 9pt;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .print-metric-label {
+    margin-top: 4pt;
+    font-size: 13pt;
+    font-weight: 800;
+    color: #0f172a;
+  }
+
+  .print-metric-rationale {
+    margin-top: 2pt;
+    font-size: 9pt;
+    color: #334155;
+    line-height: 1.4;
+  }
+
+  .print-metric-empty {
+    margin-top: 4pt;
+    font-size: 9pt;
+    font-style: italic;
+    color: #94a3b8;
+  }
+
+  .print-tam-wrap {
+    break-inside: avoid;
+    margin-top: 10pt;
+  }
+
+  .print-verify-strip {
+    display: flex;
+    flex-direction: column;
+    gap: 4pt;
+  }
+
+  .print-verify-row {
+    break-inside: avoid;
+    display: flex;
+    align-items: center;
+    gap: 8pt;
+    font-size: 9.5pt;
+    border-bottom: 0.5pt solid #e2e8f0;
+    padding: 3pt 0;
+  }
+
+  .print-verify-name {
+    font-weight: 700;
+    min-width: 140pt;
+  }
+
+  .print-verify-facts {
+    color: #475569;
+    font-size: 8.5pt;
+  }
+
+  .print-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3pt;
+    font-size: 8.5pt;
+    font-weight: 700;
+    padding: 1.5pt 5pt;
+    border-radius: 4pt;
+  }
+
+  .print-badge-ok {
+    color: #047857;
+    background: #d1fae5;
+  }
+
+  .print-badge-warn {
+    color: #92400e;
+    background: #fef3c7;
+  }
+
+  .print-fw-band {
+    break-inside: avoid;
+    display: flex;
+    align-items: center;
+    gap: 8pt;
+    padding: 8pt 10pt;
+    border-radius: 6pt;
+    color: #ffffff;
+    margin-bottom: 10pt;
+  }
+
+  .print-fw-band-title {
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: 14pt;
+    flex: 1;
+  }
+
+  .print-fw-band-badge {
+    display: flex;
+    align-items: center;
+    gap: 6pt;
+  }
+
+  .print-fw-band-facts {
+    color: #ffffff !important;
+  }
+
+  .print-body-text {
+    font-size: 10.5pt;
+    line-height: 1.55;
+    color: #1e293b;
+  }
+
+  .print-diagram-wrap {
+    break-inside: avoid;
+    margin-top: 8pt;
+  }
+
+  .print-empty-state {
+    font-style: italic;
+    color: #94a3b8;
+    font-size: 10pt;
+    padding: 12pt 0;
+  }
+
+  .print-callout-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8pt;
+    margin-top: 10pt;
+  }
+
+  .print-callout {
+    break-inside: avoid;
+    border: 1pt solid #cbd5e1;
+    border-radius: 6pt;
+    padding: 8pt;
+  }
+
+  .print-callout-title {
+    font-weight: 700;
+    font-size: 9pt;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #0f172a;
+    margin-bottom: 4pt;
+  }
+
+  .print-callout-list {
+    font-size: 9pt;
+    line-height: 1.5;
+    color: #334155;
+    padding-left: 12pt;
+    list-style: disc;
+  }
+
+  .print-callout-empty {
+    font-size: 9pt;
+    font-style: italic;
+    color: #94a3b8;
+  }
+
+  .print-sources-list {
+    font-size: 9pt;
+    color: #1e293b;
+  }
+
+  .print-source-item {
+    break-inside: avoid;
+    padding: 5pt 0;
+    border-bottom: 0.5pt solid #e2e8f0;
+  }
+
+  .print-source-title {
+    font-weight: 700;
+  }
+
+  .print-source-url {
+    word-break: break-all;
+    color: #475569;
+  }
+
+  .print-source-meta {
+    color: #64748b;
+    font-size: 8.5pt;
+  }
+
+  .print-provider-note {
+    margin-top: 12pt;
+    font-size: 8.5pt;
+    color: #94a3b8;
+    text-align: center;
+  }
+
+  table,
+  tr,
+  .print-card {
+    break-inside: avoid;
+  }
+
+  p,
+  li {
+    orphans: 3;
+    widows: 3;
   }
 }

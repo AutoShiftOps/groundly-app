@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -13,6 +13,7 @@ import {
   Info,
   LayoutGrid,
   Lightbulb,
+  Printer,
   Share2,
   ShieldAlert,
   ShieldCheck,
@@ -40,6 +41,7 @@ import {
   FRAMEWORK_NAV_ITEMS,
 } from "./frameworkMeta";
 import { MethodologyModal } from "./MethodologyModal";
+import { PrintBrochure } from "./PrintBrochure";
 import { ReportRightRail } from "./ReportRightRail";
 
 type FrameworkSubTab = "summary" | "evidence" | "assumptions" | "actions";
@@ -240,6 +242,42 @@ export default function ReportView({
   }
 
   const [pdfState, setPdfState] = useState<"idle" | "generating" | "error">("idle");
+  const [isPrinting, setIsPrinting] = useState(false);
+  // "Still loading" from this component's own perspective -- it's only
+  // ever mounted once a project/report exists, but a report with no
+  // results yet (e.g. a saved project whose analysis never completed)
+  // has nothing real for the brochure to print.
+  const reportHasData = Object.keys(report.results || {}).length > 0;
+
+  async function handlePrint() {
+    if (!reportHasData || isPrinting) return;
+    setIsPrinting(true);
+    // Dynamically imported (same convention handleExportPdf already
+    // uses below for @react-pdf/renderer) -- ga4.js reads
+    // import.meta.env at module-evaluation time, which the SSR test
+    // bundler (esbuild, platform=node, no Vite env shim) can't
+    // resolve. A top-level import would crash every *.test.jsx file
+    // that renders ReportView, even though they never click this
+    // button. Deferring it into the handler itself (never invoked
+    // during SSR rendering) avoids that entirely.
+    const { trackEvent } = await import("../../lib/ga4");
+    trackEvent("report_printed");
+    try {
+      await document.fonts?.ready;
+    } catch {
+      // Font loading can reject in some environments -- never block
+      // printing on it.
+    }
+    requestAnimationFrame(() => {
+      window.print();
+    });
+  }
+
+  useEffect(() => {
+    const onAfterPrint = () => setIsPrinting(false);
+    window.addEventListener("afterprint", onAfterPrint);
+    return () => window.removeEventListener("afterprint", onAfterPrint);
+  }, []);
 
   async function handleExportPdf() {
     setPdfState("generating");
@@ -376,6 +414,16 @@ export default function ReportView({
                 Share Report
               </>
             )}
+          </button>
+
+          <button
+            type="button"
+            onClick={handlePrint}
+            disabled={!reportHasData || isPrinting}
+            className="surface-subpanel inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold text-slate-200 transition-colors hover:border-[#4a8fff] hover:text-white disabled:cursor-not-allowed disabled:opacity-60 whitespace-nowrap shrink-0"
+          >
+            <Printer className="h-3.5 w-3.5" />
+            Print Report
           </button>
 
           <button
@@ -1074,6 +1122,8 @@ export default function ReportView({
           onClose={() => setShowCompare(false)}
         />
       )}
+
+      <PrintBrochure report={report} idea={idea} title={title} date={dateLabel} />
     </div>
   );
 }

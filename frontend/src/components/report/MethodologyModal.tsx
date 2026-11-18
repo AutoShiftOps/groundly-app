@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { BadgeCheck, Database, Info, Search, X } from "lucide-react";
 import { FRAMEWORK_LABELS } from "./frameworkMeta";
 
-const FRAMEWORK_NOTES: Record<string, string> = {
+export const FRAMEWORK_NOTES: Record<string, string> = {
   tam: "TAM, SAM, and SOM figures are only populated when grounded in retrieved sources; missing tiers remain unverified rather than estimated.",
   pestel: "Political, economic, social, technological, environmental, and legal factors are only populated when each claim resolves to a retrieved citation; categories with no supporting evidence are left empty rather than inferred.",
   swot: "Each strength, weakness, opportunity, and threat requires an attributable citation; unsupported assertions are flagged rather than presented as a plausible-sounding list.",
