@@ -206,7 +206,7 @@ export function AnalyzeScreen({
               </div>
               <div>
                 <p className="font-display text-sm font-extrabold leading-snug text-white">
-                  Retrieving cited sources
+                  {activeStage?.label}
                 </p>
                 <p className="mt-0.5 text-xs font-medium text-slate-300">
                   {activeStage?.subtitle}
