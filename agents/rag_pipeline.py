@@ -12,6 +12,8 @@ from openai import AsyncOpenAI
 from agents.db import search_similar
 from agents import web_retrieval
 from agents import mississauga_data
+from agents import market_scope
+from agents.claim_verifier import verify_claims  # noqa: F401  module-level name, monkeypatchable on this module
 
 logger = logging.getLogger(__name__)
 
@@ -378,34 +380,6 @@ rather than using a mismatched one.
 # match the idea's category?) and the market-scope-mismatch check inside
 # verify_claims (does the cited chunk actually support what
 # tier_description claims?).
-_MARKET_SCOPE_STOPWORDS = {
-    "the", "a", "an", "of", "in", "for", "and", "or", "to", "by", "is", "are", "was", "were",
-    "from", "through", "with", "on", "at", "as", "this", "that", "its", "their",
-    "market", "size", "global", "national", "industry", "sector", "report", "forecast",
-    "analysis", "growth", "value", "valued", "billion", "million", "trillion", "usd",
-    "revenue", "overview", "outlook", "study", "insights", "trends", "projected", "projection",
-}
-_SECTOR_LEVEL_WORDS = {
-    "software", "food", "foods", "foodservice", "catering", "restaurant", "restaurants",
-    "retail", "healthcare", "health", "construction", "logistics", "freight", "transportation",
-    "consulting", "technology", "tech", "hospitality", "ecommerce", "manufacturing", "finance",
-    "financial", "education", "services", "apps", "app", "fintech", "saas",
-}
-_YEAR_PATTERN = re.compile(r"\b(?:19|20)\d{2}\b")
-
-
-def _significant_terms(text: str | None) -> set[str]:
-    """Lowercased words (len >= 4) from `text`, with years, generic
-    filler words, and bare sector/industry names all excluded -- what's
-    left is whatever actually makes this description specific to one
-    idea's market, if anything."""
-    if not text:
-        return set()
-    cleaned = _YEAR_PATTERN.sub(" ", text.lower())
-    words = re.findall(r"[a-z]{4,}", cleaned)
-    return {w for w in words if w not in _MARKET_SCOPE_STOPWORDS and w not in _SECTOR_LEVEL_WORDS}
-
-
 def _tier_matches_idea_category(tier_description: str | None, specific_category: str | None,
                                  parent_category: str | None) -> bool:
     # No category could be classified at all -- nothing to enforce
@@ -414,14 +388,14 @@ def _tier_matches_idea_category(tier_description: str | None, specific_category:
     # sourced from local/directory context instead).
     if not specific_category and not parent_category:
         return True
-    desc_terms = _significant_terms(tier_description)
+    desc_terms = market_scope.significant_terms(tier_description)
     if not desc_terms:
         # A description with nothing specific left after stripping
         # sector-level/generic words IS a bare sector-level description
         # (e.g. "U.S. software market, 2026") -- reject outright, it
         # can't match anything because it doesn't say anything specific.
         return False
-    category_terms = _significant_terms(specific_category) | _significant_terms(parent_category)
+    category_terms = market_scope.significant_terms(specific_category) | market_scope.significant_terms(parent_category)
     return bool(desc_terms & category_terms)
 
 MARKET_SIZING_SCHEMA = {
@@ -1086,66 +1060,6 @@ async def generate_with_citations(query: str, context_chunks: list, framework_ta
     return {"text": text, "citations": filtered_citations, "assumptions": [], "actions": []}
 
 
-def _tam_market_scope_mismatches(market_sizing: dict, context_chunks: list) -> list[str]:
-    """Separate from _null_out_unsupported_tam_tiers' category-fit check
-    (which compares tier_description against the idea's own classified
-    category): this compares tier_description against the ACTUAL cited
-    chunk's text -- does the source really support the specific scope
-    tier_description claims, or did the model write something more
-    specific-sounding than what the chunk actually says? A tier with no
-    citation_index, or no real value, or nothing specific in its own
-    description to check, has nothing to mismatch and is skipped."""
-    mismatches = []
-    for tier_name in ("tam", "sam", "som"):
-        tier = market_sizing.get(tier_name) if isinstance(market_sizing, dict) else None
-        if not isinstance(tier, dict) or tier.get("value_usd") is None:
-            continue
-        citation_index = tier.get("citation_index")
-        if not citation_index or not (1 <= citation_index <= len(context_chunks)):
-            continue
-        specific_terms = _significant_terms(tier.get("tier_description"))
-        if not specific_terms:
-            continue
-        chunk_text = (context_chunks[citation_index - 1].get("chunk_text") or "").lower()
-        if not any(term in chunk_text for term in specific_terms):
-            mismatches.append(tier_name)
-    return mismatches
-
-
-def verify_claims(generated_text: str, citations: list, extra_value=None, context_chunks: list | None = None):
-    # citations is already filtered down to only what's actually
-    # referenced (see _filter_referenced_citations) -- so "has_markers"
-    # here is really "is there at least one real citation this output
-    # draws from", counting a structured citation_index (e.g. a TAM tier,
-    # or a directory-sourced point) exactly the same as an inline [N]
-    # marker in the narrative. A directory citation counts the same as
-    # any other real citation -- there's nothing directory-specific to
-    # exempt it from.
-    referenced = {int(m) for m in re.findall(r"\[(\d+)\]", generated_text)}
-    referenced |= _collect_citation_indices(extra_value)
-    has_markers = any(c["index"] in referenced for c in citations)
-    if not citations:
-        unsupported = ["No grounded sources retrieved for this section"]
-    elif not has_markers:
-        unsupported = ["No inline citation markers found in output"]
-    else:
-        unsupported = []
-
-    # TAM-specific: does each tier's cited chunk actually support the
-    # scope tier_description claims? (extra_value for tam is always a
-    # {"tam":..., "sam":..., "som":...} dict -- that shape is how we
-    # recognize market_sizing here, same duck-typing _collect_citation_
-    # indices already relies on elsewhere in this module.)
-    if isinstance(extra_value, dict) and {"tam", "sam", "som"} <= set(extra_value.keys()) and context_chunks:
-        for tier_name in _tam_market_scope_mismatches(extra_value, context_chunks):
-            unsupported.append(f"market scope mismatch ({tier_name})")
-
-    return {
-        "verified": len(unsupported) == 0,
-        "unsupported_claims": unsupported,
-    }
-
-
 async def run_pipeline(
     query: str, framework_tag: str | None = None, directory_context: dict | None = None,
     idea: str | None = None, industry: str | None = None, business_name: str | None = None,
@@ -1162,8 +1076,14 @@ async def run_pipeline(
     # THIS framework's own topic (e.g. TAM dollar figures) is actually
     # covered, so the empty/weak decision below is local-similarity-only,
     # exactly as it is on main.
+    # is_directory=True is a marker for agents/claim_verifier.py: a
+    # directory citation never carries a dollar figure or market-size
+    # data, so a claim whose only support is a directory chunk can never
+    # legitimately back a market-size claim (see claim_verifier's
+    # directory-citation override) -- regardless of what the LLM
+    # verifier itself concludes.
     directory_chunks = [
-        {**citation, "chunk_text": citation.get("snippet") or ""}
+        {**citation, "chunk_text": citation.get("snippet") or "", "is_directory": True}
         for citation in (directory_context or {}).get("citations", [])
     ]
 
@@ -1346,5 +1266,5 @@ async def run_pipeline(
     )
     extra_value = result.get(STRUCTURED_FRAMEWORKS[framework_tag][1]) if framework_tag in STRUCTURED_FRAMEWORKS else None
     all_chunks_for_verify = [*chunks, *directory_chunks]
-    verification = verify_claims(result["text"], result["citations"], extra_value, context_chunks=all_chunks_for_verify)
+    verification = await verify_claims(result["text"], result["citations"], extra_value, context_chunks=all_chunks_for_verify)
     return {**result, "verification": verification}

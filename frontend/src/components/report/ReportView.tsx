@@ -922,6 +922,40 @@ export default function ReportView({
                               </ul>
                             </div>
                           )}
+                        {activeVerification?.claims &&
+                          activeVerification.claims.length > 0 && (
+                            <div className="surface-subpanel rounded-xl p-4">
+                              <p className="flex items-center gap-2 text-xs font-bold text-slate-300">
+                                <ShieldCheck className="h-4 w-4" />
+                                Per-Claim Verification (
+                                {activeVerification.claims.length})
+                              </p>
+                              <ul className="mt-2 space-y-2">
+                                {activeVerification.claims.map(
+                                  (claim, i) => (
+                                    <li
+                                      key={i}
+                                      className="flex items-start gap-2 text-xs"
+                                    >
+                                      {claim.verdict === "supported" ? (
+                                        <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#22f59d]" />
+                                      ) : (
+                                        <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#ffc142]" />
+                                      )}
+                                      <span className="text-slate-300">
+                                        <span className="text-slate-100">
+                                          {claim.text}
+                                        </span>{" "}
+                                        <span className="text-slate-500">
+                                          — {claim.reason}
+                                        </span>
+                                      </span>
+                                    </li>
+                                  ),
+                                )}
+                              </ul>
+                            </div>
+                          )}
                       </div>
                     )}
 

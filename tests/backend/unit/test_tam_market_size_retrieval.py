@@ -23,8 +23,8 @@ from agents import rag_pipeline
 from agents import web_retrieval
 
 
-def _fake_verify_claims(text, citations, extra_value=None, context_chunks=None):
-    return {"verified": False, "unsupported_claims": []}
+async def _fake_verify_claims(text, citations, extra_value=None, context_chunks=None):
+    return {"verified": False, "unsupported_claims": [], "claims": []}
 
 
 def _fake_classify(specific=None, parent=None):
