@@ -127,35 +127,15 @@ def infer_sector_keywords(business_name: str | None, idea: str | None, industry:
     return out[:4]
 
 
-# Human-readable market-size search phrase per primary sector keyword --
-# "catering services market size Canada USD" reads like a real market-
-# research query; the raw keyword ("CATER") or a NAICS code does not.
-# Only covers the primary keyword of each _SECTOR_MAP entry (the first
-# term in its `terms` list), since infer_sector_keywords always includes
-# the full group together.
-_CATEGORY_PHRASES = {
-    "CATER": "catering services",
-    "HEALTH": "healthcare services",
-    "SOFTWARE": "software",
-    "FREIGHT": "freight and logistics",
-    "RETAIL": "retail",
-    "CONSTRUCT": "construction services",
-}
-
-
-def market_size_category_phrase(business_name: str | None, idea: str | None, industry: str | None) -> str:
-    """A short, human-readable category phrase for a market-size search
-    query (e.g. "catering services"), reusing infer_sector_keywords
-    rather than a separate keyword table. Falls back to the first few
-    real words of idea/industry/business_name when no sector keyword
-    matched anything -- never a generic placeholder like "business"."""
-    keywords = infer_sector_keywords(business_name, idea, industry)
-    if keywords and keywords[0] in _CATEGORY_PHRASES:
-        return _CATEGORY_PHRASES[keywords[0]]
-    combined = " ".join(filter(None, [industry, idea, business_name]))
-    tokens = [w for w in re.sub(r"[^a-zA-Z0-9 ]", " ", combined).split() if len(w) >= 3]
-    tokens = [w for w in tokens if w.upper() not in _STOPWORDS]
-    return " ".join(tokens[:4]).lower() or "business"
+# market_size_category_phrase() (a keyword-table -> bare-sector-phrase
+# mapping, e.g. "SOFTWARE" -> "software") used to live here and fed
+# agents/rag_pipeline.py's TAM market-size search. Removed: a bare
+# sector name is real but too broad to be one specific idea's actual
+# addressable market (confirmed live: a tax-prep-for-freelancers idea
+# got the entire $921B U.S. software market as its TAM). Replaced by
+# agents.rag_pipeline._classify_tam_market_category(), a small LLM call
+# that names the idea's actual specific category plus one parent
+# category, never a bare whole-sector name for either.
 
 
 # Plain substring match against common country names/abbreviations in a

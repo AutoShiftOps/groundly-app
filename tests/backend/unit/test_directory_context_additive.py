@@ -58,7 +58,7 @@ def test_directory_hit_with_weak_local_chunks_still_triggers_web_retrieval(monke
         rag_pipeline, "generate_with_citations",
         AsyncMock(return_value={"text": "x", "citations": [], "assumptions": [], "actions": []}),
     )
-    monkeypatch.setattr(rag_pipeline, "verify_claims", lambda text, citations, extra_value=None: {"verified": False, "unsupported_claims": []})
+    monkeypatch.setattr(rag_pipeline, "verify_claims", lambda text, citations, extra_value=None, context_chunks=None: {"verified": False, "unsupported_claims": []})
 
     asyncio.run(rag_pipeline.run_pipeline(
         "Food Mamba Catering — PESTEL analysis",
@@ -91,7 +91,7 @@ def test_directory_hit_with_empty_local_chunks_still_triggers_web_retrieval(monk
         rag_pipeline, "generate_with_citations",
         AsyncMock(return_value={"text": "x", "citations": [], "assumptions": [], "actions": []}),
     )
-    monkeypatch.setattr(rag_pipeline, "verify_claims", lambda text, citations, extra_value=None: {"verified": False, "unsupported_claims": []})
+    monkeypatch.setattr(rag_pipeline, "verify_claims", lambda text, citations, extra_value=None, context_chunks=None: {"verified": False, "unsupported_claims": []})
 
     asyncio.run(rag_pipeline.run_pipeline(
         "Food Mamba Catering — PESTEL analysis",
@@ -115,7 +115,7 @@ def test_directory_chunks_still_reach_generation_context(monkeypatch):
     async def fake_search_similar_chunks(embedding, framework_tag=None):
         return []
 
-    async def fake_generate_with_citations(query, context_chunks, framework_tag=None, extra_context_chunks=None):
+    async def fake_generate_with_citations(query, context_chunks, framework_tag=None, extra_context_chunks=None, specific_category=None, parent_category=None):
         captured["extra_context_chunks"] = extra_context_chunks
         return {"text": "x", "citations": [], "assumptions": [], "actions": []}
 
@@ -123,7 +123,7 @@ def test_directory_chunks_still_reach_generation_context(monkeypatch):
     monkeypatch.setattr(rag_pipeline, "_search_similar_chunks", fake_search_similar_chunks)
     monkeypatch.setattr(rag_pipeline.web_retrieval, "search_and_ingest", AsyncMock(return_value=0))
     monkeypatch.setattr(rag_pipeline, "generate_with_citations", fake_generate_with_citations)
-    monkeypatch.setattr(rag_pipeline, "verify_claims", lambda text, citations, extra_value=None: {"verified": False, "unsupported_claims": []})
+    monkeypatch.setattr(rag_pipeline, "verify_claims", lambda text, citations, extra_value=None, context_chunks=None: {"verified": False, "unsupported_claims": []})
 
     asyncio.run(rag_pipeline.run_pipeline(
         "Food Mamba Catering — PESTEL analysis",

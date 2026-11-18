@@ -87,7 +87,7 @@ def test_local_similarity_at_historical_bad_value_triggers_web_retrieval_attempt
         "generate_with_citations",
         AsyncMock(return_value={"text": "Insufficient grounded data available for this section.", "citations": []}),
     )
-    monkeypatch.setattr(rag_pipeline, "verify_claims", lambda text, citations, extra_value=None: {"verified": False, "unsupported_claims": []})
+    monkeypatch.setattr(rag_pipeline, "verify_claims", lambda text, citations, extra_value=None, context_chunks=None: {"verified": False, "unsupported_claims": []})
 
     asyncio.run(rag_pipeline.run_pipeline("Solar panel based electric grid for villages", framework_tag="pestel"))
 
@@ -128,7 +128,7 @@ def test_local_similarity_comfortably_above_floor_does_not_need_web_retrieval(mo
         "generate_with_citations",
         AsyncMock(return_value={"text": "Some grounded analysis [1].", "citations": [{"index": 1}]}),
     )
-    monkeypatch.setattr(rag_pipeline, "verify_claims", lambda text, citations, extra_value=None: {"verified": True, "unsupported_claims": []})
+    monkeypatch.setattr(rag_pipeline, "verify_claims", lambda text, citations, extra_value=None, context_chunks=None: {"verified": True, "unsupported_claims": []})
 
     asyncio.run(rag_pipeline.run_pipeline("a peer-to-peer synthesizer rental marketplace", framework_tag="pestel"))
 

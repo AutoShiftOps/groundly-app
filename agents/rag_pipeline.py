@@ -111,16 +111,23 @@ _TIER_NOT_FOUND = {
 }
 
 
-def _null_out_unsupported_tam_tiers(market_sizing: dict, context_chunks: list) -> dict:
+def _null_out_unsupported_tam_tiers(market_sizing: dict, context_chunks: list,
+                                     specific_category: str | None = None,
+                                     parent_category: str | None = None) -> dict:
     """
     Deterministic backstop, not a rewrite of the model's own reasoning:
     for each tam/sam/som tier the model populated, confirm the chunk it
     cited as citation_index actually contains a real dollar figure or
-    percentage. If it doesn't, or if the model left the tier null
-    outright, normalize it to _TIER_NOT_FOUND -- same null-when-
-    ungrounded discipline as everywhere else in this schema, just always
-    expressed as an object with an explicit label rather than a bare
-    None.
+    percentage, AND that the tier's own description actually matches the
+    idea's classified market category (specific_category/parent_category,
+    from _classify_tam_market_category()) rather than a whole sector --
+    confirmed live: a real, well-cited "entire U.S. software market"
+    figure was accepted as TAM for a tax-prep-for-freelancers idea before
+    this check existed. If either check fails, or if the model left the
+    tier null outright, normalize it to _TIER_NOT_FOUND -- same null-
+    when-ungrounded discipline as everywhere else in this schema, just
+    always expressed as an object with an explicit label rather than a
+    bare None.
 
     Citations themselves and the narrative text are untouched by this: a
     numeric-free chunk can still be real, legitimate supporting context
@@ -128,8 +135,10 @@ def _null_out_unsupported_tam_tiers(market_sizing: dict, context_chunks: list) -
     valid basis for a specific tam/sam/som dollar value. A tier whose
     citation_index is null (the model legitimately couldn't attribute the
     figure to one specific chunk -- an existing, separate allowance in
-    this schema, see TAM_STRUCTURED_SUFFIX) is left as-is; this check only
-    concerns itself with tiers that DO point at a specific chunk.
+    this schema, see TAM_STRUCTURED_SUFFIX) is left as-is for the
+    numeric-figure check (nothing to look up), but the category-fit check
+    still applies to it -- an unattributed sector-level figure is exactly
+    as much of a mismatch as an attributed one.
     """
     validated = {}
     for tier in ("tam", "sam", "som"):
@@ -149,6 +158,19 @@ def _null_out_unsupported_tam_tiers(market_sizing: dict, context_chunks: list) -
                 "generate_with_citations: tam tier=%r cited chunk %d with no numeric market figure "
                 "(dollar amount/percentage) -- nulling out as unsupported (was: %r).",
                 tier, citation_index, tier_value,
+            )
+            validated[tier] = dict(_TIER_NOT_FOUND)
+
+    for tier in ("tam", "sam", "som"):
+        tier_value = validated.get(tier)
+        if not isinstance(tier_value, dict) or tier_value.get("value_usd") is None:
+            continue
+        if not _tier_matches_idea_category(tier_value.get("tier_description"), specific_category, parent_category):
+            logger.info(
+                "generate_with_citations: tam tier=%r failed market-fit check (description=%r vs "
+                "specific_category=%r, parent_category=%r) -- rejecting as a sector-level/"
+                "mismatched figure (was: %r).",
+                tier, tier_value.get("tier_description"), specific_category, parent_category, tier_value,
             )
             validated[tier] = dict(_TIER_NOT_FOUND)
 
@@ -318,6 +340,89 @@ populate the market_sizing object:
   sourced one -- the "estimate" label and the null citation_index are
   both required together, not optional extras.
 """
+
+
+def _tam_market_fit_suffix(specific_category: str | None, parent_category: str | None) -> str:
+    # Dynamic, per-request addition to TAM_STRUCTURED_SUFFIX -- the
+    # category names come from _classify_tam_market_category() below
+    # and can't be baked into the static suffix. Confirmed live this
+    # was needed: without it, a real, well-cited whole-sector figure
+    # (e.g. "the entire U.S. software market") got accepted as TAM for
+    # an idea that was really just one narrow slice of that sector
+    # (tax-prep software for freelancers) -- real and cited, but not
+    # this idea's market. Enforced again deterministically afterward
+    # (_null_out_unsupported_tam_tiers' market-fit check), so this
+    # instruction is a first pass, not the only guardrail.
+    if not specific_category and not parent_category:
+        return ""
+    return f"""
+This idea's addressable market has been classified as:
+- Specific category: {specific_category or "not determined"!r}
+- Parent category: {parent_category or "not determined"!r}
+A tam/sam/som tier may ONLY use a figure whose market is this idea's
+specific category or its parent category above -- never a whole
+industry/sector figure (e.g. "software", "food services", "retail",
+"healthcare") even if it's real, well-cited, and genuinely about this
+idea's broader industry. If the CONTEXT only contains sector-level
+figures that don't match either category above, leave that tier null
+rather than using a mismatched one.
+"""
+
+
+# Generic words that can never, by themselves, count as evidence that a
+# tier_description matches (or is specific enough to represent) the
+# idea's own market category -- either too generic to mean anything
+# ("market", "size", a bare year) or an entire industry/sector name too
+# broad to be THIS idea's actual addressable market ("software", "food
+# services"). Shared by both the category-fit check (does tier_description
+# match the idea's category?) and the market-scope-mismatch check inside
+# verify_claims (does the cited chunk actually support what
+# tier_description claims?).
+_MARKET_SCOPE_STOPWORDS = {
+    "the", "a", "an", "of", "in", "for", "and", "or", "to", "by", "is", "are", "was", "were",
+    "from", "through", "with", "on", "at", "as", "this", "that", "its", "their",
+    "market", "size", "global", "national", "industry", "sector", "report", "forecast",
+    "analysis", "growth", "value", "valued", "billion", "million", "trillion", "usd",
+    "revenue", "overview", "outlook", "study", "insights", "trends", "projected", "projection",
+}
+_SECTOR_LEVEL_WORDS = {
+    "software", "food", "foods", "foodservice", "catering", "restaurant", "restaurants",
+    "retail", "healthcare", "health", "construction", "logistics", "freight", "transportation",
+    "consulting", "technology", "tech", "hospitality", "ecommerce", "manufacturing", "finance",
+    "financial", "education", "services", "apps", "app", "fintech", "saas",
+}
+_YEAR_PATTERN = re.compile(r"\b(?:19|20)\d{2}\b")
+
+
+def _significant_terms(text: str | None) -> set[str]:
+    """Lowercased words (len >= 4) from `text`, with years, generic
+    filler words, and bare sector/industry names all excluded -- what's
+    left is whatever actually makes this description specific to one
+    idea's market, if anything."""
+    if not text:
+        return set()
+    cleaned = _YEAR_PATTERN.sub(" ", text.lower())
+    words = re.findall(r"[a-z]{4,}", cleaned)
+    return {w for w in words if w not in _MARKET_SCOPE_STOPWORDS and w not in _SECTOR_LEVEL_WORDS}
+
+
+def _tier_matches_idea_category(tier_description: str | None, specific_category: str | None,
+                                 parent_category: str | None) -> bool:
+    # No category could be classified at all -- nothing to enforce
+    # against, so don't block (the market-size search itself was
+    # already skipped in this case; this only matters for a tier
+    # sourced from local/directory context instead).
+    if not specific_category and not parent_category:
+        return True
+    desc_terms = _significant_terms(tier_description)
+    if not desc_terms:
+        # A description with nothing specific left after stripping
+        # sector-level/generic words IS a bare sector-level description
+        # (e.g. "U.S. software market, 2026") -- reject outright, it
+        # can't match anything because it doesn't say anything specific.
+        return False
+    category_terms = _significant_terms(specific_category) | _significant_terms(parent_category)
+    return bool(desc_terms & category_terms)
 
 MARKET_SIZING_SCHEMA = {
     "type": "object",
@@ -770,6 +875,73 @@ STRUCTURED_FRAMEWORKS = {
 }
 
 
+# Replaces the old keyword-table category mapping (SECTOR_MAP-style
+# lookup) for TAM market-size search specifically -- a keyword table
+# mapped "freelancer tax app" to the bare sector "software", which is
+# real but too broad to be this idea's actual market (confirmed live:
+# TAM = the entire $921B U.S. software market before this existed). One
+# small, cheap, temperature-0 structured call instead, asked for the
+# most specific category an analyst would search for plus one broader
+# parent -- never a bare whole-sector name for either.
+_MARKET_CATEGORY_SYSTEM_PROMPT = """You classify a business idea into market-research category names, for a TAM (total addressable market) search.
+
+Rules:
+1. "specific_category" is the most specific market category name a market-research analyst would search for to size THIS idea's actual addressable market -- e.g. "tax preparation software for freelancers", "meal subscription / home catering", "peer-to-peer music equipment rental".
+2. "parent_category" is ONE broader category immediately above specific_category -- e.g. "tax preparation software", "meal kit delivery", "music equipment rental" -- still narrower than a whole industry.
+3. NEVER return a bare whole-industry/sector name alone for either field (e.g. "software", "food services", "retail", "healthcare", "technology", "logistics") -- those are too broad to represent this specific idea's actual market, even though they're real categories.
+4. If you genuinely cannot name a sensible category for this idea from the description given, return null for both fields rather than guessing.
+"""
+
+_MARKET_CATEGORY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "specific_category": {"type": ["string", "null"]},
+        "parent_category": {"type": ["string", "null"]},
+    },
+    "required": ["specific_category", "parent_category"],
+    "additionalProperties": False,
+}
+
+
+async def _classify_tam_market_category(idea: str | None, industry: str | None,
+                                          business_name: str | None) -> dict:
+    """Returns {"specific_category": str|None, "parent_category": str|None}.
+    Never raises -- a classification failure degrades to no category
+    (market-size search is skipped entirely in that case, not a crash)."""
+    user_content = "IDEA: " + " | ".join(filter(None, [
+        idea,
+        f"industry: {industry}" if industry else None,
+        f"business name: {business_name}" if business_name else None,
+    ]))
+    if not user_content.strip() or user_content.strip() == "IDEA:":
+        return {"specific_category": None, "parent_category": None}
+    try:
+        completion = await client.chat.completions.create(
+            model=CHAT_MODEL,
+            messages=[
+                {"role": "system", "content": _MARKET_CATEGORY_SYSTEM_PROMPT},
+                {"role": "user", "content": user_content},
+            ],
+            response_format={
+                "type": "json_schema",
+                "json_schema": {"name": "market_category", "strict": True, "schema": _MARKET_CATEGORY_SCHEMA},
+            },
+            temperature=0,
+        )
+        parsed = json.loads(completion.choices[0].message.content)
+        return {
+            "specific_category": parsed.get("specific_category") or None,
+            "parent_category": parsed.get("parent_category") or None,
+        }
+    except Exception:
+        logger.exception(
+            "_classify_tam_market_category: LLM call failed for idea=%r -- degrading to no category "
+            "(market-size search will be skipped).",
+            idea,
+        )
+        return {"specific_category": None, "parent_category": None}
+
+
 async def embed_query(query: str):
     response = await client.embeddings.create(model=EMBEDDING_MODEL, input=query)
     return response.data[0].embedding
@@ -820,7 +992,8 @@ def _filter_referenced_citations(citations: list, text: str, extra_value=None) -
 
 
 async def generate_with_citations(query: str, context_chunks: list, framework_tag: str | None = None,
-                                   extra_context_chunks: list | None = None):
+                                   extra_context_chunks: list | None = None,
+                                   specific_category: str | None = None, parent_category: str | None = None):
     all_chunks = [*context_chunks, *(extra_context_chunks or [])]
     if not all_chunks:
         return {
@@ -857,6 +1030,8 @@ async def generate_with_citations(query: str, context_chunks: list, framework_ta
     if structured:
         suffix, field_name, schema_name, schema = structured
         system_prompt = GROUNDING_SYSTEM_PROMPT + suffix
+        if framework_tag == "tam":
+            system_prompt += _tam_market_fit_suffix(specific_category, parent_category)
         completion = await client.chat.completions.create(
             model=CHAT_MODEL,
             messages=[
@@ -887,7 +1062,7 @@ async def generate_with_citations(query: str, context_chunks: list, framework_ta
             actions = []
 
         if framework_tag == "tam" and extra_value:
-            extra_value = _null_out_unsupported_tam_tiers(extra_value, all_chunks)
+            extra_value = _null_out_unsupported_tam_tiers(extra_value, all_chunks, specific_category, parent_category)
         elif framework_tag == "bcg" and extra_value:
             extra_value = _null_out_unsupported_bcg_quadrant(extra_value)
         elif framework_tag == "balanced_scorecard" and extra_value:
@@ -911,7 +1086,33 @@ async def generate_with_citations(query: str, context_chunks: list, framework_ta
     return {"text": text, "citations": filtered_citations, "assumptions": [], "actions": []}
 
 
-def verify_claims(generated_text: str, citations: list, extra_value=None):
+def _tam_market_scope_mismatches(market_sizing: dict, context_chunks: list) -> list[str]:
+    """Separate from _null_out_unsupported_tam_tiers' category-fit check
+    (which compares tier_description against the idea's own classified
+    category): this compares tier_description against the ACTUAL cited
+    chunk's text -- does the source really support the specific scope
+    tier_description claims, or did the model write something more
+    specific-sounding than what the chunk actually says? A tier with no
+    citation_index, or no real value, or nothing specific in its own
+    description to check, has nothing to mismatch and is skipped."""
+    mismatches = []
+    for tier_name in ("tam", "sam", "som"):
+        tier = market_sizing.get(tier_name) if isinstance(market_sizing, dict) else None
+        if not isinstance(tier, dict) or tier.get("value_usd") is None:
+            continue
+        citation_index = tier.get("citation_index")
+        if not citation_index or not (1 <= citation_index <= len(context_chunks)):
+            continue
+        specific_terms = _significant_terms(tier.get("tier_description"))
+        if not specific_terms:
+            continue
+        chunk_text = (context_chunks[citation_index - 1].get("chunk_text") or "").lower()
+        if not any(term in chunk_text for term in specific_terms):
+            mismatches.append(tier_name)
+    return mismatches
+
+
+def verify_claims(generated_text: str, citations: list, extra_value=None, context_chunks: list | None = None):
     # citations is already filtered down to only what's actually
     # referenced (see _filter_referenced_citations) -- so "has_markers"
     # here is really "is there at least one real citation this output
@@ -929,6 +1130,16 @@ def verify_claims(generated_text: str, citations: list, extra_value=None):
         unsupported = ["No inline citation markers found in output"]
     else:
         unsupported = []
+
+    # TAM-specific: does each tier's cited chunk actually support the
+    # scope tier_description claims? (extra_value for tam is always a
+    # {"tam":..., "sam":..., "som":...} dict -- that shape is how we
+    # recognize market_sizing here, same duck-typing _collect_citation_
+    # indices already relies on elsewhere in this module.)
+    if isinstance(extra_value, dict) and {"tam", "sam", "som"} <= set(extra_value.keys()) and context_chunks:
+        for tier_name in _tam_market_scope_mismatches(extra_value, context_chunks):
+            unsupported.append(f"market scope mismatch ({tier_name})")
+
     return {
         "verified": len(unsupported) == 0,
         "unsupported_claims": unsupported,
@@ -955,6 +1166,24 @@ async def run_pipeline(
         {**citation, "chunk_text": citation.get("snippet") or ""}
         for citation in (directory_context or {}).get("citations", [])
     ]
+
+    # Classified once per tam run (regardless of whether web retrieval
+    # ends up running at all) -- it gates both the market-size search
+    # queries below AND the market-fit check inside
+    # _null_out_unsupported_tam_tiers()/verify_claims(), which must
+    # apply to ANY tam tier, not just one sourced from a market-size
+    # web search (a local-corpus or directory chunk could just as
+    # easily carry a sector-level figure that doesn't fit this idea).
+    specific_category: str | None = None
+    parent_category: str | None = None
+    if framework_tag == "tam":
+        category_result = await _classify_tam_market_category(idea, industry, business_name)
+        specific_category = category_result["specific_category"]
+        parent_category = category_result["parent_category"]
+        logger.info(
+            "run_pipeline: TAM market category classified as specific=%r, parent=%r for idea=%r",
+            specific_category, parent_category, idea,
+        )
 
     embedding = await embed_query(query)
     chunks = await _search_similar_chunks(embedding, framework_tag=framework_tag)
@@ -991,19 +1220,33 @@ async def run_pipeline(
         # size figures via Tavily (confirmed live: a Mississauga catering
         # idea's generic query returned nothing above the similarity
         # floor). Market size is its own well-known search-content type
-        # ("<category> market size <country> USD"), capped at 2 Tavily
-        # calls by web_retrieval.search_and_ingest_market_size itself.
+        # ("<category> market size <country> USD"), one query per
+        # classified category (specific first, then parent), capped at 2
+        # Tavily calls by web_retrieval.search_and_ingest_market_size
+        # itself. If no category could be classified at all, there's
+        # nothing sensible to search for -- skip market-size search
+        # entirely rather than falling back to a generic/bare-sector
+        # guess (the old keyword-table fallback this replaced).
         url_to_query: dict[str, str] = {}
+        market_size_result: dict = {"total_chunks": 0, "queries_run": [], "url_to_query": {}}
         if framework_tag == "tam":
-            category = mississauga_data.market_size_category_phrase(business_name, idea, industry)
-            country = mississauga_data.infer_country_from_geography(geography)
-            market_size_result = await web_retrieval.search_and_ingest_market_size(category, country, framework_tag)
-            ingested = market_size_result["total_chunks"]
-            url_to_query = market_size_result["url_to_query"]
-            logger.info(
-                "run_pipeline: TAM market-size queries run=%r, ingested %d chunk(s) total.",
-                market_size_result["queries_run"], ingested,
-            )
+            if not specific_category and not parent_category:
+                logger.info(
+                    "run_pipeline: TAM market-size search skipped for idea=%r -- no category could "
+                    "be classified.",
+                    idea,
+                )
+                ingested = 0
+            else:
+                country = mississauga_data.infer_country_from_geography(geography)
+                categories = [c for c in (specific_category, parent_category) if c]
+                market_size_result = await web_retrieval.search_and_ingest_market_size(categories, country, framework_tag)
+                ingested = market_size_result["total_chunks"]
+                url_to_query = market_size_result["url_to_query"]
+                logger.info(
+                    "run_pipeline: TAM market-size queries run=%r, ingested %d chunk(s) total.",
+                    market_size_result["queries_run"], ingested,
+                )
         else:
             ingested = await web_retrieval.search_and_ingest(query, framework_tag)
 
@@ -1099,7 +1342,9 @@ async def run_pipeline(
 
     result = await generate_with_citations(
         query, chunks, framework_tag=framework_tag, extra_context_chunks=directory_chunks,
+        specific_category=specific_category, parent_category=parent_category,
     )
     extra_value = result.get(STRUCTURED_FRAMEWORKS[framework_tag][1]) if framework_tag in STRUCTURED_FRAMEWORKS else None
-    verification = verify_claims(result["text"], result["citations"], extra_value)
+    all_chunks_for_verify = [*chunks, *directory_chunks]
+    verification = verify_claims(result["text"], result["citations"], extra_value, context_chunks=all_chunks_for_verify)
     return {**result, "verification": verification}
