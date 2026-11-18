@@ -1006,7 +1006,48 @@ async def run_pipeline(
             )
         else:
             ingested = await web_retrieval.search_and_ingest(query, framework_tag)
-        if ingested > 0:
+
+        if framework_tag == "tam" and ingested > 0:
+            # Bug fix: re-searching with `embedding` (the ORIGINAL generic
+            # analysis query's embedding) ranks the newly-ingested market-
+            # size chunks against a different question than the one that
+            # actually found them -- confirmed live twice (best similarity
+            # was byte-identical before and after ingestion both times,
+            # because the generic-query embedding simply doesn't favor the
+            # new pages over the pre-existing generic TAM/SAM/SOM explainer
+            # content already in the corpus). Each market-size query that
+            # ran gets its OWN embedding and its OWN database search, so
+            # its own ingested content actually gets a fair shot at ranking
+            # well. Merged with the original (pre-ingestion) results,
+            # keeping each physical row's highest similarity across every
+            # query it was searched under, top 8 overall.
+            candidates_by_id = {c["id"]: c for c in chunks}
+            for market_size_query in market_size_result["queries_run"]:
+                query_embedding = await embed_query(market_size_query)
+                query_results = await _search_similar_chunks(query_embedding, framework_tag=framework_tag)
+                top3 = sorted(query_results, key=lambda c: c["similarity"], reverse=True)[:3]
+                logger.info(
+                    "run_pipeline: TAM market-size query=%r top matches: %s",
+                    market_size_query,
+                    [(c.get("source_url"), round(c["similarity"], 4)) for c in top3],
+                )
+                for c in query_results:
+                    existing = candidates_by_id.get(c["id"])
+                    if existing is None or c["similarity"] > existing["similarity"]:
+                        candidates_by_id[c["id"]] = c
+            merged = sorted(candidates_by_id.values(), key=lambda c: c["similarity"], reverse=True)[:8]
+            # Only replace what we have if the merge actually produced
+            # something -- same "don't discard marginal-but-real local
+            # matches on an empty re-search" discipline as the non-tam path.
+            if merged:
+                chunks = merged
+                for c in chunks:
+                    source = url_to_query.get(c.get("source_url"), "pre-existing corpus / not a market-size web result")
+                    logger.info(
+                        "run_pipeline: TAM candidate chunk source_url=%r similarity=%.4f came from query=%r",
+                        c.get("source_url"), c.get("similarity"), source,
+                    )
+        elif ingested > 0:
             refreshed = await _search_similar_chunks(embedding, framework_tag=framework_tag)
             # Only replace what we have if the fresh search actually found
             # something. In the "weak" case especially, don't discard
@@ -1014,16 +1055,6 @@ async def run_pipeline(
             # came back empty (e.g. a transient DB hiccup).
             if refreshed:
                 chunks = refreshed
-                if framework_tag == "tam":
-                    # Item 4: log which TAM query's result each chunk that
-                    # actually survived the re-search (and will go on to
-                    # the similarity floor check below) came from.
-                    for c in refreshed:
-                        source = url_to_query.get(c.get("source_url"), "pre-existing corpus / not a market-size web result")
-                        logger.info(
-                            "run_pipeline: TAM candidate chunk source_url=%r similarity=%.4f came from query=%r",
-                            c.get("source_url"), c.get("similarity"), source,
-                        )
         # Otherwise chunks keeps whatever it already had -- empty (falls
         # through to insufficient-data below) or the original weak matches,
         # subject to the hard floor check right below.

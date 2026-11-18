@@ -20,6 +20,79 @@ def _fake_verify_claims(text, citations, extra_value=None):
     return {"verified": False, "unsupported_claims": []}
 
 
+def test_market_size_query_embedding_used_for_reranking_not_the_original_query(monkeypatch):
+    # The actual bug: re-searching with the ORIGINAL generic query's
+    # embedding ranks newly-ingested market-size chunks against a
+    # different question than the one that found them, so they never
+    # win against whatever generic content already scored decently --
+    # confirmed live twice (best similarity identical before/after
+    # ingestion both times). Each market-size query that ran must get
+    # its OWN embedding and its OWN database search.
+    GENERIC_EMBEDDING = [1.0, 0.0, 0.0]
+    MARKET_SIZE_EMBEDDING = [0.0, 1.0, 0.0]
+
+    GENERIC_CHUNK = {
+        "id": 1, "chunk_text": "What is TAM SAM SOM? A generic explainer of the three terms.",
+        "source_url": "https://example.com/generic-explainer", "source_title": "Generic Explainer",
+        "similarity": 0.4861, "confidence_score": 0.8,
+    }
+    MARKET_SIZE_CHUNK = {
+        "id": 99, "chunk_text": "Canada's catering services market is valued at $4.8B in 2025.",
+        "source_url": "https://example.com/market-size-article", "source_title": "Market Size Report",
+        "similarity": 0.81, "confidence_score": 0.8,
+    }
+
+    async def fake_embed_query(text):
+        return MARKET_SIZE_EMBEDDING if "market size" in text else GENERIC_EMBEDDING
+
+    search_calls = []
+
+    async def fake_search_similar_chunks(embedding, framework_tag=None):
+        search_calls.append(embedding)
+        if embedding == MARKET_SIZE_EMBEDDING:
+            return [MARKET_SIZE_CHUNK]
+        return [GENERIC_CHUNK]
+
+    async def fake_search_and_ingest_market_size(category, country, framework_tag="tam", max_results=5):
+        q = f"{category} market size {country} USD"
+        return {"total_chunks": 1, "queries_run": [q], "url_to_query": {MARKET_SIZE_CHUNK["source_url"]: q}}
+
+    captured = {}
+
+    async def fake_generate_with_citations(query, context_chunks, framework_tag=None, extra_context_chunks=None):
+        captured["context_chunks"] = context_chunks
+        return {"text": "x", "citations": [], "assumptions": [], "actions": []}
+
+    monkeypatch.setattr(rag_pipeline, "embed_query", fake_embed_query)
+    monkeypatch.setattr(rag_pipeline, "_search_similar_chunks", fake_search_similar_chunks)
+    monkeypatch.setattr(rag_pipeline.web_retrieval, "search_and_ingest_market_size", fake_search_and_ingest_market_size)
+    monkeypatch.setattr(rag_pipeline, "generate_with_citations", fake_generate_with_citations)
+    monkeypatch.setattr(rag_pipeline, "verify_claims", _fake_verify_claims)
+
+    asyncio.run(rag_pipeline.run_pipeline(
+        "A subscription service for home caterers — TAM/SAM/SOM analysis | geography: Mississauga, ON, Canada",
+        framework_tag="tam",
+        idea="A subscription service that delivers pre-portioned food kits for home caterers",
+        geography="Mississauga, ON, Canada",
+    ))
+
+    # The buggy version only ever calls _search_similar_chunks with
+    # GENERIC_EMBEDDING (the market-size query's own embedding is never
+    # computed/searched) -- so the fix must show the market-size
+    # embedding was actually used for a real database search.
+    assert MARKET_SIZE_EMBEDDING in search_calls, (
+        "the market-size query's own embedding was never used to search the database -- "
+        "newly-ingested market-size chunks can only be found by ranking them against the "
+        "question that actually found them, not the original generic analysis query."
+    )
+
+    final_urls = [c.get("source_url") for c in captured["context_chunks"]]
+    assert MARKET_SIZE_CHUNK["source_url"] in final_urls, (
+        "the high-similarity market-size chunk (0.81) should have won the merge and reached "
+        "generation -- it was lost because it was only ever ranked against the wrong query."
+    )
+
+
 def test_tam_uses_dedicated_market_size_queries_not_the_generic_query(monkeypatch):
     captured = {}
 
