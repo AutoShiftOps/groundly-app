@@ -14,14 +14,22 @@ grounded data" behavior, never to a 500.
 """
 
 import logging
+import re
+
+import httpx
 
 from agents import config  # noqa: F401  side-effect: loads backend/.env reliably
+from agents import llm_provider
 from agents.ingest import ingest_content
 from tavily import AsyncTavilyClient
 
 logger = logging.getLogger(__name__)
 
 SEARCH_DEPTH = "basic"
+
+_PAGE_FETCH_TIMEOUT = 10.0
+_HTML_TAG_PATTERN = re.compile(r"<[^>]+>")
+_WHITESPACE_PATTERN = re.compile(r"\s+")
 
 
 async def _run_single_search(query: str, framework_tag: str, max_results: int) -> tuple[int, int, list[str]]:
@@ -143,3 +151,74 @@ async def search_and_ingest_market_size(
             break
 
     return {"total_chunks": total_chunks, "queries_run": queries_run, "url_to_query": url_to_query}
+
+
+async def _fetch_page_text(url: str) -> str:
+    """Fetches a URL and strips it down to plain visible text. Not a
+    real HTML parser (no script/style-block removal beyond a crude tag
+    strip) -- good enough for ingest_content()'s own chunker, which
+    only needs readable prose, not a faithful DOM reconstruction. Any
+    failure (network, non-200, non-text content) raises; the caller
+    treats that as "nothing to ingest from this URL", same as a failed
+    Tavily result."""
+    async with httpx.AsyncClient(timeout=_PAGE_FETCH_TIMEOUT, follow_redirects=True) as client:
+        response = await client.get(url, headers={"User-Agent": "Mozilla/5.0 (compatible; GroundlyBot/1.0)"})
+        response.raise_for_status()
+    html = response.text
+    html = re.sub(r"(?is)<(script|style|nav|header|footer)[^>]*>.*?</\1>", " ", html)
+    text = _HTML_TAG_PATTERN.sub(" ", html)
+    return _WHITESPACE_PATTERN.sub(" ", text).strip()
+
+
+async def search_and_ingest_gemini_grounding(query: str, framework_tag: str, max_results: int = 5) -> dict:
+    """unify/3-gemini item 4: when the active provider is Gemini, this
+    runs ONE Gemini call with the Google Search grounding tool for
+    `query`, then fetches and ingests each of its groundingChunks'
+    REAL pages through the exact same chunk/embed/store path Tavily
+    results use (agents.ingest.ingest_content) -- so every resulting
+    citation has real, stored page text the claim verifier can check
+    against, same as any other source. NEVER builds a citation (or any
+    chunk) directly from Gemini's groundingMetadata/snippet text --
+    that's not a stored, re-searchable chunk. Counts as one extra
+    retrieval call on top of the existing Tavily call for this
+    framework; callers are responsible for keeping that within the
+    "at most 1 web-retrieval attempt per framework per request"
+    invariant documented in agents/rag_pipeline.py's run_pipeline().
+    Never raises -- degrades to {"total_chunks": 0, "urls_ingested": []}
+    on any failure, same philosophy as the Tavily path."""
+    if config.LLM_PROVIDER != "gemini" or not config.GEMINI_API_KEY:
+        return {"total_chunks": 0, "urls_ingested": []}
+
+    try:
+        urls = await llm_provider.google_search_grounding_urls(query, max_results)
+    except Exception:
+        logger.exception(
+            "web_retrieval: Gemini Google Search grounding call failed framework=%r query=%r.",
+            framework_tag, query,
+        )
+        return {"total_chunks": 0, "urls_ingested": []}
+
+    total_chunks = 0
+    urls_ingested: list[str] = []
+    for url, title in urls:
+        try:
+            text = await _fetch_page_text(url)
+        except Exception:
+            logger.exception("web_retrieval: failed to fetch Gemini-grounded url=%r -- skipping it.", url)
+            continue
+        if not text:
+            continue
+        try:
+            chunks = ingest_content(text, title=title or url, url=url, framework_tag=framework_tag)
+        except Exception:
+            logger.exception("web_retrieval: failed to ingest Gemini-grounded url=%r -- skipping it.", url)
+            continue
+        total_chunks += chunks
+        if chunks:
+            urls_ingested.append(url)
+
+    logger.info(
+        "web_retrieval: Gemini grounding framework=%r query=%r found %d url(s), ingested %d chunk(s) total.",
+        framework_tag, query, len(urls), total_chunks,
+    )
+    return {"total_chunks": total_chunks, "urls_ingested": urls_ingested}

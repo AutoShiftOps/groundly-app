@@ -20,7 +20,7 @@ def _chunk(text, is_directory=False):
 def _run(monkeypatch, llm_claims, text, citations, extra_value=None, context_chunks=None):
     monkeypatch.setattr(
         claim_verifier.llm_provider, "structured_completion",
-        AsyncMock(return_value={"claims": llm_claims}),
+        AsyncMock(return_value=({"claims": llm_claims}, "openai")),
     )
     return asyncio.run(claim_verifier.verify_claims(text, citations, extra_value, context_chunks=context_chunks))
 
@@ -157,7 +157,7 @@ def test_tam_tier_structured_claim_extracted_and_scope_checked(monkeypatch):
 
 
 def test_no_citations_at_all_is_unverified_without_calling_the_llm(monkeypatch):
-    llm = AsyncMock(return_value={"claims": []})
+    llm = AsyncMock(return_value=({"claims": []}, "openai"))
     monkeypatch.setattr(claim_verifier.llm_provider, "structured_completion", llm)
 
     result = asyncio.run(claim_verifier.verify_claims(
@@ -167,3 +167,33 @@ def test_no_citations_at_all_is_unverified_without_calling_the_llm(monkeypatch):
     assert result["verified"] is False
     assert result["unsupported_claims"] == ["No grounded sources retrieved for this section"]
     llm.assert_not_called()
+
+
+def test_carried_forward_claim_is_not_sent_to_the_llm_again(monkeypatch):
+    # unify/3-gemini addendum B: a claim already known to be
+    # "supported" (passed in via carry_forward, keyed by
+    # locator_key()) must keep that verdict without a second,
+    # independent LLM judgment on the exact same text -- the real fix
+    # for a fact flipping to unsupported across two verification
+    # passes purely from LLM sampling variance.
+    text = "The market is worth $14.9B [1]. It is growing fast [1]."
+    citations = [{"index": 1}]
+    chunks = [_chunk("The global meal kit market is worth $14.9B in 2024 and growing fast.")]
+
+    llm = AsyncMock(return_value=({"claims": [{"claim_index": 0, "verdict": "supported", "reason": "matches"}]}, "openai"))
+    monkeypatch.setattr(claim_verifier.llm_provider, "structured_completion", llm)
+
+    carry_forward = {
+        (("narrative",), "The market is worth $14.9B [1]."): {"verdict": "supported", "reason": "already confirmed"},
+    }
+    result = asyncio.run(claim_verifier.verify_claims(
+        text, citations, None, context_chunks=chunks, carry_forward=carry_forward,
+    ))
+
+    assert result["verified"] is True
+    # Only the second (non-carried) claim should have been sent to the LLM.
+    sent_content = llm.call_args.kwargs["user_content"]
+    assert sent_content.count("CLAIM") == 1
+    assert "growing fast" in sent_content
+    carried_claim = next(c for c in result["claims"] if "worth $14.9B" in c["text"])
+    assert carried_claim["reason"] == "already confirmed"

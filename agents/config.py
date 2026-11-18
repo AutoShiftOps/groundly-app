@@ -23,6 +23,30 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 # fallback and the pipeline behaves as it did before that feature existed.
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 
+# unify/3-gemini: Gemini is the default text-generation provider,
+# OpenAI the fallback (agents/llm_provider.py) -- embeddings always
+# stay on OpenAI regardless of LLM_PROVIDER (pgvector compatibility:
+# every stored vector must come from the same embedding model).
+# Model names are env-configurable, never hardcoded in a provider
+# module, so a model can be swapped without a code change.
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini").strip().lower()
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+# Falls back to GEMINI_MODEL when not set separately -- most deployments
+# don't need a different model just for claim verification/repair.
+GEMINI_VERIFIER_MODEL = os.getenv("GEMINI_VERIFIER_MODEL", GEMINI_MODEL)
+
+if LLM_PROVIDER not in ("gemini", "openai"):
+    raise RuntimeError(f"LLM_PROVIDER must be 'gemini' or 'openai', got {LLM_PROVIDER!r}.")
+
+# Deliberately NOT a hard RuntimeError when LLM_PROVIDER=gemini (the
+# default) but GEMINI_API_KEY is missing -- agents/llm_provider.py
+# treats a missing key the same as any other Gemini-call failure: it
+# falls back to OpenAI for that call (see its retry-once-then-OpenAI
+# logic) rather than refusing to even start. OPENAI_API_KEY is always
+# required above regardless of LLM_PROVIDER specifically so that
+# fallback path always has somewhere real to land.
+
 if not OPENAI_API_KEY:
     raise RuntimeError(
         f"OPENAI_API_KEY not found. Expected it in {ENV_PATH}. "

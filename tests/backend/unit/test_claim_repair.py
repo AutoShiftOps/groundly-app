@@ -18,12 +18,20 @@ def _mock_repair_llm(monkeypatch, repairs):
     # claim_repair.llm_provider and claim_verifier.llm_provider are the
     # SAME module object (both just `from agents import llm_provider`)
     # -- patching either name patches the one shared
-    # structured_completion both call through.
-    monkeypatch.setattr(claim_repair.llm_provider, "structured_completion", AsyncMock(return_value={"repairs": repairs}))
+    # structured_completion both call through. It now returns
+    # (parsed_dict, provider_used) -- "openai" here since these tests
+    # never touch the real provider-selection logic.
+    monkeypatch.setattr(
+        claim_repair.llm_provider, "structured_completion",
+        AsyncMock(return_value=({"repairs": repairs}, "openai")),
+    )
 
 
 def _mock_verifier_llm(monkeypatch, claims):
-    monkeypatch.setattr(claim_verifier.llm_provider, "structured_completion", AsyncMock(return_value={"claims": claims}))
+    monkeypatch.setattr(
+        claim_verifier.llm_provider, "structured_completion",
+        AsyncMock(return_value=({"claims": claims}, "openai")),
+    )
 
 
 def _mock_llm_sequence(monkeypatch, *responses):
@@ -32,8 +40,12 @@ def _mock_llm_sequence(monkeypatch, *responses):
     the same patched function, so the mock must return each response
     in call order via side_effect, not two separate overwriting
     monkeypatch.setattr calls (the second would just replace the
-    first)."""
-    monkeypatch.setattr(claim_repair.llm_provider, "structured_completion", AsyncMock(side_effect=list(responses)))
+    first). Each response is the raw parsed dict; wrapped here with
+    "openai" as its provider_used."""
+    monkeypatch.setattr(
+        claim_repair.llm_provider, "structured_completion",
+        AsyncMock(side_effect=[(r, "openai") for r in responses]),
+    )
 
 
 def test_unsupported_fact_is_repaired_not_kept_as_is(monkeypatch):
@@ -103,26 +115,28 @@ def test_repair_cannot_introduce_a_new_figure(monkeypatch):
         "text": "x", "citation_indices": [1], "is_tam_tier": False, "claim_type": "fact",
         "locator": {"kind": "category_list", "category": "opportunities", "index": 0},
     }
-    action, new_text = claim_repair._sanitize_action(
-        claim, "rewrite", "Freelancers underpay by $12,000 on average.", chunks,
+    action, new_text, citation_index = claim_repair._sanitize_action(
+        claim, "rewrite", "Freelancers underpay by $12,000 on average.", None, chunks,
     )
     assert action == "drop"
     assert new_text is None
+    assert citation_index is None
 
 
 def test_repair_cannot_introduce_a_new_citation():
-    # _sanitize_action never reads a citation_index from the repair
-    # LLM's response at all -- apply_action only ever sets it to the
-    # claim's own original value (rewrite) or None (convert/drop), so
-    # there is no code path for a new citation to be introduced.
+    # For an already-cited fact claim, _sanitize_action never reads a
+    # citation_index from the repair LLM's response at all -- rewrite
+    # keeps the claim's own original citation_index unchanged, so
+    # there is no code path for a new one to be introduced.
     claim = {
         "text": "x", "citation_indices": [1], "is_tam_tier": False, "claim_type": "fact",
         "locator": {"kind": "category_list", "category": "opportunities", "index": 0},
     }
-    action, new_text = claim_repair._sanitize_action(
-        claim, "rewrite", "A rewritten point with no figures at all.", [_chunk("some source text")],
+    action, new_text, citation_index = claim_repair._sanitize_action(
+        claim, "rewrite", "A rewritten point with no figures at all.", None, [_chunk("some source text")],
     )
     assert action == "rewrite"
+    assert citation_index is None
     # Applying it must not add a citation_index key the LLM could have smuggled in.
     extra_value = {"opportunities": [{"text": "x", "citation_index": 1, "claim_type": "fact"}]}
     _, extra_value, _ = claim_repair._apply_action("x", extra_value, claim, action, new_text)
@@ -225,18 +239,20 @@ def test_gap_sentence_repair_cannot_introduce_a_figure_into_assumptions():
         "citation_indices": [], "is_tam_tier": False,
         "locator": {"kind": "gap_sentence", "sentence": "The context does not provide revenue figures for this segment."},
     }
-    action, new_text = claim_repair._sanitize_action(
-        claim, "move_to_assumption", "Validate this segment's revenue -- early estimates suggest $2M.", [],
+    action, new_text, citation_index = claim_repair._sanitize_action(
+        claim, "move_to_assumption", "Validate this segment's revenue -- early estimates suggest $2M.", None, [],
     )
     assert action == "drop"
     assert new_text is None
+    assert citation_index is None
 
 
-def test_non_gap_uncited_sentence_is_not_touched_by_repair(monkeypatch):
-    # Only a recognized "gap sentence" phrasing gets relocated -- an
-    # ordinary uncited factual sentence (not about missing context) is
-    # left exactly as-is; repair must not silently rewrite unrelated
-    # uncited content just because the framework also had other issues.
+def test_non_gap_uncited_sentence_is_tagged_uncited_sentence_not_gap(monkeypatch):
+    # unify/3-gemini addendum A: a non-gap uncited factual sentence is
+    # now ALSO eligible for repair (add_citation/convert_to_analysis/
+    # drop), unlike a "gap sentence" which only ever moves to
+    # assumptions -- the two get different locator kinds so repair can
+    # treat them differently.
     text = "The app addresses a real need for freelancers [1]. Competitors charge users over $40 monthly for similar tools."
     citations = [{"index": 1}]
     chunks = [_chunk("Freelancers often struggle with quarterly tax payments.")]
@@ -246,5 +262,90 @@ def test_non_gap_uncited_sentence_is_not_touched_by_repair(monkeypatch):
     assert verification["verified"] is False
     assert any("uncited factual claim" in c for c in verification["unsupported_claims"])
 
-    gap_claims = claim_repair._gap_sentence_claims(verification)
-    assert gap_claims == []
+    uncited_claims = claim_repair._uncited_sentence_claims(verification)
+    assert len(uncited_claims) == 1
+    assert uncited_claims[0]["locator"]["kind"] == "uncited_sentence"
+
+
+def test_uncited_sentence_gets_a_real_citation_added_when_a_chunk_states_it(monkeypatch):
+    # Addendum A: an uncited sentence that a provided chunk genuinely
+    # states gets a real [N] citation added by repair, rather than
+    # being dropped or left permanently uncited.
+    text = "The app addresses a real need for freelancers [1]. 73% of freelancers forget quarterly tax deadlines."
+    citations = [{"index": 1}]
+    chunks = [_chunk("73% of freelancers in Austin forget their quarterly tax deadlines every year.")]
+
+    _mock_llm_sequence(
+        monkeypatch,
+        {"claims": [{"claim_index": 0, "verdict": "supported", "reason": "matches chunk"}]},
+        {"repairs": [{
+            "claim_index": 0, "action": "add_citation",
+            "new_text": "73% of freelancers forget quarterly tax deadlines.", "citation_index": 1,
+        }]},
+        {"claims": [{"claim_index": 0, "verdict": "supported", "reason": "chunk confirms this"}]},
+    )
+    verification = asyncio.run(claim_verifier.verify_claims(text, citations, None, context_chunks=chunks))
+    assert verification["verified"] is False
+
+    repaired = asyncio.run(claim_repair.repair_and_reverify(text, citations, None, verification, chunks, []))
+
+    assert "[1]" in repaired["text"]
+    assert repaired["repair_log"]["added_citation"] == 1
+    assert repaired["verification"]["verified"] is True
+
+
+def test_uncited_sentence_add_citation_rejects_an_out_of_range_index():
+    claim = {
+        "text": "Many freelancers forget quarterly tax deadlines.", "citation_indices": [], "is_tam_tier": False,
+        "locator": {"kind": "uncited_sentence", "sentence": "Many freelancers forget quarterly tax deadlines."},
+    }
+    action, new_text, citation_index = claim_repair._sanitize_action(
+        claim, "add_citation", "Many freelancers forget quarterly tax deadlines.", 7, [_chunk("one real chunk")],
+    )
+    assert action == "drop"
+    assert new_text is None
+    assert citation_index is None
+
+
+def test_dropping_multiple_failing_claims_in_the_same_category_does_not_shift_indices(monkeypatch):
+    # unify/3-gemini addendum B: BMC's repair dropped 21 failing claims
+    # live and 5 originally-targeted ones still survived afterward.
+    # Root cause: each failing claim's locator index was computed from
+    # the category list's ORIGINAL length; popping by index as each
+    # one was processed shifted every later index, so a second drop in
+    # the same category removed the wrong item. Five points in one
+    # category, three failing (indices 0, 2, 4) -- dropping all three
+    # must leave exactly the two untouched ones (1, 3), never one of
+    # the three that should have been removed.
+    text = "x"
+    citations = [{"index": 1}]
+    chunks = [_chunk("Some source text.")]
+    extra_value = {"cost_structure": [
+        {"text": "bad-0", "citation_index": 1, "claim_type": "fact"},
+        {"text": "good-1", "citation_index": 1, "claim_type": "fact"},
+        {"text": "bad-2", "citation_index": 1, "claim_type": "fact"},
+        {"text": "good-3", "citation_index": 1, "claim_type": "fact"},
+        {"text": "bad-4", "citation_index": 1, "claim_type": "fact"},
+    ]}
+
+    _mock_verifier_llm(monkeypatch, [
+        {"claim_index": 0, "verdict": "unsupported", "reason": "r0"},
+        {"claim_index": 1, "verdict": "supported", "reason": "r1"},
+        {"claim_index": 2, "verdict": "unsupported", "reason": "r2"},
+        {"claim_index": 3, "verdict": "supported", "reason": "r3"},
+        {"claim_index": 4, "verdict": "unsupported", "reason": "r4"},
+    ])
+    verification = asyncio.run(claim_verifier.verify_claims(text, citations, extra_value, context_chunks=chunks))
+    assert verification["verified"] is False
+
+    _mock_repair_llm(monkeypatch, [
+        {"claim_index": 0, "action": "drop", "new_text": None, "citation_index": None},
+        {"claim_index": 1, "action": "drop", "new_text": None, "citation_index": None},
+        {"claim_index": 2, "action": "drop", "new_text": None, "citation_index": None},
+    ])
+
+    repaired = asyncio.run(claim_repair.repair_and_reverify(text, citations, extra_value, verification, chunks, []))
+
+    remaining_texts = {item["text"] for item in repaired["extra_value"]["cost_structure"]}
+    assert remaining_texts == {"good-1", "good-3"}
+    assert repaired["repair_log"]["dropped"] == 3

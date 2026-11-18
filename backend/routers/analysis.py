@@ -15,6 +15,7 @@ from agents.rag_pipeline import run_pipeline, STRUCTURED_FRAMEWORKS  # noqa: E40
 from agents.synthesis import synthesize_business_metrics  # noqa: E402
 from agents.report_qa import answer_report_question  # noqa: E402
 from agents import mississauga_data  # noqa: E402
+from agents import llm_provider  # noqa: E402
 
 router = APIRouter()
 
@@ -131,6 +132,13 @@ class AnalysisResponse(BaseModel):
     # even though the user never typed a geography.
     geography: str = "Mississauga, ON, Canada"
     geography_defaulted: bool = False
+    # unify/3-gemini: "gemini" | "openai" | "mixed" across every
+    # framework actually requested, computed from each framework's own
+    # verification.provider_used (agents/llm_provider.py.overall_provider) --
+    # never a guess, and never itself fabricated when a framework has
+    # no provider_used at all (e.g. "insufficient grounded data",
+    # which made no LLM call).
+    provider_used: str | None = None
 
 
 @router.post("/analyze", response_model=AnalysisResponse)
@@ -217,6 +225,9 @@ async def analyze(req: AnalysisRequest):
     has_any_real_citation = any(results[fw]["citations"] for fw in allowed)
     rag_status = "grounded" if has_any_real_citation else "unavailable"
 
+    providers_used = [verification[fw]["provider_used"] for fw in allowed if verification[fw].get("provider_used")]
+    overall_provider_used = llm_provider.overall_provider(providers_used) if providers_used else None
+
     return AnalysisResponse(
         stage="finalizing",
         frameworks_requested=req.frameworks,
@@ -231,6 +242,7 @@ async def analyze(req: AnalysisRequest):
         rag_status=rag_status,
         geography=resolved_geography,
         geography_defaulted=geography_defaulted,
+        provider_used=overall_provider_used,
     )
 
 

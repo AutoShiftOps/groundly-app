@@ -8,7 +8,7 @@
 5. Build command: `npm run build` | Output dir: `dist`.
 
 ## Environment Variables (Vercel dashboard -> Settings -> Environment Variables)
-- `VITE_API_BASE_URL` = your backend API Gateway URL
+- `VITE_API_BASE_URL` = your backend API Gateway URL (production: `https://api.groundly.autoshiftops.com`)
 - `VITE_GA4_ID` = your GA4 Measurement ID (G-XXXXXXXXXX)
 
 ## Deploy

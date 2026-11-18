@@ -321,15 +321,16 @@ def _render_claim_for_llm(claim_index: int, claim: dict, context_chunks: list) -
     return f"CLAIM {claim_index}: {claim['text']}\nCITED SOURCE TEXT:\n{chunks_text}"
 
 
-async def _call_verifier_llm(claims: list[dict], context_chunks: list) -> dict[int, dict]:
+async def _call_verifier_llm(claims: list[dict], context_chunks: list) -> tuple[dict[int, dict], str]:
     """One structured LLM call covering every cited fact claim for this
-    framework. Returns {claim_index: {"verdict":..., "reason":...}}.
-    Raises on any failure -- the caller (verify_claims) is responsible
-    for degrading to verified=False, never defaulting to True."""
+    framework. Returns ({claim_index: {"verdict":..., "reason":...}},
+    provider_used). Raises on any failure -- the caller (verify_claims)
+    is responsible for degrading to verified=False, never defaulting
+    to True."""
     user_content = "\n\n".join(
         _render_claim_for_llm(i, claim, context_chunks) for i, claim in enumerate(claims)
     )
-    parsed = await llm_provider.structured_completion(
+    parsed, provider = await llm_provider.structured_completion(
         model=VERIFIER_MODEL,
         system_prompt=_VERIFIER_SYSTEM_PROMPT,
         user_content=user_content,
@@ -342,7 +343,7 @@ async def _call_verifier_llm(claims: list[dict], context_chunks: list) -> dict[i
         claim_index = item.get("claim_index")
         if isinstance(claim_index, int):
             results[claim_index] = {"verdict": item.get("verdict"), "reason": item.get("reason") or ""}
-    return results
+    return results, provider
 
 
 async def extract_all_claims(generated_text: str, extra_value=None) -> tuple[list[dict], list[dict], list[dict]]:
@@ -355,8 +356,27 @@ async def extract_all_claims(generated_text: str, extra_value=None) -> tuple[lis
     return narrative_facts + structured_facts, structured_analysis, uncited_factual
 
 
+def locator_key(claim: dict) -> tuple:
+    """A (bucket, text) identity for a fact claim that survives index
+    shifts from an earlier drop (e.g. removing items[0] from a category
+    list shifts every later item's index) -- used to tell "this is the
+    same claim as before, untouched" from "this is new/changed" across
+    a repair round. Two distinct points with identical text in the same
+    bucket would collide, but that's already indistinguishable as a
+    claim in its own right."""
+    locator = claim["locator"]
+    kind = locator["kind"]
+    if kind == "category_list":
+        bucket = ("category_list", locator["category"])
+    elif kind == "tam_tier":
+        bucket = ("tam_tier", locator["tier_name"])
+    else:
+        bucket = (kind,)
+    return (bucket, claim["text"])
+
+
 async def verify_claims(generated_text: str, citations: list, extra_value=None,
-                         context_chunks: list | None = None) -> dict:
+                         context_chunks: list | None = None, carry_forward: dict | None = None) -> dict:
     """verified = True only if at least one fact claim was cited, every
     cited fact claim's LLM verdict is "supported" (after the
     deterministic directory-citation and TAM-scope overrides are
@@ -365,6 +385,18 @@ async def verify_claims(generated_text: str, citations: list, extra_value=None,
     degrades to verified=False with a fixed reason -- never defaults to
     True.
 
+    `carry_forward`, when given, is {locator_key(claim): {"verdict":,
+    "reason":}} for fact claims the caller already knows the verdict
+    of and does NOT want re-judged by the LLM -- used by
+    agents/claim_repair.py's post-repair re-verification so a claim
+    the repair pass never touched keeps its original "supported"
+    verdict instead of risking a different answer from a second,
+    independent LLM call on the exact same text (confirmed live: this
+    is a real source of a fact flipping from supported to unsupported
+    across two verification passes with nothing about the claim itself
+    having changed). Only claims NOT in carry_forward are sent to the
+    LLM at all.
+
     The returned dict's "_fact_claims" and "_uncited_factual" keys are
     internal (the former: full claim dicts including locators and LLM
     verdict/reason; the latter: uncited narrative sentences flagged as
@@ -372,6 +404,7 @@ async def verify_claims(generated_text: str, citations: list, extra_value=None,
     returning this to the API must pop both off first; neither is
     meant to reach the frontend."""
     context_chunks = context_chunks or []
+    carry_forward = carry_forward or {}
     fact_claims, analysis_claims, uncited_factual = await extract_all_claims(generated_text, extra_value)
 
     if not citations:
@@ -406,23 +439,34 @@ async def verify_claims(generated_text: str, citations: list, extra_value=None,
             "claims": claims_out, "_fact_claims": [], "_uncited_factual": uncited_factual,
         }
 
+    needs_llm = [c for c in fact_claims if locator_key(c) not in carry_forward]
+    provider_used = None
     try:
-        llm_results = await _call_verifier_llm(fact_claims, context_chunks)
+        if needs_llm:
+            llm_results, provider_used = await _call_verifier_llm(needs_llm, context_chunks)
+        else:
+            llm_results = {}
     except Exception:
         logger.exception("verify_claims: claim-verification LLM call failed -- degrading to unverified.")
         return {"verified": False, "unsupported_claims": [VERIFICATION_UNAVAILABLE_REASON], "claims": [], "_fact_claims": [], "_uncited_factual": []}
 
     fact_claims_out = []
-    for i, claim in enumerate(fact_claims):
-        llm_result = llm_results.get(i)
-        if llm_result is None:
-            verdict, reason = "unsupported", "claim verification response did not include this claim"
+    needs_llm_index = 0
+    for claim in fact_claims:
+        carried = carry_forward.get(locator_key(claim))
+        if carried is not None:
+            verdict, reason = carried["verdict"], carried["reason"]
         else:
-            verdict, reason = llm_result["verdict"], llm_result["reason"]
+            llm_result = llm_results.get(needs_llm_index)
+            needs_llm_index += 1
+            if llm_result is None:
+                verdict, reason = "unsupported", "claim verification response did not include this claim"
+            else:
+                verdict, reason = llm_result["verdict"], llm_result["reason"]
 
-        override_reason = _directory_citation_violation(claim, context_chunks) or _tam_tier_scope_mismatch(claim, context_chunks)
-        if override_reason:
-            verdict, reason = "unsupported", override_reason
+            override_reason = _directory_citation_violation(claim, context_chunks) or _tam_tier_scope_mismatch(claim, context_chunks)
+            if override_reason:
+                verdict, reason = "unsupported", override_reason
 
         claims_out.append({
             "text": claim["text"], "citation_indices": claim["citation_indices"],
@@ -436,6 +480,7 @@ async def verify_claims(generated_text: str, citations: list, extra_value=None,
         "verified": len(unsupported_claims) == 0,
         "unsupported_claims": unsupported_claims,
         "claims": claims_out,
+        "provider_used": provider_used,
         "_fact_claims": fact_claims_out,
         "_uncited_factual": uncited_factual,
     }

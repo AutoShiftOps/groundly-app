@@ -144,6 +144,7 @@ export interface FrameworkVerification {
     converted: number;
     rewritten: number;
     moved_to_assumptions: number;
+    added_citation: number;
   };
 }
 
@@ -186,6 +187,13 @@ export interface GroundlyReport {
   // never typed a geography can see why directory data appears at all.
   geography?: string;
   geography_defaulted?: boolean;
+  // unify/3-gemini: which provider actually generated this report --
+  // "gemini" | "openai" | "mixed" (a fallback happened for at least
+  // one framework while others stayed on Gemini) | null (no framework
+  // made any LLM call at all, e.g. every one came back "insufficient
+  // grounded data"). Drives the "Generated with Gemini/OpenAI/mixed"
+  // note in the report's methodology section -- never a guess.
+  provider_used?: "gemini" | "openai" | "mixed" | null;
 }
 
 export interface SavedProject {

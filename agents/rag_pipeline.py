@@ -3,7 +3,6 @@ RAG grounding pipeline: retrieve -> generate with citations -> verify claims -> 
 """
 
 import asyncio
-import json
 import logging
 import re
 
@@ -14,6 +13,7 @@ from agents import web_retrieval
 from agents import mississauga_data
 from agents import market_scope
 from agents import claim_repair
+from agents import llm_provider
 from agents import claim_verifier
 from agents.claim_verifier import verify_claims  # noqa: F401  module-level name, monkeypatchable on this module
 
@@ -929,33 +929,30 @@ _MARKET_CATEGORY_SCHEMA = {
 
 async def _classify_tam_market_category(idea: str | None, industry: str | None,
                                           business_name: str | None) -> dict:
-    """Returns {"specific_category": str|None, "parent_category": str|None}.
-    Never raises -- a classification failure degrades to no category
-    (market-size search is skipped entirely in that case, not a crash)."""
+    """Returns {"specific_category": str|None, "parent_category": str|None,
+    "provider_used": str|None}. Never raises -- a classification
+    failure degrades to no category (market-size search is skipped
+    entirely in that case, not a crash)."""
     user_content = "IDEA: " + " | ".join(filter(None, [
         idea,
         f"industry: {industry}" if industry else None,
         f"business name: {business_name}" if business_name else None,
     ]))
     if not user_content.strip() or user_content.strip() == "IDEA:":
-        return {"specific_category": None, "parent_category": None}
+        return {"specific_category": None, "parent_category": None, "provider_used": None}
     try:
-        completion = await client.chat.completions.create(
+        parsed, provider = await llm_provider.structured_completion(
             model=CHAT_MODEL,
-            messages=[
-                {"role": "system", "content": _MARKET_CATEGORY_SYSTEM_PROMPT},
-                {"role": "user", "content": user_content},
-            ],
-            response_format={
-                "type": "json_schema",
-                "json_schema": {"name": "market_category", "strict": True, "schema": _MARKET_CATEGORY_SCHEMA},
-            },
+            system_prompt=_MARKET_CATEGORY_SYSTEM_PROMPT,
+            user_content=user_content,
+            schema_name="market_category",
+            schema=_MARKET_CATEGORY_SCHEMA,
             temperature=0,
         )
-        parsed = json.loads(completion.choices[0].message.content)
         return {
             "specific_category": parsed.get("specific_category") or None,
             "parent_category": parsed.get("parent_category") or None,
+            "provider_used": provider,
         }
     except Exception:
         logger.exception(
@@ -963,7 +960,7 @@ async def _classify_tam_market_category(idea: str | None, industry: str | None,
             "(market-size search will be skipped).",
             idea,
         )
-        return {"specific_category": None, "parent_category": None}
+        return {"specific_category": None, "parent_category": None, "provider_used": None}
 
 
 async def embed_query(query: str):
@@ -1025,6 +1022,7 @@ async def generate_with_citations(query: str, context_chunks: list, framework_ta
             "citations": [],
             "assumptions": [],
             "actions": [],
+            "provider_used": None,
         }
 
     context_block = "\n\n".join(
@@ -1056,34 +1054,25 @@ async def generate_with_citations(query: str, context_chunks: list, framework_ta
         system_prompt = GROUNDING_SYSTEM_PROMPT + suffix
         if framework_tag == "tam":
             system_prompt += _tam_market_fit_suffix(specific_category, parent_category)
-        completion = await client.chat.completions.create(
-            model=CHAT_MODEL,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_content},
-            ],
-            response_format={
-                "type": "json_schema",
-                "json_schema": {"name": schema_name, "strict": True, "schema": schema},
-            },
-            temperature=0.2,
-        )
-        raw = completion.choices[0].message.content
         try:
-            parsed = json.loads(raw)
+            parsed, provider_used = await llm_provider.structured_completion(
+                model=CHAT_MODEL, system_prompt=system_prompt, user_content=user_content,
+                schema_name=schema_name, schema=schema, temperature=0.2,
+            )
             text = parsed["narrative"]
             extra_value = parsed[field_name]
             assumptions = _cap_assumptions_actions(parsed.get("assumptions"))
             actions = _cap_assumptions_actions(parsed.get("actions"))
-        except (json.JSONDecodeError, KeyError, TypeError):
+        except Exception:
             # Should not happen under strict schema mode, but this must never
             # crash the request -- degrade to the same shape a non-structured
             # response has (no extra field) rather than raising.
-            logger.exception("generate_with_citations: failed to parse structured %r response, raw=%r", framework_tag, raw)
-            text = raw
+            logger.exception("generate_with_citations: structured %r generation call failed.", framework_tag)
+            text = "Insufficient grounded data available for this section."
             extra_value = None
             assumptions = []
             actions = []
+            provider_used = None
 
         if framework_tag == "tam" and extra_value:
             extra_value = _null_out_unsupported_tam_tiers(extra_value, all_chunks, specific_category, parent_category)
@@ -1095,19 +1084,21 @@ async def generate_with_citations(query: str, context_chunks: list, framework_ta
             extra_value = _null_out_unsupported_ansoff_quadrant(extra_value)
 
         filtered_citations = _filter_referenced_citations(citations, text, extra_value)
-        return {"text": text, "citations": filtered_citations, "assumptions": assumptions, "actions": actions, field_name: extra_value}
+        return {
+            "text": text, "citations": filtered_citations, "assumptions": assumptions, "actions": actions,
+            field_name: extra_value, "provider_used": provider_used,
+        }
 
-    completion = await client.chat.completions.create(
-        model=CHAT_MODEL,
-        messages=[
-            {"role": "system", "content": GROUNDING_SYSTEM_PROMPT},
-            {"role": "user", "content": user_content},
-        ],
-        temperature=0.2,
-    )
-    text = completion.choices[0].message.content
+    try:
+        text, provider_used = await llm_provider.text_completion(
+            model=CHAT_MODEL, system_prompt=GROUNDING_SYSTEM_PROMPT, user_content=user_content, temperature=0.2,
+        )
+    except Exception:
+        logger.exception("generate_with_citations: plain %r generation call failed.", framework_tag)
+        text = "Insufficient grounded data available for this section."
+        provider_used = None
     filtered_citations = _filter_referenced_citations(citations, text, None)
-    return {"text": text, "citations": filtered_citations, "assumptions": [], "actions": []}
+    return {"text": text, "citations": filtered_citations, "assumptions": [], "actions": [], "provider_used": provider_used}
 
 
 async def run_pipeline(
@@ -1146,10 +1137,13 @@ async def run_pipeline(
     # easily carry a sector-level figure that doesn't fit this idea).
     specific_category: str | None = None
     parent_category: str | None = None
+    providers_used: list[str] = []
     if framework_tag == "tam":
         category_result = await _classify_tam_market_category(idea, industry, business_name)
         specific_category = category_result["specific_category"]
         parent_category = category_result["parent_category"]
+        if category_result.get("provider_used"):
+            providers_used.append(category_result["provider_used"])
         logger.info(
             "run_pipeline: TAM market category classified as specific=%r, parent=%r for idea=%r",
             specific_category, parent_category, idea,
@@ -1219,6 +1213,27 @@ async def run_pipeline(
                 )
         else:
             ingested = await web_retrieval.search_and_ingest(query, framework_tag)
+
+        # unify/3-gemini item 4: one additional retrieval call, on top
+        # of the Tavily call(s) above, when the active provider is
+        # Gemini -- a Google Search grounding call whose URLs get
+        # fetched and ingested through the same path, so they end up
+        # as real, checkable chunks, never a citation built straight
+        # from groundingMetadata. Reuses whichever query the Tavily
+        # path above already ran (the first market-size query for TAM,
+        # the generic analysis query otherwise) rather than inventing
+        # a third query construction.
+        gemini_grounding_query = market_size_result["queries_run"][0] if framework_tag == "tam" and market_size_result["queries_run"] else (query if framework_tag != "tam" else None)
+        if gemini_grounding_query and config.LLM_PROVIDER == "gemini":
+            grounding_result = await web_retrieval.search_and_ingest_gemini_grounding(gemini_grounding_query, framework_tag)
+            if grounding_result["total_chunks"] > 0:
+                logger.info(
+                    "run_pipeline: Gemini grounding query=%r ingested %d chunk(s) for framework=%r.",
+                    gemini_grounding_query, grounding_result["total_chunks"], framework_tag,
+                )
+                ingested += grounding_result["total_chunks"]
+                for url in grounding_result["urls_ingested"]:
+                    url_to_query[url] = gemini_grounding_query
 
         if framework_tag == "tam" and ingested > 0:
             # Bug fix: re-searching with `embedding` (the ORIGINAL generic
@@ -1316,22 +1331,28 @@ async def run_pipeline(
     )
     field_name = STRUCTURED_FRAMEWORKS[framework_tag][1] if framework_tag in STRUCTURED_FRAMEWORKS else None
     extra_value = result.get(field_name) if field_name else None
+    generation_provider = result.pop("provider_used", None)
+    if generation_provider:
+        providers_used.append(generation_provider)
     all_chunks_for_verify = [*chunks, *directory_chunks]
     verification = await verify_claims(result["text"], result["citations"], extra_value, context_chunks=all_chunks_for_verify)
+    if verification.get("provider_used"):
+        providers_used.append(verification["provider_used"])
 
-    # unify/2c-claim-quality repair pass: at most one LLM call, when
-    # there's either a fact claim the verifier didn't mark "supported",
-    # or an uncited narrative sentence that's really a "gap sentence"
-    # (one that just points out what the CONTEXT doesn't cover -- banned
-    # from generation by GROUNDING_SYSTEM_PROMPT rule 6 above, but
-    # relocated to assumptions here if one slips through anyway). A
-    # rewrite/convert/drop/move-to-assumption attempt, then a full
-    # re-verification of the result. That re-verification is what's
-    # actually returned; the pre-repair one never reaches the caller.
+    # unify/2c-claim-quality repair pass (extended in unify/3-gemini
+    # addendum A to also cover uncited factual sentences generally, not
+    # just "gap sentences"): at most one LLM call, when there's either
+    # a fact claim the verifier didn't mark "supported", or ANY uncited
+    # narrative sentence the verifier flagged as a factual claim. A
+    # rewrite/convert/drop/move-to-assumption/add-citation attempt,
+    # then a full re-verification of the result (carrying forward the
+    # verdict of every claim repair didn't touch). That re-verification
+    # is what's actually returned; the pre-repair one never reaches
+    # the caller.
     repair_log = None
     has_failing_facts = any(c["verdict"] != "supported" for c in verification.get("_fact_claims", []))
-    has_gap_sentences = any(claim_verifier.is_gap_sentence(c["text"]) for c in verification.get("_uncited_factual", []))
-    if has_failing_facts or has_gap_sentences:
+    has_uncited_sentences = bool(verification.get("_uncited_factual"))
+    if has_failing_facts or has_uncited_sentences:
         repaired = await claim_repair.repair_and_reverify(
             result["text"], result["citations"], extra_value, verification, all_chunks_for_verify,
             result.get("assumptions") or [],
@@ -1342,12 +1363,16 @@ async def run_pipeline(
         extra_value = repaired["extra_value"]
         verification = repaired["verification"]
         repair_log = repaired["repair_log"]
+        if repair_log.get("provider_used"):
+            providers_used.append(repair_log["provider_used"])
+        if verification.get("provider_used"):
+            providers_used.append(verification["provider_used"])
         logger.info(
             "run_pipeline: repair pass for framework=%r -- claims_before=%d supported_before=%d "
-            "supported_after=%d dropped=%d converted=%d rewritten=%d moved_to_assumptions=%d",
+            "supported_after=%d dropped=%d converted=%d rewritten=%d moved_to_assumptions=%d added_citation=%d",
             framework_tag, repair_log["claims_before"], repair_log["supported_before"],
             repair_log["supported_after"], repair_log["dropped"], repair_log["converted"], repair_log["rewritten"],
-            repair_log["moved_to_assumptions"],
+            repair_log["moved_to_assumptions"], repair_log["added_citation"],
         )
 
     fact_claims = verification.pop("_fact_claims", [])
@@ -1358,5 +1383,10 @@ async def run_pipeline(
     verification["analysis_count"] = len(analysis_claims)
     if repair_log:
         verification["repair_log"] = repair_log
+    # unify/3-gemini: one summary per framework across every LLM call
+    # run_pipeline made for it (category classification, generation,
+    # verification, repair) -- "gemini"/"openai" if every call used the
+    # same provider, "mixed" if a fallback happened partway through.
+    verification["provider_used"] = llm_provider.overall_provider(providers_used)
 
     return {**result, "verification": verification}
