@@ -143,6 +143,7 @@ export interface FrameworkVerification {
     dropped: number;
     converted: number;
     rewritten: number;
+    moved_to_assumptions: number;
   };
 }
 

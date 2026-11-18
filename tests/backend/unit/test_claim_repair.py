@@ -125,7 +125,7 @@ def test_repair_cannot_introduce_a_new_citation():
     assert action == "rewrite"
     # Applying it must not add a citation_index key the LLM could have smuggled in.
     extra_value = {"opportunities": [{"text": "x", "citation_index": 1, "claim_type": "fact"}]}
-    _, extra_value = claim_repair._apply_action("x", extra_value, claim, action, new_text)
+    _, extra_value, _ = claim_repair._apply_action("x", extra_value, claim, action, new_text)
     assert extra_value["opportunities"][0]["citation_index"] == 1
 
 
@@ -187,3 +187,64 @@ def test_repair_llm_failure_leaves_original_verification_unchanged(monkeypatch):
     assert repaired["verification"] == verification
     assert repaired["extra_value"] == extra_value
     assert repaired["text"] == text
+
+
+def test_gap_sentence_is_moved_to_assumptions_not_left_in_narrative(monkeypatch):
+    # A "gap sentence" the generator wasn't supposed to write (banned by
+    # GROUNDING_SYSTEM_PROMPT rule 6) but that slipped through anyway --
+    # the repair pass moves it into assumptions instead of leaving it in
+    # the narrative, where it would otherwise just keep failing as an
+    # uncited factual claim forever.
+    text = (
+        "The app addresses a real need for freelancers [1]. "
+        "However, the context does not provide specific data for the Balanced Scorecard analysis."
+    )
+    citations = [{"index": 1}]
+    chunks = [_chunk("Freelancers often struggle with quarterly tax payments.")]
+
+    _mock_verifier_llm(monkeypatch, [{"claim_index": 0, "verdict": "supported", "reason": "matches chunk"}])
+    verification = asyncio.run(claim_verifier.verify_claims(text, citations, None, context_chunks=chunks))
+    assert verification["verified"] is False
+    assert any("uncited factual claim" in c for c in verification["unsupported_claims"])
+
+    _mock_repair_llm(monkeypatch, [{
+        "claim_index": 0, "action": "move_to_assumption",
+        "new_text": "Validate customer satisfaction with Austin freelancers directly.",
+    }])
+
+    repaired = asyncio.run(claim_repair.repair_and_reverify(text, citations, None, verification, chunks, []))
+
+    assert "does not provide" not in repaired["text"]
+    assert "Validate customer satisfaction with Austin freelancers directly." in repaired["assumptions"]
+    assert repaired["repair_log"]["moved_to_assumptions"] == 1
+
+
+def test_gap_sentence_repair_cannot_introduce_a_figure_into_assumptions():
+    claim = {
+        "text": "The context does not provide revenue figures for this segment.",
+        "citation_indices": [], "is_tam_tier": False,
+        "locator": {"kind": "gap_sentence", "sentence": "The context does not provide revenue figures for this segment."},
+    }
+    action, new_text = claim_repair._sanitize_action(
+        claim, "move_to_assumption", "Validate this segment's revenue -- early estimates suggest $2M.", [],
+    )
+    assert action == "drop"
+    assert new_text is None
+
+
+def test_non_gap_uncited_sentence_is_not_touched_by_repair(monkeypatch):
+    # Only a recognized "gap sentence" phrasing gets relocated -- an
+    # ordinary uncited factual sentence (not about missing context) is
+    # left exactly as-is; repair must not silently rewrite unrelated
+    # uncited content just because the framework also had other issues.
+    text = "The app addresses a real need for freelancers [1]. Competitors charge users over $40 monthly for similar tools."
+    citations = [{"index": 1}]
+    chunks = [_chunk("Freelancers often struggle with quarterly tax payments.")]
+
+    _mock_verifier_llm(monkeypatch, [{"claim_index": 0, "verdict": "supported", "reason": "matches chunk"}])
+    verification = asyncio.run(claim_verifier.verify_claims(text, citations, None, context_chunks=chunks))
+    assert verification["verified"] is False
+    assert any("uncited factual claim" in c for c in verification["unsupported_claims"])
+
+    gap_claims = claim_repair._gap_sentence_claims(verification)
+    assert gap_claims == []

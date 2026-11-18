@@ -14,6 +14,7 @@ from agents import web_retrieval
 from agents import mississauga_data
 from agents import market_scope
 from agents import claim_repair
+from agents import claim_verifier
 from agents.claim_verifier import verify_claims  # noqa: F401  module-level name, monkeypatchable on this module
 
 logger = logging.getLogger(__name__)
@@ -225,9 +226,10 @@ GROUNDING_SYSTEM_PROMPT = """You are a grounded business-analysis assistant.
 Rules you must follow strictly:
 1. Only use facts present in the provided CONTEXT below. Never use outside knowledge for market data, statistics, or claims.
 2. Every factual sentence must end with a citation marker like [1], [2] referring to the numbered context chunk it came from.
-3. If the CONTEXT is relevant to the topic but only partially covers it, write the analysis using what IS supported by the CONTEXT — cite each supported claim — and explicitly note which aspects the CONTEXT does not address. This is the PREFERRED response whenever the CONTEXT contains any usable, on-topic facts. Only respond "Insufficient grounded data available for this section" if the CONTEXT is genuinely unrelated to the topic or contains no usable facts at all — never because it merely fails to cover every angle.
+3. If the CONTEXT is relevant to the topic but only partially covers it, write the analysis using what IS supported by the CONTEXT — cite each supported claim. This is the PREFERRED response whenever the CONTEXT contains any usable, on-topic facts. Only respond "Insufficient grounded data available for this section" if the CONTEXT is genuinely unrelated to the topic or contains no usable facts at all — never because it merely fails to cover every angle.
 4. Do not fabricate numbers, company names, or sources under any circumstance.
 5. Write as a confident, specific business analyst, not a generic summary generator — lead sentences with the conclusion, not the setup; use concrete numbers over vague qualifiers where the CONTEXT supports them. This rule is about register only — it never overrides rules 1-4.
+6. NEVER write a sentence in the narrative (or in any structured point) that just points out what the CONTEXT doesn't cover -- no "the context does not provide...", "no data is available on...", "specific figures for X were not found", or similar. If something relevant is genuinely missing, that's real information too, but it belongs in the "assumptions" list below as something the founder should go validate -- phrased as an action ("Validate X with primary research," not "The context doesn't say X") -- never as a sentence inside the narrative or a structured point.
 """
 
 # Every structured framework also gets assumptions/actions -- 2-3 short
@@ -1317,17 +1319,24 @@ async def run_pipeline(
     all_chunks_for_verify = [*chunks, *directory_chunks]
     verification = await verify_claims(result["text"], result["citations"], extra_value, context_chunks=all_chunks_for_verify)
 
-    # unify/2c-claim-quality repair pass: at most one LLM call, only
-    # when there's at least one fact claim the verifier didn't already
-    # mark "supported" -- a rewrite/convert/drop attempt, then a full
+    # unify/2c-claim-quality repair pass: at most one LLM call, when
+    # there's either a fact claim the verifier didn't mark "supported",
+    # or an uncited narrative sentence that's really a "gap sentence"
+    # (one that just points out what the CONTEXT doesn't cover -- banned
+    # from generation by GROUNDING_SYSTEM_PROMPT rule 6 above, but
+    # relocated to assumptions here if one slips through anyway). A
+    # rewrite/convert/drop/move-to-assumption attempt, then a full
     # re-verification of the result. That re-verification is what's
     # actually returned; the pre-repair one never reaches the caller.
     repair_log = None
-    if any(c["verdict"] != "supported" for c in verification.get("_fact_claims", [])):
+    has_failing_facts = any(c["verdict"] != "supported" for c in verification.get("_fact_claims", []))
+    has_gap_sentences = any(claim_verifier.is_gap_sentence(c["text"]) for c in verification.get("_uncited_factual", []))
+    if has_failing_facts or has_gap_sentences:
         repaired = await claim_repair.repair_and_reverify(
             result["text"], result["citations"], extra_value, verification, all_chunks_for_verify,
+            result.get("assumptions") or [],
         )
-        result = {**result, "text": repaired["text"]}
+        result = {**result, "text": repaired["text"], "assumptions": repaired["assumptions"]}
         if field_name:
             result[field_name] = repaired["extra_value"]
         extra_value = repaired["extra_value"]
@@ -1335,12 +1344,14 @@ async def run_pipeline(
         repair_log = repaired["repair_log"]
         logger.info(
             "run_pipeline: repair pass for framework=%r -- claims_before=%d supported_before=%d "
-            "supported_after=%d dropped=%d converted=%d rewritten=%d",
+            "supported_after=%d dropped=%d converted=%d rewritten=%d moved_to_assumptions=%d",
             framework_tag, repair_log["claims_before"], repair_log["supported_before"],
             repair_log["supported_after"], repair_log["dropped"], repair_log["converted"], repair_log["rewritten"],
+            repair_log["moved_to_assumptions"],
         )
 
     fact_claims = verification.pop("_fact_claims", [])
+    verification.pop("_uncited_factual", None)
     analysis_claims = [c for c in verification.get("claims", []) if c.get("claim_type") == "analysis"]
     verification["facts_total"] = len(fact_claims)
     verification["facts_supported"] = sum(1 for c in fact_claims if c["verdict"] == "supported")

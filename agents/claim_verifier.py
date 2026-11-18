@@ -72,6 +72,35 @@ VERIFICATION_UNAVAILABLE_REASON = "Verification unavailable for this section"
 # fact (exactly the pre-2c behavior), never checked for hidden facts.
 _DEFAULT_CLAIM_TYPE = "fact"
 
+# unify/2c-claim-quality follow-up: a "gap sentence" -- one that just
+# points out what the CONTEXT doesn't cover ("the context does not
+# provide...", "no data is available on...") -- is now banned from
+# generation (GROUNDING_SYSTEM_PROMPT rule 6 in rag_pipeline.py: that
+# information belongs in "assumptions" instead). This pattern is used
+# ONLY by agents/claim_repair.py to find and relocate any that slip
+# through anyway -- it is explicitly NOT used to exempt a gap sentence
+# from being flagged as an uncited factual claim by
+# _looks_like_factual_claim() above; the verifier's own rules are
+# unchanged, the fix is to stop producing these sentences (and to move
+# any that do appear), never to stop checking for them.
+GAP_SENTENCE_PATTERN = re.compile(
+    r"\b(?:context (?:does not|doesn.t) (?:provide|state|specify|include|cover|mention)"
+    r"|no (?:specific )?data (?:is|was) available"
+    r"|(?:not|isn.t|wasn.t) (?:specified|available|provided) (?:in|by) the context"
+    r"|(?:specific )?figures? for .+ (?:were|was) not found"
+    r"|(?:cannot|can.t) be determined from the context"
+    r"|(?:does not|doesn.t) (?:specify|provide|state) (?:specific )?(?:details|figures|data|information)"
+    r"|without (?:this |the |sufficient |critical |necessary )?(?:critical |additional )?data"
+    r"|lacks? (?:the |sufficient |necessary )?data"
+    r"|insufficient data"
+    r"|not enough data)\b",
+    re.IGNORECASE,
+)
+
+
+def is_gap_sentence(text: str) -> bool:
+    return bool(GAP_SENTENCE_PATTERN.search(text or ""))
+
 
 def contains_hidden_fact(text: str) -> bool:
     """A figure, percentage, or named-entity-shaped token in text that
@@ -336,16 +365,17 @@ async def verify_claims(generated_text: str, citations: list, extra_value=None,
     degrades to verified=False with a fixed reason -- never defaults to
     True.
 
-    The returned dict's "_fact_claims" key is an internal list (full
-    claim dicts, including locators and LLM verdict/reason) for
-    agents/claim_repair.py's repair pass -- callers returning this to
-    the API must pop it off first; it is not meant to reach the
-    frontend."""
+    The returned dict's "_fact_claims" and "_uncited_factual" keys are
+    internal (the former: full claim dicts including locators and LLM
+    verdict/reason; the latter: uncited narrative sentences flagged as
+    factual) for agents/claim_repair.py's repair pass -- callers
+    returning this to the API must pop both off first; neither is
+    meant to reach the frontend."""
     context_chunks = context_chunks or []
     fact_claims, analysis_claims, uncited_factual = await extract_all_claims(generated_text, extra_value)
 
     if not citations:
-        return {"verified": False, "unsupported_claims": ["No grounded sources retrieved for this section"], "claims": [], "_fact_claims": []}
+        return {"verified": False, "unsupported_claims": ["No grounded sources retrieved for this section"], "claims": [], "_fact_claims": [], "_uncited_factual": []}
 
     # Analysis-point and uncited-narrative-sentence checks are purely
     # deterministic and apply regardless of whether there's anything to
@@ -371,13 +401,16 @@ async def verify_claims(generated_text: str, citations: list, extra_value=None,
 
     if not fact_claims:
         unsupported_claims.insert(0, "No inline citation markers found in output")
-        return {"verified": len(unsupported_claims) == 0, "unsupported_claims": unsupported_claims, "claims": claims_out, "_fact_claims": []}
+        return {
+            "verified": len(unsupported_claims) == 0, "unsupported_claims": unsupported_claims,
+            "claims": claims_out, "_fact_claims": [], "_uncited_factual": uncited_factual,
+        }
 
     try:
         llm_results = await _call_verifier_llm(fact_claims, context_chunks)
     except Exception:
         logger.exception("verify_claims: claim-verification LLM call failed -- degrading to unverified.")
-        return {"verified": False, "unsupported_claims": [VERIFICATION_UNAVAILABLE_REASON], "claims": [], "_fact_claims": []}
+        return {"verified": False, "unsupported_claims": [VERIFICATION_UNAVAILABLE_REASON], "claims": [], "_fact_claims": [], "_uncited_factual": []}
 
     fact_claims_out = []
     for i, claim in enumerate(fact_claims):
@@ -404,4 +437,5 @@ async def verify_claims(generated_text: str, citations: list, extra_value=None,
         "unsupported_claims": unsupported_claims,
         "claims": claims_out,
         "_fact_claims": fact_claims_out,
+        "_uncited_factual": uncited_factual,
     }
