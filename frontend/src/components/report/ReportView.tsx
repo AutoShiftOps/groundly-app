@@ -41,7 +41,14 @@ import {
   FRAMEWORK_NAV_ITEMS,
 } from "./frameworkMeta";
 import { MethodologyModal } from "./MethodologyModal";
-import { BrochurePreview, PrintBrochure } from "./PrintBrochure";
+import {
+  BrochurePreview,
+  PrintBrochure,
+  claimPrintTip,
+  loadBrochureTheme,
+  saveBrochureTheme,
+  type BrochureTheme,
+} from "./PrintBrochure";
 import { ReportRightRail } from "./ReportRightRail";
 
 type FrameworkSubTab = "summary" | "evidence" | "assumptions" | "actions";
@@ -254,6 +261,13 @@ export default function ReportView({
   const [pdfState, setPdfState] = useState<"idle" | "generating" | "error">("idle");
   const [isPrinting, setIsPrinting] = useState(false);
   const [showBrochurePreview, setShowBrochurePreview] = useState(false);
+  const [brochureTheme, setBrochureTheme] = useState<BrochureTheme>(loadBrochureTheme);
+  const [showPrintTip, setShowPrintTip] = useState(false);
+
+  function changeBrochureTheme(theme: BrochureTheme) {
+    setBrochureTheme(theme);
+    saveBrochureTheme(theme);
+  }
   // "Still loading" from this component's own perspective -- it's only
   // ever mounted once a project/report exists, but a report with no
   // results yet (e.g. a saved project whose analysis never completed)
@@ -263,6 +277,10 @@ export default function ReportView({
   async function handlePrint() {
     if (!reportHasData || isPrinting) return;
     setIsPrinting(true);
+    // The dark brochure's page background only prints with the dialog's
+    // "Background graphics" on -- say so once, briefly, then print anyway.
+    const firstTip = brochureTheme === "dark" && claimPrintTip();
+    if (firstTip) setShowPrintTip(true);
     // Dynamically imported (same convention handleExportPdf already
     // uses below for @react-pdf/renderer) -- ga4.js reads
     // import.meta.env at module-evaluation time, which the SSR test
@@ -279,6 +297,7 @@ export default function ReportView({
       // Font loading can reject in some environments -- never block
       // printing on it.
     }
+    if (firstTip) await new Promise((resolve) => setTimeout(resolve, 1500));
     requestAnimationFrame(() => {
       window.print();
     });
@@ -439,15 +458,35 @@ export default function ReportView({
             {showBrochurePreview ? "Exit Brochure View" : "Brochure View"}
           </button>
 
-          <button
-            type="button"
-            onClick={handlePrint}
-            disabled={!reportHasData || isPrinting}
-            className="surface-subpanel inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold text-slate-200 transition-colors hover:border-[#4a8fff] hover:text-white disabled:cursor-not-allowed disabled:opacity-60 whitespace-nowrap shrink-0"
-          >
-            <Printer className="h-3.5 w-3.5" />
-            Print Report
-          </button>
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              onClick={handlePrint}
+              disabled={!reportHasData || isPrinting}
+              className="surface-subpanel inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold text-slate-200 transition-colors hover:border-[#4a8fff] hover:text-white disabled:cursor-not-allowed disabled:opacity-60 whitespace-nowrap"
+            >
+              <Printer className="h-3.5 w-3.5" />
+              Print Report
+            </button>
+            {showPrintTip && (
+              <div
+                role="status"
+                className="surface-panel absolute right-0 top-full z-30 mt-2 flex w-64 items-start gap-2 rounded-lg p-3 text-xs leading-relaxed text-slate-200"
+              >
+                <span>
+                  For the dark brochure, turn on 'Background graphics' in the print dialog (More settings).
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowPrintTip(false)}
+                  aria-label="Dismiss tip"
+                  className="shrink-0 text-slate-400 hover:text-white"
+                >
+                  ×
+                </button>
+              </div>
+            )}
+          </div>
 
           <button
             type="button"
@@ -467,7 +506,33 @@ export default function ReportView({
 
       {showBrochurePreview ? (
         <div className="no-print">
-          <BrochurePreview report={report} idea={idea} title={title} date={dateLabel} />
+          <div className="flex items-center justify-center gap-3">
+            <span className="font-mono text-[10px] uppercase tracking-wider text-slate-400">
+              Print theme
+            </span>
+            <div role="radiogroup" aria-label="Print theme" className="surface-subpanel inline-flex rounded-lg p-0.5">
+              {(
+                [
+                  ["dark", "Dark"],
+                  ["light", "Ink saver"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={brochureTheme === value}
+                  onClick={() => changeBrochureTheme(value)}
+                  className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    brochureTheme === value ? "bg-[#4a8fff] text-white" : "text-slate-300 hover:text-white"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <BrochurePreview report={report} idea={idea} title={title} date={dateLabel} theme={brochureTheme} />
         </div>
       ) : (
       <>
@@ -1156,7 +1221,7 @@ export default function ReportView({
         />
       )}
 
-      <PrintBrochure report={report} idea={idea} title={title} date={dateLabel} />
+      <PrintBrochure report={report} idea={idea} title={title} date={dateLabel} theme={brochureTheme} />
     </div>
   );
 }

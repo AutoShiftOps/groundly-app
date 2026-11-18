@@ -192,69 +192,146 @@
 
 @page {
   size: Letter;
-  margin: 14mm 12mm;
+  margin: 12mm;
+}
+
+/* Brochure pages are named per theme (the `page` property is set in the
+   @media print block) so each theme owns its page background -- an
+   @page background fills the margins too, which an html/body background
+   alone can't -- and its footer colour. Chromium only paints @page
+   backgrounds with "Background graphics" on; the dark theme's html/body
+   background is the fallback for the content area. */
+@page brochure-dark {
+  size: Letter;
+  margin: 12mm;
+  background: #030712;
   @bottom-left {
     content: "Groundly";
+    color: #94a3b8;
+    font-size: 8pt;
   }
   @bottom-right {
     content: "Page " counter(page);
+    color: #94a3b8;
+    font-size: 8pt;
   }
 }
 
-/* Full-bleed cover: zero margins so the brand gradient background can
-   reach every edge of the first page. Unsupported in some engines
-   (Firefox has no :first support for named margin content) -- falls
-   back to the normal @page margin there, which is a minor cosmetic
-   loss, not a broken layout. */
-@page :first {
+@page brochure-light {
+  size: Letter;
+  margin: 12mm;
+  background: #ffffff;
+  @bottom-left {
+    content: "Groundly";
+    color: #64748b;
+    font-size: 8pt;
+  }
+  @bottom-right {
+    content: "Page " counter(page);
+    color: #64748b;
+    font-size: 8pt;
+  }
+}
+
+/* Full-bleed cover in both themes. */
+@page brochure-cover {
+  size: Letter;
   margin: 0;
+  background: #030712;
 }
 
 /* --------------------------------------------------------------------
-   Shared brochure visual styling -- applies identically whether
-   .print-brochure is the print-only portal content or the on-screen
-   "Brochure View" preview (.brochure-preview). Deliberately NOT inside
-   @media print: PrintBrochureContent is the same component either way
-   (feature/print-brochure addendum, item C), so its colors/typography/
-   layout must be identical in both, not re-specified twice and risk
-   drifting apart. Only pagination concerns (page breaks, @page sizing,
-   hiding the on-screen app) are print-only -- see the @media print
-   block further down.
+   Shared brochure styling -- applies identically to the print-only
+   portal and the on-screen Brochure View (.brochure-preview), since
+   both render the same PrintBrochureContent. Colours come from theme
+   tokens: .brochure-dark (default) matches the on-screen report,
+   .brochure-light is the Ink saver paper theme. Only pagination lives
+   in the @media print block at the end.
    -------------------------------------------------------------------- */
 .print-brochure {
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
   font-family: var(--font-body);
+  color: var(--pb-text);
 }
 
-.print-brochure .surface-panel,
-.print-brochure .surface-subpanel {
+.brochure-dark {
+  --pb-sheet: #030712;
+  --pb-heading: #ffffff;
+  --pb-text: #e8eefc;
+  --pb-body: #cbd5e1;
+  --pb-muted: #94a3b8;
+  --pb-meta: #94a3b8;
+  --pb-placeholder: #64748b;
+  --pb-kicker: #60a5fa;
+  --pb-border: rgba(110, 152, 235, 0.2);
+  --pb-divider: rgba(110, 152, 235, 0.14);
+  --pb-track: rgba(148, 176, 235, 0.16);
+  /* .surface-panel's gradient pre-composited onto #030712: opaque, so
+     PDF viewers that mishandle translucent gradients render it the same. */
+  --pb-card: linear-gradient(180deg, #0e1832 0%, #070d1c 100%);
+  --pb-ok-fg: #6ee7b7;
+  --pb-ok-bg: #0b2a26;
+  --pb-warn-fg: #fcd34d;
+  --pb-warn-bg: #2b2213;
+}
+
+.brochure-light {
+  --pb-sheet: #ffffff;
+  --pb-heading: #0f172a;
+  --pb-text: #1e293b;
+  --pb-body: #334155;
+  --pb-muted: #475569;
+  --pb-meta: #64748b;
+  --pb-placeholder: #94a3b8;
+  --pb-kicker: #2563eb;
+  --pb-border: #cbd5e1;
+  --pb-divider: #e2e8f0;
+  --pb-track: #e2e8f0;
+  --pb-card: none;
+  --pb-ok-fg: #047857;
+  --pb-ok-bg: #d1fae5;
+  --pb-warn-fg: #92400e;
+  --pb-warn-bg: #fef3c7;
+}
+
+/* Ink saver only: reused on-screen components (dark surfaces, white
+   text, white SVG labels) are repainted for paper. The dark theme
+   leaves them exactly as the on-screen report draws them. */
+.brochure-light .surface-panel,
+.brochure-light .surface-subpanel {
   background: #ffffff !important;
   border: 1px solid #cbd5e1 !important;
   box-shadow: none !important;
 }
 
-.print-brochure .text-white,
-.print-brochure .text-slate-100,
-.print-brochure .text-slate-200,
-.print-brochure .text-slate-300 {
+.brochure-light .text-white,
+.brochure-light .text-slate-100,
+.brochure-light .text-slate-200,
+.brochure-light .text-slate-300 {
   color: #1e293b !important;
 }
 
-.print-brochure .text-slate-400,
-.print-brochure .text-slate-500 {
+.brochure-light .text-slate-400,
+.brochure-light .text-slate-500 {
   color: #475569 !important;
 }
 
-/* TamConcentricDiagram's ring value/label text (fill-white,
-   fill-slate-200/300, fill-[#6ee7b7]) is only ever legible against the
-   on-screen dark surface -- on paper (or the light brochure preview)
-   it's white/near-white on a light ring and unreadable. Every text
-   node inside a reused brochure SVG goes dark slate; the ring
-   strokes/gradients themselves (set via attributes on <circle>, not
-   matched by this selector) keep their real brand colors. */
-.print-brochure svg text {
+.brochure-light svg text {
   fill: #1e293b !important;
+}
+
+/* Interior spreads have no background of their own, so the page (the
+   @page background in print, the sheet colour in the preview) shows
+   through with no visible box edge. */
+.print-spread {
+  background: transparent;
+  padding: 4mm 0;
+}
+
+.print-keep-with-next {
+  break-inside: avoid;
+  break-after: avoid;
 }
 
 .print-cover {
@@ -313,12 +390,6 @@
   color: #94a3b8;
 }
 
-.print-light {
-  background: #ffffff;
-  color: #1e293b;
-  padding: 4mm 0;
-}
-
 .print-spread-header {
   margin-bottom: 10pt;
 }
@@ -329,7 +400,7 @@
   font-size: 9pt;
   font-weight: 700;
   letter-spacing: 0.08em;
-  color: #2563eb;
+  color: var(--pb-kicker);
   margin-bottom: 2pt;
 }
 
@@ -337,7 +408,7 @@
   font-family: var(--font-display);
   font-weight: 800;
   font-size: 16pt;
-  color: #0f172a;
+  color: var(--pb-heading);
   margin-bottom: 8pt;
 }
 
@@ -345,7 +416,7 @@
   font-family: var(--font-display);
   font-weight: 700;
   font-size: 12pt;
-  color: #0f172a;
+  color: var(--pb-heading);
   margin-top: 12pt;
   margin-bottom: 6pt;
 }
@@ -361,20 +432,20 @@
   font-family: var(--font-display);
   font-weight: 800;
   font-size: 14pt;
-  color: #0f172a;
+  color: var(--pb-heading);
 }
 
 .print-summary-verdict-sub {
   margin-top: 2pt;
   font-size: 9.5pt;
-  color: #334155;
+  color: var(--pb-body);
   line-height: 1.4;
 }
 
 .print-summary-verdict-meta {
   margin-top: 4pt;
   font-size: 8.5pt;
-  color: #64748b;
+  color: var(--pb-meta);
 }
 
 .print-metric-grid {
@@ -385,9 +456,10 @@
 
 .print-metric-card {
   break-inside: avoid;
-  border: 1.5pt solid #cbd5e1;
+  border: 1.5pt solid var(--pb-border);
   border-radius: 6pt;
   padding: 8pt;
+  background: var(--pb-card);
 }
 
 .print-metric-head {
@@ -404,13 +476,13 @@
   margin-top: 4pt;
   font-size: 13pt;
   font-weight: 800;
-  color: #0f172a;
+  color: var(--pb-heading);
 }
 
 .print-metric-rationale {
   margin-top: 2pt;
   font-size: 9pt;
-  color: #334155;
+  color: var(--pb-body);
   line-height: 1.4;
 }
 
@@ -418,7 +490,7 @@
   margin-top: 4pt;
   font-size: 9pt;
   font-style: italic;
-  color: #94a3b8;
+  color: var(--pb-placeholder);
 }
 
 .print-evidence-chart {
@@ -438,15 +510,12 @@
 
 .print-evidence-label {
   font-weight: 600;
-  color: #334155;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  color: var(--pb-body);
 }
 
 .print-evidence-track {
   height: 7pt;
-  background: #e2e8f0;
+  background: var(--pb-track);
   border-radius: 4pt;
   overflow: hidden;
 }
@@ -457,38 +526,12 @@
 
 .print-evidence-count {
   text-align: right;
-  color: #475569;
+  color: var(--pb-muted);
   font-variant-numeric: tabular-nums;
 }
 
-.print-tam-wrap {
-  break-inside: avoid;
-  margin-top: 10pt;
-}
-
-.print-verify-strip {
-  display: flex;
-  flex-direction: column;
-  gap: 4pt;
-}
-
-.print-verify-row {
-  break-inside: avoid;
-  display: flex;
-  align-items: center;
-  gap: 8pt;
-  font-size: 9.5pt;
-  border-bottom: 0.5pt solid #e2e8f0;
-  padding: 3pt 0;
-}
-
-.print-verify-name {
-  font-weight: 700;
-  min-width: 140pt;
-}
-
 .print-verify-facts {
-  color: #475569;
+  color: var(--pb-muted);
   font-size: 8.5pt;
 }
 
@@ -503,13 +546,13 @@
 }
 
 .print-badge-ok {
-  color: #047857;
-  background: #d1fae5;
+  color: var(--pb-ok-fg);
+  background: var(--pb-ok-bg);
 }
 
 .print-badge-warn {
-  color: #92400e;
-  background: #fef3c7;
+  color: var(--pb-warn-fg);
+  background: var(--pb-warn-bg);
 }
 
 .print-fw-card {
@@ -517,10 +560,25 @@
   margin-bottom: 10pt;
 }
 
-.print-strategy-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10pt;
+/* Dark theme: each framework sits on the same panel surface the
+   on-screen report uses. */
+.brochure-dark .print-fw-card {
+  background: var(--pb-card);
+  border: 1px solid var(--pb-border);
+  border-radius: 8pt;
+  padding: 8pt;
+}
+
+/* Labels wrap rather than clip -- reused diagram headers are uppercase
+   single words ("SEGMENTATION") that can overflow a narrow column. */
+.print-brochure .uppercase {
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+/* Badges sit on a saturated framework band; a solid chip keeps them legible. */
+.brochure-dark .print-fw-band .print-badge {
+  background: #030712;
 }
 
 .print-fw-band {
@@ -554,7 +612,7 @@
 .print-body-text {
   font-size: 10pt;
   line-height: 1.5;
-  color: #1e293b;
+  color: var(--pb-text);
 }
 
 .print-diagram-wrap {
@@ -564,7 +622,7 @@
 
 .print-empty-state {
   font-style: italic;
-  color: #94a3b8;
+  color: var(--pb-placeholder);
   font-size: 10pt;
   padding: 12pt 0;
 }
@@ -578,9 +636,10 @@
 
 .print-callout {
   break-inside: avoid;
-  border: 1pt solid #cbd5e1;
+  border: 1pt solid var(--pb-border);
   border-radius: 6pt;
   padding: 8pt;
+  background: var(--pb-card);
 }
 
 .print-callout-title {
@@ -588,47 +647,47 @@
   font-size: 9pt;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: #0f172a;
+  color: var(--pb-heading);
   margin-bottom: 4pt;
 }
 
 .print-callout-list {
   font-size: 9pt;
   line-height: 1.5;
-  color: #334155;
+  color: var(--pb-body);
   padding-left: 12pt;
   list-style: disc;
 }
 
 .print-callout-tag {
-  color: #94a3b8;
+  color: var(--pb-placeholder);
   font-size: 8pt;
 }
 
 .print-callout-empty {
   font-size: 9pt;
   font-style: italic;
-  color: #94a3b8;
+  color: var(--pb-placeholder);
 }
 
 .print-status-line {
   display: flex;
   gap: 10pt;
   font-size: 9pt;
-  color: #334155;
+  color: var(--pb-body);
   margin-bottom: 8pt;
   text-transform: capitalize;
 }
 
 .print-sources-list {
   font-size: 9pt;
-  color: #1e293b;
+  color: var(--pb-text);
 }
 
 .print-source-item {
   break-inside: avoid;
   padding: 5pt 0;
-  border-bottom: 0.5pt solid #e2e8f0;
+  border-bottom: 0.5pt solid var(--pb-divider);
 }
 
 .print-source-title {
@@ -637,26 +696,24 @@
 
 .print-source-url {
   word-break: break-all;
-  color: #475569;
+  color: var(--pb-muted);
 }
 
 .print-source-meta {
-  color: #64748b;
+  color: var(--pb-meta);
   font-size: 8.5pt;
 }
 
 .print-provider-note {
   margin-top: 12pt;
   font-size: 8.5pt;
-  color: #94a3b8;
+  color: var(--pb-placeholder);
   text-align: center;
 }
 
-/* On-screen-only "paper" chrome for the Brochure View toggle -- each
-   .print-page reads as a distinct page card with real page proportions
-   and a gap between them. Scoped under .brochure-preview, which the
-   print portal's wrapper never carries, so none of this reaches actual
-   print output. */
+/* On-screen-only "paper" chrome for Brochure View: each .print-page is a
+   page-sized sheet in the theme's page colour, with padding standing in
+   for the print margins. The print portal never carries .brochure-preview. */
 .brochure-preview {
   display: flex;
   flex-direction: column;
@@ -668,13 +725,17 @@
 .brochure-preview .print-page {
   width: 100%;
   max-width: 816px;
+  padding: 12mm;
+  background: var(--pb-sheet);
+  border: 1px solid var(--pb-border);
   box-shadow: 0 12px 40px -12px rgba(2, 6, 20, 0.5);
   border-radius: 4px;
 }
 
 .brochure-preview .print-cover {
   min-height: 500px;
-  border-radius: 4px;
+  padding: 0;
+  background: linear-gradient(160deg, #030712 0%, #0b1736 46%, #102046 100%);
 }
 
 @media print {
@@ -690,15 +751,33 @@
     color: #0f172a !important;
   }
 
+  /* When the brochure is printing, html/body take the theme's page
+     colour so no differently coloured box can show under a short spread. */
+  html:has(.print-brochure),
+  html:has(.print-brochure) body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  html:has(.print-brochure.brochure-dark),
+  html:has(.print-brochure.brochure-dark) body {
+    background: #030712 !important;
+    color: #e8eefc !important;
+  }
+
+  html:has(.print-brochure.brochure-light),
+  html:has(.print-brochure.brochure-light) body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
+
   .no-print {
     display: none !important;
   }
 
-  /* The on-screen report (everything under #root) must never print
-     alongside the brochure -- PrintBrochure portals its content to a
-     sibling of #root specifically so this single rule can hide the
-     whole on-screen app in one place, structurally, rather than
-     relying on every individual element remembering .no-print. */
+  /* The on-screen report (everything under #root) never prints --
+     PrintBrochure portals its content to a sibling of #root so this one
+     rule hides the whole app structurally. */
   #root {
     display: none !important;
   }
@@ -717,22 +796,37 @@
     display: block !important;
   }
 
+  /* Each spread wrapper starts a page; content inside it flows across
+     pages. Framework sections never force their own breaks. */
   .print-page {
     break-before: page;
-    break-inside: avoid;
   }
 
   .print-brochure > .print-page:first-child {
     break-before: avoid;
   }
 
-  /* Bounds the cover to exactly one physical page -- without an
-     explicit height, min-height: 100vh under Chromium's print
-     pagination could overflow onto a second, mostly-empty dark page
-     (confirmed live) instead of handing off cleanly to the next
-     section. break-after: page is the other half: the cover must
-     always end its own page even if its content is short. */
+  .print-spread {
+    min-height: 0 !important;
+    background: transparent !important;
+  }
+
+  .brochure-dark .print-spread {
+    page: brochure-dark;
+  }
+
+  .brochure-light .print-spread {
+    page: brochure-light;
+  }
+
+  .print-fw-card {
+    break-before: auto;
+  }
+
+  /* Exactly one physical page: without an explicit height the cover
+     could overflow onto a second, mostly empty page. */
   .print-cover {
+    page: brochure-cover;
     height: 11in;
     min-height: 0;
     overflow: hidden;

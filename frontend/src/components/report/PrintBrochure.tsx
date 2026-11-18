@@ -32,6 +32,43 @@ interface PrintBrochureProps {
   date: string;
 }
 
+// "dark" mirrors the on-screen report; "light" is the Ink saver paper theme.
+export type BrochureTheme = "dark" | "light";
+
+const THEME_STORAGE_KEY = "groundly.brochureTheme";
+const PRINT_TIP_STORAGE_KEY = "groundly.brochurePrintTipSeen";
+
+export function loadBrochureTheme(): BrochureTheme {
+  try {
+    return window.localStorage.getItem(THEME_STORAGE_KEY) === "light" ? "light" : "dark";
+  } catch {
+    return "dark";
+  }
+}
+
+export function saveBrochureTheme(theme: BrochureTheme) {
+  try {
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+  } catch {
+    // Storage unavailable (private mode, blocked) -- the choice just won't persist.
+  }
+}
+
+// Returns true only the first time it's called in this browser.
+export function claimPrintTip(): boolean {
+  try {
+    if (window.localStorage.getItem(PRINT_TIP_STORAGE_KEY)) return false;
+    window.localStorage.setItem(PRINT_TIP_STORAGE_KEY, "1");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function themeClass(theme: BrochureTheme | undefined) {
+  return theme === "light" ? "brochure-light" : "brochure-dark";
+}
+
 const PROVIDER_LABELS: Record<string, string> = {
   gemini: "Generated with Gemini",
   openai: "Generated with OpenAI",
@@ -72,7 +109,7 @@ function VerificationBadge({ verified }: { verified?: boolean }) {
 
 function SpreadHeader({ kicker, title }: { kicker: string; title: string }) {
   return (
-    <div className="print-spread-header">
+    <div className="print-spread-header print-keep-with-next">
       <span className="print-spread-kicker">{kicker}</span>
       <h2 className="print-h2">{title}</h2>
     </div>
@@ -183,7 +220,7 @@ function CoverAndSummarySpread({ report, idea, title, date }: PrintBrochureProps
 
   return (
     <>
-      <section className="print-page print-cover">
+      <section className="print-page print-cover" data-spread="cover">
         <div className="print-cover-inner">
           <div className="print-cover-brand">
             <span className="print-cover-hex" aria-hidden="true">
@@ -208,7 +245,7 @@ function CoverAndSummarySpread({ report, idea, title, date }: PrintBrochureProps
         </div>
       </section>
 
-      <section className="print-page print-light">
+      <section className="print-page print-spread" data-spread="summary">
         <SpreadHeader kicker="SUMMARY" title="Evidence Verdict" />
 
         <div className="print-summary-top">
@@ -270,7 +307,7 @@ function MarketSpread({ report }: { report: GroundlyReport }) {
   if (!hasTam && !hasPestel && !hasPorter) return null;
 
   return (
-    <section className="print-page print-light">
+    <section className="print-page print-spread" data-spread="market">
       <SpreadHeader kicker="01 / MARKET" title="Market Sizing &amp; Context" />
       {hasTam && report.results!.tam.market_sizing && (
         <div className="print-fw-card" data-framework="tam">
@@ -294,19 +331,20 @@ function MarketSpread({ report }: { report: GroundlyReport }) {
   );
 }
 
+// Full-width rows, not a 2x2 grid: every strategy diagram (SWOT
+// quadrants, BCG/Ansoff matrices, STP's three columns) is itself
+// multi-column and its labels break mid-word at half width.
 function StrategySpread({ report }: { report: GroundlyReport }) {
   const keys: FrameworkKey[] = ["swot", "bcg", "ansoff", "stp"];
   const present = keys.filter((k) => report.results?.[k]);
   if (present.length === 0) return null;
 
   return (
-    <section className="print-page print-light">
+    <section className="print-page print-spread" data-spread="strategy">
       <SpreadHeader kicker="02 / STRATEGY" title="Strategic Position" />
-      <div className="print-strategy-grid">
-        {present.map((k) => (
-          <FrameworkCard key={k} frameworkKey={k} report={report} />
-        ))}
-      </div>
+      {present.map((k) => (
+        <FrameworkCard key={k} frameworkKey={k} report={report} />
+      ))}
     </section>
   );
 }
@@ -319,7 +357,7 @@ function OperationsSpread({ report }: { report: GroundlyReport }) {
   if (present.length === 0 && assumptions.length === 0 && actions.length === 0) return null;
 
   return (
-    <section className="print-page print-light">
+    <section className="print-page print-spread" data-spread="operations">
       <SpreadHeader kicker="03 / OPERATIONS" title="Operating Model" />
       {present.map((k) => (
         <FrameworkCard key={k} frameworkKey={k} report={report} />
@@ -364,7 +402,7 @@ function SourcesBackCover({ report }: { report: GroundlyReport }) {
   const providerUsed = (report as GroundlyReport & { provider_used?: string | null }).provider_used;
 
   return (
-    <section className="print-page print-light">
+    <section className="print-page print-spread" data-spread="sources">
       <SpreadHeader kicker="04 / SOURCES" title="Sources &amp; Methodology" />
 
       {(report.directory_status || report.rag_status) && (
@@ -417,9 +455,13 @@ export function PrintBrochureContent({ report, idea, title, date }: PrintBrochur
   );
 }
 
-export function PrintBrochure(props: PrintBrochureProps) {
+interface ThemedBrochureProps extends PrintBrochureProps {
+  theme?: BrochureTheme;
+}
+
+export function PrintBrochure({ theme, ...props }: ThemedBrochureProps) {
   const content = (
-    <div className="print-only print-brochure">
+    <div className={`print-only print-brochure ${themeClass(theme)}`}>
       <PrintBrochureContent {...props} />
     </div>
   );
@@ -429,9 +471,9 @@ export function PrintBrochure(props: PrintBrochureProps) {
   return createPortal(content, document.body);
 }
 
-export function BrochurePreview(props: PrintBrochureProps) {
+export function BrochurePreview({ theme, ...props }: ThemedBrochureProps) {
   return (
-    <div className="print-brochure brochure-preview">
+    <div className={`print-brochure brochure-preview ${themeClass(theme)}`}>
       <PrintBrochureContent {...props} />
     </div>
   );

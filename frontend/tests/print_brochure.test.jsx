@@ -5,6 +5,8 @@
 // FRAMEWORK_NAV_ITEMS order and real components (TamConcentricDiagram,
 // FrameworkDiagramBody, CitationChip) the on-screen report uses.
 import React from "react";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { BrochurePreview, PrintBrochure } from "../src/components/report/PrintBrochure.tsx";
 import { FRAMEWORK_NAV_ITEMS } from "../src/components/report/frameworkMeta.ts";
@@ -174,14 +176,97 @@ check(
 // it must stay visible on screen without relying on print media. ---
 check(
   "Print output is wrapped in print-only.print-brochure (the structure @media print's #root/.print-only rules target)",
-  /<div class="print-only print-brochure">/.test(fullHtml),
+  /<div class="print-only print-brochure brochure-dark">/.test(fullHtml),
 );
 const previewHtml = renderToStaticMarkup(
   <BrochurePreview report={fullReport} idea="A test idea" title="Test Venture" date="Nov 18, 2026" />,
 );
 check(
   "Brochure preview uses the same content but never carries print-only (it must stay visible on screen)",
-  previewHtml.includes('class="print-brochure brochure-preview"') && !previewHtml.includes("print-only"),
+  previewHtml.includes('class="print-brochure brochure-preview brochure-dark"') && !previewHtml.includes("print-only"),
+);
+
+// --- Theme: Dark by default, Ink saver switches both print and preview
+// to .brochure-light. ---
+check(
+  "Default brochure (no theme chosen) carries the dark theme class, not the light one",
+  fullHtml.includes("brochure-dark") && !fullHtml.includes("brochure-light"),
+);
+const inkPrintHtml = renderToStaticMarkup(
+  <PrintBrochure report={fullReport} idea="A test idea" title="Test Venture" date="Nov 18, 2026" theme="light" />,
+);
+const inkPreviewHtml = renderToStaticMarkup(
+  <BrochurePreview report={fullReport} idea="A test idea" title="Test Venture" date="Nov 18, 2026" theme="light" />,
+);
+check(
+  "Ink saver switches the print brochure to .brochure-light",
+  /<div class="print-only print-brochure brochure-light">/.test(inkPrintHtml) && !inkPrintHtml.includes("brochure-dark"),
+);
+check(
+  "Ink saver switches the Brochure View preview to .brochure-light too",
+  inkPreviewHtml.includes('class="print-brochure brochure-preview brochure-light"'),
+);
+
+// --- Pagination: every spread heading stays with what follows it ---
+check(
+  "Every spread heading carries the break-after: avoid class (print-keep-with-next)",
+  (() => {
+    const headers = fullHtml.match(/<div class="print-spread-header[^"]*"/g) || [];
+    return headers.length === 5 && headers.every((h) => h.includes("print-keep-with-next"));
+  })(),
+);
+
+const css = readFileSync(join(process.cwd(), "src", "index.css"), "utf-8");
+function cssRule(selector) {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const m = css.match(new RegExp(`(^|\\n)\\s*${escaped}\\s*\\{([^}]*)\\}`));
+  return m ? m[2] : null;
+}
+check(
+  "CSS: .print-keep-with-next sets break-after: avoid",
+  /break-after:\s*avoid/.test(cssRule(".print-keep-with-next") || ""),
+);
+check(
+  "CSS: interior spread wrappers are transparent with no min-height, so the page background shows through",
+  /background:\s*transparent/.test(cssRule(".print-spread") || "") &&
+    !/min-height:\s*[1-9]/.test(cssRule(".print-spread") || ""),
+);
+check(
+  "CSS: no framework section forces its own page break",
+  !/\.print-fw-card[^{]*\{[^}]*break-before:\s*page/.test(css),
+);
+check(
+  "Interior spreads (everything but the cover) never carry the cover's dark gradient class",
+  (() => {
+    const sections = fullHtml.match(/<section class="[^"]*"/g) || [];
+    const interior = sections.filter((s) => !s.includes("print-cover"));
+    return interior.length === 5 && interior.every((s) => s.includes("print-spread"));
+  })(),
+);
+
+// --- Strategy frameworks (incl. STP) each get a full-width row, never a
+// squeezed grid cell: every card is a direct child of the spread section. ---
+check(
+  "STP and the other strategy frameworks are full-width rows, not grid cells",
+  (() => {
+    const start = fullHtml.indexOf('data-spread="strategy"');
+    const sectionOpen = fullHtml.lastIndexOf("<section", start);
+    const tag = /<div\b[^>]*>|<\/div>|<\/section>/g;
+    tag.lastIndex = sectionOpen;
+    const topLevel = [];
+    let depth = 0;
+    for (let m; (m = tag.exec(fullHtml)); ) {
+      if (m[0] === "</section>") break;
+      if (m[0] === "</div>") depth--;
+      else {
+        if (depth === 0) topLevel.push(m[0]);
+        depth++;
+      }
+    }
+    return ["swot", "bcg", "ansoff", "stp"].every((k) =>
+      topLevel.some((t) => t.includes(`data-framework="${k}"`)),
+    );
+  })(),
 );
 check(
   "Preview and print render the identical framework section markup (same component, cannot differ)",
