@@ -44,6 +44,7 @@ export default function App() {
   const [geography, setGeography] = useState("");
   const [isRunning, setIsRunning] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [reportArrived, setReportArrived] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const runTokenRef = useRef(0);
@@ -88,6 +89,7 @@ export default function App() {
     const token = ++runTokenRef.current;
     trackEvent("analysis_launched", { idea_length: trimmed.length });
     setError(null);
+    setReportArrived(false);
     setIsRunning(true);
     setProgress(8);
 
@@ -131,6 +133,7 @@ export default function App() {
 
       clearInterval(stageInterval);
       setProgress(100);
+      setReportArrived(true);
       await new Promise((r) => setTimeout(r, 380));
       if (runTokenRef.current !== token) return;
 
@@ -155,6 +158,7 @@ export default function App() {
       if (runTokenRef.current !== token) return;
       setIsRunning(false);
       setProgress(0);
+      setReportArrived(false);
       const message =
         err instanceof Error
           ? err.message
@@ -169,6 +173,7 @@ export default function App() {
     clearSharedHash();
     setIsRunning(false);
     setProgress(0);
+    setReportArrived(false);
     setError(null);
     setActiveTab("analyze");
   }
@@ -222,6 +227,7 @@ export default function App() {
           isRunning={isRunning}
           progress={progress}
           activeStageIndex={activeStageIndex}
+          reportArrived={reportArrived}
           error={error}
           onLaunch={handleLaunchAnalysis}
         />

@@ -26,6 +26,19 @@ export const STAGE_COLORS: Record<
     rgba: "34, 245, 157",
     label: "VERIFIED",
   },
+  // The timer has moved past this stage, but nothing is confirmed until
+  // the report arrives -- a calm indigo, never the green "done" look.
+  passed: {
+    primary: 0x8b9cf6,
+    emissive: 0x3f4fb3,
+    rim: 0xc7d2fe,
+    coreWhite: 0xeef2ff,
+    smokeHex: 0xa5b4fc,
+    hex: "#8b9cf6",
+    litHex: "#ffffff",
+    rgba: "139, 156, 246",
+    label: "PASSED",
+  },
   active: {
     primary: 0xffc038,
     emissive: 0xff9b08,
@@ -526,6 +539,10 @@ export function drawCarBadgeCanvas(
     softGlow.addColorStop(0, "rgba(42, 245, 168, 0.64)");
     softGlow.addColorStop(0.45, "rgba(16, 210, 132, 0.26)");
     softGlow.addColorStop(1, "rgba(16, 200, 128, 0)");
+  } else if (status === "passed") {
+    softGlow.addColorStop(0, "rgba(139, 156, 246, 0.36)");
+    softGlow.addColorStop(0.5, "rgba(79, 70, 229, 0.12)");
+    softGlow.addColorStop(1, "rgba(67, 56, 202, 0)");
   } else {
     softGlow.addColorStop(0, "rgba(86, 138, 238, 0.22)");
     softGlow.addColorStop(0.55, "rgba(28, 56, 124, 0.07)");
@@ -643,6 +660,10 @@ export function drawCarBadgeCanvas(
     );
     ctx.closePath();
     ctx.fill();
+  } else if (status === "passed") {
+    ctx.beginPath();
+    ctx.arc(cx, cy, 14 * scale, 0, Math.PI * 2);
+    ctx.fill();
   } else {
     for (const dx of [-20 * scale, 0, 20 * scale]) {
       ctx.beginPath();
@@ -655,8 +676,6 @@ export function drawCarBadgeCanvas(
   // Stage Label Typography matching mockup scale & clarity across all 5 cars
   ctx.save();
   ctx.fillStyle = status === "pending" ? "#e6efff" : "#ffffff";
-  const fontSize = label.length >= 11 ? 88 : label.length >= 9 ? 94 : 102;
-  ctx.font = `600 ${Math.round(fontSize * scale)}px 'Plus Jakarta Sans', 'Inter', sans-serif`;
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
   ctx.shadowColor =
@@ -664,8 +683,32 @@ export function drawCarBadgeCanvas(
       ? "rgba(255, 198, 64, 0.92)"
       : status === "done"
         ? "rgba(34, 245, 157, 0.84)"
-        : "rgba(110, 172, 255, 0.52)";
+        : `rgba(${palette.rgba}, 0.52)`;
   ctx.shadowBlur = (status === "pending" ? 7 : 13) * scale;
-  ctx.fillText(label, cx + 102 * scale, cy + 3 * scale);
+
+  // Fit the label inside the glass: one line when it fits, otherwise the
+  // two words stacked, shrinking only if a single word is still too wide.
+  const textX = cx + 102 * scale;
+  const maxWidth = w * 0.88 - textX;
+  const setFont = (px: number) => {
+    ctx.font = `600 ${Math.round(px * scale)}px 'Plus Jakarta Sans', 'Inter', sans-serif`;
+  };
+  const widest = (lines: string[]) => Math.max(...lines.map((l) => ctx.measureText(l).width));
+  let size = 102;
+  let lines = [label];
+  setFont(size);
+  if (widest(lines) > maxWidth) {
+    const split = label.indexOf(" ");
+    if (split > 0) lines = [label.slice(0, split), label.slice(split + 1)];
+    size = 88;
+    setFont(size);
+    while (widest(lines) > maxWidth && size > 52) {
+      size -= 4;
+      setFont(size);
+    }
+  }
+  const lineHeight = size * 1.08 * scale;
+  const firstY = cy + 3 * scale - ((lines.length - 1) * lineHeight) / 2;
+  lines.forEach((line, i) => ctx.fillText(line, textX, firstY + i * lineHeight));
   ctx.restore();
 }

@@ -2,9 +2,7 @@ import { useEffect, useState } from "react";
 import {
   Activity,
   ArrowRight,
-  BarChart2,
   Box,
-  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   Globe,
@@ -13,7 +11,7 @@ import {
   Search,
   Sparkles,
 } from "lucide-react";
-import { STAGE_DEFINITIONS, stageStatusForIndex } from "../../lib/reportStats";
+import { STAGE_DEFINITIONS } from "../../lib/reportStats";
 import TrainScene3D from "../three/TrainScene3D";
 
 interface AnalyzeScreenProps {
@@ -32,6 +30,7 @@ interface AnalyzeScreenProps {
   isRunning: boolean;
   progress: number;
   activeStageIndex: number;
+  reportArrived: boolean;
   error: string | null;
   onLaunch: () => void;
 }
@@ -70,6 +69,7 @@ export function AnalyzeScreen({
   isRunning,
   progress,
   activeStageIndex,
+  reportArrived,
   error,
   onLaunch,
 }: AnalyzeScreenProps) {
@@ -155,6 +155,7 @@ export function AnalyzeScreen({
         <TrainScene3D
           activeStageIndex={activeStageIndex}
           progress={progress}
+          reportArrived={reportArrived}
           isRunning
           selectedStageIndex={selectedStage}
           onSelectStage={setSelectedStage}
@@ -187,48 +188,6 @@ export function AnalyzeScreen({
           </p>
         </div>
 
-        {/* 5-Stage Express Car Strip */}
-        <div className="mt-2.5 grid grid-cols-2 gap-2 sm:grid-cols-5">
-          {STAGE_DEFINITIONS.map((st, idx) => {
-            const status = stageStatusForIndex(idx, activeStageIndex);
-            return (
-              <button
-                key={st.id}
-                type="button"
-                onClick={() => setSelectedStage(idx)}
-                className={`surface-interactive rounded-xl border px-3 py-2 text-left ${
-                  status === "active"
-                    ? "border-[#ffc142]/70 bg-[#ffc142]/12 shadow-[0_0_24px_-10px_rgba(255,193,66,0.45)]"
-                    : status === "done"
-                      ? "border-[#22f59d]/50 bg-[#22f59d]/10"
-                      : "border-slate-800/90 bg-[#081022]/90"
-                }`}
-              >
-                <div className="flex items-center justify-between font-mono text-[11px]">
-                  <span
-                    style={{
-                      color:
-                        status === "active"
-                          ? "#ffc142"
-                          : status === "done"
-                            ? "#22f59d"
-                            : "#64748b",
-                    }}
-                  >
-                    0{idx + 1}
-                  </span>
-                  {status === "done" && (
-                    <CheckCircle2 className="h-3.5 w-3.5 text-[#22f59d]" />
-                  )}
-                </div>
-                <p className="mt-0.5 font-display text-xs font-bold text-white">
-                  {st.label}
-                </p>
-              </button>
-            );
-          })}
-        </div>
-
         {/* Live Status Strip. Previously showed 3 cards with invented
             "sources scanned" / "markets analyzed" / "data points
             processed" counters -- numbers computed purely from a linear
@@ -239,7 +198,7 @@ export function AnalyzeScreen({
             rather than fabricate one, these now show only what's actually
             true: the real stage definition, the real user-entered
             geography, and the real, fixed framework count. */}
-        <div className="mt-2.5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-2.5 grid grid-cols-1 gap-3 md:grid-cols-3">
           <div className="surface-panel flex flex-col justify-between rounded-2xl p-3">
             <div className="flex items-start gap-2.5">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[#4a8fff]/40 bg-[#4a8fff]/15 text-[#60a5fa]">
@@ -273,22 +232,6 @@ export function AnalyzeScreen({
             <div className="mt-2.5 flex items-center justify-between border-t border-slate-800/80 pt-2 text-[11px] text-slate-400">
               <span>10 Strategic Frameworks</span>
               <span className="font-mono text-[#14d8a3]">Active</span>
-            </div>
-          </div>
-
-          <div className="surface-panel flex flex-col justify-between rounded-2xl p-3">
-            <div className="flex items-start gap-2.5">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[#818cf8]/40 bg-[#818cf8]/15 text-[#a5b4fc]">
-                <BarChart2 className="h-4 w-4" />
-              </div>
-              <div>
-                <p className="font-display text-sm font-extrabold leading-snug text-white">
-                  {activeStage?.label}
-                </p>
-                <p className="mt-0.5 text-xs leading-relaxed text-slate-400">
-                  {activeStage?.fact}
-                </p>
-              </div>
             </div>
           </div>
 
@@ -619,7 +562,7 @@ export function AnalyzeScreen({
                 {selectedStage === null ? " · Showcase Glide" : " · Selected"}
               </p>
               <p className="mt-0.5 text-xs text-slate-300">
-                {STAGE_DEFINITIONS[selectedStage ?? 3].fact}
+                {STAGE_DEFINITIONS[selectedStage ?? 3].subtitle}
               </p>
             </div>
             <div className="flex items-center gap-1.5">

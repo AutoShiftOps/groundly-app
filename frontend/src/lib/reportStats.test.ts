@@ -8,6 +8,7 @@ import {
   computeShareOfParentPct,
   dedupeCitations,
   formatIdeaTitle,
+  STAGE_DEFINITIONS,
   stageIndexFromProgress,
   stageStatusForIndex,
 } from "./reportStats";
@@ -138,14 +139,41 @@ test("computeEvidenceScore computes /10 score from citation similarity", () => {
   assert.equal(score, 8.6);
 });
 
-test("stage progression helpers map progress to active/done/pending", () => {
+test("stage progression helpers map progress to passed/active/pending while waiting", () => {
   assert.equal(stageIndexFromProgress(0), 0);
   assert.equal(stageIndexFromProgress(35), 1);
   assert.equal(stageIndexFromProgress(100), 4);
-  assert.equal(stageStatusForIndex(0, 2), "done");
+  assert.equal(stageStatusForIndex(0, 2), "passed");
   assert.equal(stageStatusForIndex(2, 2), "active");
   assert.equal(stageStatusForIndex(4, 2), "pending");
   assert.equal(stageStatusForIndex(0, -1), "pending");
+});
+
+test("STAGE_DEFINITIONS has the 5 real pipeline stages, with no unsourced 'fact' lines", () => {
+  assert.deepEqual(
+    STAGE_DEFINITIONS.map((s) => s.label),
+    ["Reading idea", "Searching sources", "Writing analysis", "Checking claims", "Building report"],
+  );
+  for (const stage of STAGE_DEFINITIONS) {
+    assert.ok(stage.subtitle.length > 0);
+    assert.equal("fact" in stage, false);
+  }
+});
+
+test("no stage shows done before the report arrives; all tick together once it does", () => {
+  // Every timer position the loading screen can reach while waiting
+  // (App caps progress at 92 until the response arrives).
+  for (let progress = 0; progress <= 92; progress += 0.9) {
+    const active = stageIndexFromProgress(progress);
+    for (let i = 0; i < STAGE_DEFINITIONS.length; i++) {
+      assert.notEqual(stageStatusForIndex(i, active), "done", `stage ${i} at ${progress}%`);
+    }
+  }
+  const atArrival = stageIndexFromProgress(100);
+  assert.deepEqual(
+    STAGE_DEFINITIONS.map((_, i) => stageStatusForIndex(i, atArrival, true)),
+    ["done", "done", "done", "done", "done"],
+  );
 });
 
 test("computeProjectComparison produces accurate deltas between versions", () => {
