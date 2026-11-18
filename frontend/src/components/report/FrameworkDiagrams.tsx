@@ -619,7 +619,8 @@ export function FrameworkDiagramBody({
       { key: "positioning", label: "03. Positioning", color: "#14d8a3", Icon: MapPin },
     ];
     return (
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+      <div className="@container">
+      <div className="grid grid-cols-1 gap-3 @xl:grid-cols-3">
         {cols.map((c) => (
           <div key={c.key} className="surface-subpanel rounded-xl p-4">
             <div
@@ -642,6 +643,7 @@ export function FrameworkDiagramBody({
           </div>
         ))}
       </div>
+      </div>
     );
   }
 
@@ -654,8 +656,9 @@ export function FrameworkDiagramBody({
       { key: "cash_cow", label: "Cash Cow", color: "#4a8fff", hint: "Low growth · High share" },
     ];
     return (
-      <div className="grid grid-cols-1 gap-5 md:grid-cols-12">
-        <div className="md:col-span-6">
+      <div className="@container">
+      <div className="grid grid-cols-1 gap-5 @xl:grid-cols-12">
+        <div className="@xl:col-span-6">
           <div className="grid grid-cols-2 gap-2.5">
             {cells.map((cell) => {
               const active = bcg.quadrant === cell.key;
@@ -695,7 +698,7 @@ export function FrameworkDiagramBody({
             <span>High Share →</span>
           </div>
         </div>
-        <div className="surface-subpanel space-y-3 rounded-xl p-4 md:col-span-6">
+        <div className="surface-subpanel space-y-3 rounded-xl p-4 @xl:col-span-6">
           <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
             <span className="text-xs text-slate-400">Market Growth Rate</span>
             <span className="font-mono text-sm font-bold text-[#14d8a3] tabular-nums">
@@ -720,6 +723,7 @@ export function FrameworkDiagramBody({
           </p>
         </div>
       </div>
+      </div>
     );
   }
 
@@ -732,8 +736,9 @@ export function FrameworkDiagramBody({
       { key: "diversification", label: "Diversification", hint: "New Product · New Market", color: "#f5b041" },
     ];
     return (
-      <div className="grid grid-cols-1 gap-5 md:grid-cols-12">
-        <div className="grid grid-cols-2 gap-2.5 md:col-span-6">
+      <div className="@container">
+      <div className="grid grid-cols-1 gap-5 @xl:grid-cols-12">
+        <div className="grid grid-cols-2 gap-2.5 @xl:col-span-6">
           {cells.map((cell) => {
             const active = ansoff.quadrant === cell.key;
             return (
@@ -767,7 +772,7 @@ export function FrameworkDiagramBody({
             );
           })}
         </div>
-        <div className="surface-subpanel space-y-3 rounded-xl p-4 md:col-span-6">
+        <div className="surface-subpanel space-y-3 rounded-xl p-4 @xl:col-span-6">
           <div>
             <span className="text-xs text-slate-400">Market Dimension</span>
             <p className="mt-0.5 text-sm font-semibold text-white">
@@ -789,6 +794,7 @@ export function FrameworkDiagramBody({
             />
           </p>
         </div>
+      </div>
       </div>
     );
   }

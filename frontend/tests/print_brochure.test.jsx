@@ -371,6 +371,26 @@ check(
     /#f8fafc/.test(cssRule(".brochure-light .matrix-cell-idle") || ""),
 );
 
+// --- BCG, Ansoff and STP lay out by their card's width (container
+// queries), not the viewport -- on a ~730px printed page, viewport md:
+// breakpoints stacked their columns and doubled each card's height. ---
+check(
+  "BCG, Ansoff and STP diagrams use card-width container queries, not viewport md: breakpoints",
+  (() => {
+    const r = buildFullReport();
+    r.results.bcg.bcg_matrix = { quadrant: "star", market_growth_rate_pct: 10, market_share_position: "x", citation_index: 1, rationale: "y" };
+    r.results.ansoff.ansoff_matrix = { quadrant: "market_penetration", market_dimension: "existing", product_dimension: "existing", citation_index: 1, rationale: "z" };
+    r.results.stp.stp_analysis = { segmentation: [], targeting: [], positioning: [] };
+    const html = renderToStaticMarkup(<PrintBrochure report={r} idea="i" title="t" date="d" />);
+    return ["bcg", "ansoff", "stp"].every((key) => {
+      const start = sectionIndex(html, key);
+      const next = html.indexOf('data-framework="', start + 20);
+      const chunk = html.slice(start, next === -1 ? undefined : next);
+      return chunk.includes('class="@container"') && /@xl:grid-cols-(12|3)/.test(chunk) && !/\bmd:grid-cols/.test(chunk);
+    });
+  })(),
+);
+
 // --- No hardcoded TAM "Key Takeaway" fallback sentence anywhere ---
 check(
   "The old hardcoded TAM takeaway sentence never renders",
