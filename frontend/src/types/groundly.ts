@@ -62,6 +62,13 @@ export interface StructuredPoint {
   metric_name?: string | null;
   metric_value?: string | number | null;
   target_value?: string | number | null;
+  // unify/2c-claim-quality: "fact" needs a real citation and is
+  // checked against its source; "analysis" is the model's own
+  // judgment, always citation_index: null, and never carries a
+  // figure/percentage/named company. Optional/undefined on frameworks
+  // not yet migrated (tam/bcg/ansoff keep their own stricter numeric
+  // backstops instead) -- treat a missing value the same as "fact".
+  claim_type?: "fact" | "analysis";
 }
 
 export interface FrameworkResult {
@@ -107,6 +114,7 @@ export interface VerifiedClaim {
   citation_indices: number[];
   verdict: "supported" | "partially_supported" | "unsupported";
   reason: string;
+  claim_type?: "fact" | "analysis";
 }
 
 export interface FrameworkVerification {
@@ -119,6 +127,24 @@ export interface FrameworkVerification {
   // flat "what failed and why" list the Verification Flags panel
   // already rendered; claims is the fuller per-claim breakdown.
   claims?: VerifiedClaim[];
+  // unify/2c-claim-quality: counts for the "X of Y facts supported"
+  // badge. facts_total/facts_supported cover only claim_type="fact"
+  // claims (narrative [N] sentences + every fact-typed structured
+  // point); analysis_count is the number of claim_type="analysis"
+  // points, shown with a separate "Analysis" label, not counted
+  // toward the supported fraction.
+  facts_total?: number;
+  facts_supported?: number;
+  analysis_count?: number;
+  repair_log?: {
+    claims_before: number;
+    supported_before: number;
+    supported_after: number;
+    dropped: number;
+    converted: number;
+    rewritten: number;
+    moved_to_assumptions: number;
+  };
 }
 
 export interface BusinessMetric {

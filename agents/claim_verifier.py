@@ -3,15 +3,25 @@ The real per-claim verifier for grounded framework output.
 
 Replaces the old heuristics in agents/rag_pipeline.py's verify_claims()
 (verified = "at least one citation marker exists somewhere in the
-output") with an actual judgment of whether each CITED claim is really
-supported by the chunk(s) it cites. Still keeps the cheap deterministic
-checks that existed before (numeric-figure presence and category fit
-live in rag_pipeline.py's _null_out_unsupported_tam_tiers, applied
-before generation; the market-scope word-overlap check lives here as
-_tam_tier_scope_mismatch, applied as a first-pass filter before the LLM
-call) -- but none of those decide "verified" on their own anymore. One
-LLM call per framework does that, given each claim plus the exact text
-of the chunk(s) it cites.
+output") with an actual judgment of whether each CITED (fact) claim is
+really supported by the chunk(s) it cites. One LLM call per framework
+does that, given each fact claim plus the exact text of the chunk(s)
+it cites.
+
+unify/2c-claim-quality split: every structured point now also declares
+claim_type ("fact" needs a real citation and goes through the LLM;
+"analysis" is the model's own judgment, must have citation_index=null,
+and is only checked for NOT smuggling a hidden fact -- a figure,
+percentage, or named company that should have been a cited fact
+instead). Narrative [N]-marker sentences are always treated as facts
+(there's no narrative-level claim_type field); uncited narrative
+sentences with a number/percentage/named entity are flagged directly,
+same as before.
+
+Each extracted fact claim also carries a "locator" describing where it
+lives in (generated_text, extra_value), so agents/claim_repair.py can
+find and mutate exactly that spot without needing framework-specific
+code of its own.
 """
 
 import logging
@@ -26,15 +36,15 @@ VERIFIER_MODEL = "gpt-4o-mini"
 
 _CITATION_MARKER_PATTERN = re.compile(r"\[(\d+)\]")
 _SENTENCE_SPLIT_PATTERN = re.compile(r"(?<=[.!?])\s+")
-_DOLLAR_PATTERN = re.compile(r"\$\s?[\d,]+(?:\.\d+)?")
-_PERCENTAGE_PATTERN = re.compile(r"\d+(?:\.\d+)?\s?%")
+DOLLAR_PATTERN = re.compile(r"\$\s?[\d,]+(?:\.\d+)?")
+PERCENTAGE_PATTERN = re.compile(r"\d+(?:\.\d+)?\s?%")
 _NUMBER_PATTERN = re.compile(r"\d")
 # Heuristic only: two-or-more consecutive capitalized words, not at the
 # very start of the sentence (where capitalization is just grammar, not
 # a sign of a named entity) -- good enough to catch "...competing with
 # Uber Eats and DoorDash." without flagging every sentence that merely
 # starts with a capital letter.
-_NAMED_ENTITY_PATTERN = re.compile(r"(?<!^)\b[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)+\b")
+NAMED_ENTITY_PATTERN = re.compile(r"(?<!^)\b[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)+\b")
 
 # Dollar figures, percentages, or "market size"-shaped vocabulary that a
 # directory citation (agents/mississauga_data.py -- business names, peer
@@ -49,7 +59,54 @@ DIRECTORY_CITATION_REASON = (
     "directory citations can only support peer counts, business names, or NAICS sector facts, "
     "never a market-size claim"
 )
+HIDDEN_FACT_REASON = (
+    "analysis point contains a figure, percentage, or named company -- that's a fact and needs "
+    "a real citation, not an uncited analysis point"
+)
 VERIFICATION_UNAVAILABLE_REASON = "Verification unavailable for this section"
+
+# Frameworks that haven't been given a claim_type field at all (TAM's
+# tam/sam/som tiers, and BCG/Ansoff's single quadrant object) keep their
+# own, already-stricter numeric-grounding backstops in rag_pipeline.py
+# instead -- a point with no "claim_type" key is always treated as a
+# fact (exactly the pre-2c behavior), never checked for hidden facts.
+_DEFAULT_CLAIM_TYPE = "fact"
+
+# unify/2c-claim-quality follow-up: a "gap sentence" -- one that just
+# points out what the CONTEXT doesn't cover ("the context does not
+# provide...", "no data is available on...") -- is now banned from
+# generation (GROUNDING_SYSTEM_PROMPT rule 6 in rag_pipeline.py: that
+# information belongs in "assumptions" instead). This pattern is used
+# ONLY by agents/claim_repair.py to find and relocate any that slip
+# through anyway -- it is explicitly NOT used to exempt a gap sentence
+# from being flagged as an uncited factual claim by
+# _looks_like_factual_claim() above; the verifier's own rules are
+# unchanged, the fix is to stop producing these sentences (and to move
+# any that do appear), never to stop checking for them.
+GAP_SENTENCE_PATTERN = re.compile(
+    r"\b(?:context (?:does not|doesn.t) (?:provide|state|specify|include|cover|mention)"
+    r"|no (?:specific )?data (?:is|was) available"
+    r"|(?:not|isn.t|wasn.t) (?:specified|available|provided) (?:in|by) the context"
+    r"|(?:specific )?figures? for .+ (?:were|was) not found"
+    r"|(?:cannot|can.t) be determined from the context"
+    r"|(?:does not|doesn.t) (?:specify|provide|state) (?:specific )?(?:details|figures|data|information)"
+    r"|without (?:this |the |sufficient |critical |necessary )?(?:critical |additional )?data"
+    r"|lacks? (?:the |sufficient |necessary )?data"
+    r"|insufficient data"
+    r"|not enough data)\b",
+    re.IGNORECASE,
+)
+
+
+def is_gap_sentence(text: str) -> bool:
+    return bool(GAP_SENTENCE_PATTERN.search(text or ""))
+
+
+def contains_hidden_fact(text: str) -> bool:
+    """A figure, percentage, or named-entity-shaped token in text that
+    an "analysis" point is never allowed to carry -- those need a real
+    citation instead."""
+    return bool(DOLLAR_PATTERN.search(text) or PERCENTAGE_PATTERN.search(text) or NAMED_ENTITY_PATTERN.search(text))
 
 
 def _dict_claim_text(d: dict) -> str:
@@ -65,58 +122,80 @@ def _dict_claim_text(d: dict) -> str:
     return " | ".join(parts) if parts else "(structured point with no descriptive text)"
 
 
-def extract_structured_claims(extra_value) -> list[dict]:
-    """Every point/tier anywhere in a framework's structured field
-    (market_sizing, swot_analysis, bcg_matrix, ...) that carries a real
-    citation_index becomes one claim. market_sizing is special-cased so
-    each tam/sam/som tier is tagged is_tam_tier/tier_name -- needed for
-    the cheap scope-mismatch pre-filter below -- everything else (the
-    other 9 frameworks' shapes) is walked generically since they all
-    reduce to the same {..., "citation_index": N} point shape."""
+def extract_structured_claims(extra_value) -> tuple[list[dict], list[dict]]:
+    """Returns (fact_claims, analysis_claims). market_sizing (tam/sam/
+    som) is special-cased -- each tier with a real citation_index and
+    value becomes a fact claim, tagged is_tam_tier/tier_name for the
+    cheap scope-mismatch pre-filter and locator-based repair. A single
+    top-level object with its own citation_index (bcg_matrix,
+    ansoff_matrix) becomes one fact claim with a "single_object"
+    locator. Everything else is assumed to be a dict of category ->
+    list of {..., "citation_index", "claim_type"} points (SWOT/PESTEL/
+    BMC/Porter/STP/Value Chain/Balanced Scorecard) and is split by
+    claim_type; a point with no claim_type key at all (a framework not
+    yet migrated) defaults to "fact", unchanged from pre-2c behavior."""
     if isinstance(extra_value, dict) and {"tam", "sam", "som"} <= set(extra_value.keys()):
-        claims = []
+        fact_claims = []
         for tier_name in ("tam", "sam", "som"):
             tier = extra_value.get(tier_name)
             if isinstance(tier, dict) and isinstance(tier.get("citation_index"), int) and tier.get("value_usd") is not None:
-                claims.append({
+                fact_claims.append({
                     "text": _dict_claim_text(tier),
                     "citation_indices": [tier["citation_index"]],
                     "is_tam_tier": True,
                     "tier_name": tier_name,
                     "tier_description": tier.get("tier_description"),
+                    "claim_type": "fact",
+                    "locator": {"kind": "tam_tier", "tier_name": tier_name},
                 })
-        return claims
+        return fact_claims, []
 
-    claims: list[dict] = []
+    if isinstance(extra_value, dict) and isinstance(extra_value.get("citation_index"), int):
+        fact_claims = [{
+            "text": _dict_claim_text(extra_value),
+            "citation_indices": [extra_value["citation_index"]],
+            "is_tam_tier": False,
+            "claim_type": "fact",
+            "locator": {"kind": "single_object"},
+        }]
+        return fact_claims, []
 
-    def walk(value):
-        if isinstance(value, dict):
-            idx = value.get("citation_index")
-            if isinstance(idx, int):
-                claims.append({"text": _dict_claim_text(value), "citation_indices": [idx], "is_tam_tier": False})
-            for v in value.values():
-                walk(v)
-        elif isinstance(value, list):
-            for item in value:
-                walk(item)
+    if not isinstance(extra_value, dict):
+        return [], []
 
-    walk(extra_value)
-    return claims
+    fact_claims = []
+    analysis_claims = []
+    for category, items in extra_value.items():
+        if not isinstance(items, list):
+            continue
+        for index, item in enumerate(items):
+            if not isinstance(item, dict):
+                continue
+            claim_type = item.get("claim_type") or _DEFAULT_CLAIM_TYPE
+            locator = {"kind": "category_list", "category": category, "index": index}
+            if claim_type == "analysis":
+                analysis_claims.append({
+                    "text": _dict_claim_text(item), "citation_indices": [], "is_tam_tier": False,
+                    "claim_type": "analysis", "locator": locator,
+                })
+            else:
+                idx = item.get("citation_index")
+                fact_claims.append({
+                    "text": _dict_claim_text(item),
+                    "citation_indices": [idx] if isinstance(idx, int) else [],
+                    "is_tam_tier": False, "claim_type": "fact", "locator": locator,
+                })
+    return fact_claims, analysis_claims
 
 
 def _looks_like_factual_claim(sentence: str) -> bool:
-    return bool(
-        _DOLLAR_PATTERN.search(sentence)
-        or _PERCENTAGE_PATTERN.search(sentence)
-        or _NAMED_ENTITY_PATTERN.search(sentence)
-        or _NUMBER_PATTERN.search(sentence)
-    )
+    return contains_hidden_fact(sentence) or bool(_NUMBER_PATTERN.search(sentence))
 
 
 def extract_narrative_claims(generated_text: str) -> tuple[list[dict], list[dict]]:
     """Returns (cited_claims, uncited_factual_claims). A sentence with
-    one or more [N] markers becomes a cited claim citing every marker
-    found in it. A sentence with none, but that still contains a
+    one or more [N] markers becomes a cited fact claim citing every
+    marker found in it. A sentence with none, but that still contains a
     number, percentage, or looks like it names a competitor, is an
     "uncited factual claim" -- flagged directly, never sent to the LLM
     (there's no citation to check it against)."""
@@ -128,7 +207,10 @@ def extract_narrative_claims(generated_text: str) -> tuple[list[dict], list[dict
             continue
         markers = [int(m) for m in _CITATION_MARKER_PATTERN.findall(sentence)]
         if markers:
-            cited.append({"text": sentence, "citation_indices": sorted(set(markers)), "is_tam_tier": False})
+            cited.append({
+                "text": sentence, "citation_indices": sorted(set(markers)), "is_tam_tier": False,
+                "claim_type": "fact", "locator": {"kind": "narrative", "sentence": sentence},
+            })
         elif _looks_like_factual_claim(sentence):
             uncited_factual.append({"text": sentence, "reason": "uncited factual claim"})
     return cited, uncited_factual
@@ -240,7 +322,7 @@ def _render_claim_for_llm(claim_index: int, claim: dict, context_chunks: list) -
 
 
 async def _call_verifier_llm(claims: list[dict], context_chunks: list) -> dict[int, dict]:
-    """One structured LLM call covering every cited claim for this
+    """One structured LLM call covering every cited fact claim for this
     framework. Returns {claim_index: {"verdict":..., "reason":...}}.
     Raises on any failure -- the caller (verify_claims) is responsible
     for degrading to verified=False, never defaulting to True."""
@@ -263,32 +345,75 @@ async def _call_verifier_llm(claims: list[dict], context_chunks: list) -> dict[i
     return results
 
 
+async def extract_all_claims(generated_text: str, extra_value=None) -> tuple[list[dict], list[dict], list[dict]]:
+    """Returns (fact_claims, analysis_claims, uncited_factual_claims) --
+    exposed so agents/claim_repair.py can reuse the exact same
+    extraction verify_claims uses, including each fact claim's
+    locator."""
+    narrative_facts, uncited_factual = extract_narrative_claims(generated_text)
+    structured_facts, structured_analysis = extract_structured_claims(extra_value)
+    return narrative_facts + structured_facts, structured_analysis, uncited_factual
+
+
 async def verify_claims(generated_text: str, citations: list, extra_value=None,
                          context_chunks: list | None = None) -> dict:
-    """verified = True only if at least one claim was cited, every
-    cited claim's LLM verdict is "supported" (after the deterministic
-    directory-citation and TAM-scope overrides are applied), and there
-    are no uncited factual claims. Any verifier-call failure degrades
-    to verified=False with a fixed reason -- never defaults to True."""
+    """verified = True only if at least one fact claim was cited, every
+    cited fact claim's LLM verdict is "supported" (after the
+    deterministic directory-citation and TAM-scope overrides are
+    applied), there are no uncited factual narrative sentences, and no
+    analysis point smuggles a hidden fact. Any verifier-call failure
+    degrades to verified=False with a fixed reason -- never defaults to
+    True.
+
+    The returned dict's "_fact_claims" and "_uncited_factual" keys are
+    internal (the former: full claim dicts including locators and LLM
+    verdict/reason; the latter: uncited narrative sentences flagged as
+    factual) for agents/claim_repair.py's repair pass -- callers
+    returning this to the API must pop both off first; neither is
+    meant to reach the frontend."""
     context_chunks = context_chunks or []
-    narrative_claims, uncited_factual = extract_narrative_claims(generated_text)
-    structured_claims = extract_structured_claims(extra_value)
-    all_claims = narrative_claims + structured_claims
+    fact_claims, analysis_claims, uncited_factual = await extract_all_claims(generated_text, extra_value)
 
     if not citations:
-        return {"verified": False, "unsupported_claims": ["No grounded sources retrieved for this section"], "claims": []}
-    if not all_claims:
-        return {"verified": False, "unsupported_claims": ["No inline citation markers found in output"], "claims": []}
+        return {"verified": False, "unsupported_claims": ["No grounded sources retrieved for this section"], "claims": [], "_fact_claims": [], "_uncited_factual": []}
 
-    try:
-        llm_results = await _call_verifier_llm(all_claims, context_chunks)
-    except Exception:
-        logger.exception("verify_claims: claim-verification LLM call failed -- degrading to unverified.")
-        return {"verified": False, "unsupported_claims": [VERIFICATION_UNAVAILABLE_REASON], "claims": []}
-
+    # Analysis-point and uncited-narrative-sentence checks are purely
+    # deterministic and apply regardless of whether there's anything to
+    # send the fact-checking LLM at all -- computed up front so a
+    # section with only analysis points (no fact claims) still gets
+    # them checked, rather than short-circuiting before reaching this.
     claims_out = []
     unsupported_claims = []
-    for i, claim in enumerate(all_claims):
+    for claim in analysis_claims:
+        if contains_hidden_fact(claim["text"]):
+            claims_out.append({
+                "text": claim["text"], "citation_indices": [], "verdict": "unsupported",
+                "reason": HIDDEN_FACT_REASON, "claim_type": "analysis",
+            })
+            unsupported_claims.append(f"{claim['text']} -- {HIDDEN_FACT_REASON}")
+        else:
+            claims_out.append({
+                "text": claim["text"], "citation_indices": [], "verdict": "supported",
+                "reason": "analysis point, no hidden facts", "claim_type": "analysis",
+            })
+    for uncited in uncited_factual:
+        unsupported_claims.append(f"{uncited['text']} -- {uncited['reason']}")
+
+    if not fact_claims:
+        unsupported_claims.insert(0, "No inline citation markers found in output")
+        return {
+            "verified": len(unsupported_claims) == 0, "unsupported_claims": unsupported_claims,
+            "claims": claims_out, "_fact_claims": [], "_uncited_factual": uncited_factual,
+        }
+
+    try:
+        llm_results = await _call_verifier_llm(fact_claims, context_chunks)
+    except Exception:
+        logger.exception("verify_claims: claim-verification LLM call failed -- degrading to unverified.")
+        return {"verified": False, "unsupported_claims": [VERIFICATION_UNAVAILABLE_REASON], "claims": [], "_fact_claims": [], "_uncited_factual": []}
+
+    fact_claims_out = []
+    for i, claim in enumerate(fact_claims):
         llm_result = llm_results.get(i)
         if llm_result is None:
             verdict, reason = "unsupported", "claim verification response did not include this claim"
@@ -300,19 +425,17 @@ async def verify_claims(generated_text: str, citations: list, extra_value=None,
             verdict, reason = "unsupported", override_reason
 
         claims_out.append({
-            "text": claim["text"],
-            "citation_indices": claim["citation_indices"],
-            "verdict": verdict,
-            "reason": reason,
+            "text": claim["text"], "citation_indices": claim["citation_indices"],
+            "verdict": verdict, "reason": reason, "claim_type": "fact",
         })
+        fact_claims_out.append({**claim, "verdict": verdict, "reason": reason})
         if verdict != "supported":
             unsupported_claims.append(f"{claim['text']} -- {reason}")
-
-    for uncited in uncited_factual:
-        unsupported_claims.append(f"{uncited['text']} -- {uncited['reason']}")
 
     return {
         "verified": len(unsupported_claims) == 0,
         "unsupported_claims": unsupported_claims,
         "claims": claims_out,
+        "_fact_claims": fact_claims_out,
+        "_uncited_factual": uncited_factual,
     }
