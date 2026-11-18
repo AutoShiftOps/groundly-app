@@ -6,7 +6,11 @@
 # answered by a business-directory listing. run_pipeline()'s empty/weak
 # decision must stay local-similarity-only, exactly as on main; the
 # directory context is purely additive to the generation context, never
-# a reason to skip web_retrieval.search_and_ingest().
+# a reason to skip web_retrieval.search_and_ingest(). Uses a non-TAM
+# framework (pestel) since TAM now runs its own dedicated market-size
+# search path instead of search_and_ingest -- see
+# test_tam_market_size_retrieval.py for that framework's own
+# non-suppression + query-selection coverage.
 from unittest.mock import AsyncMock
 import asyncio
 
@@ -57,8 +61,8 @@ def test_directory_hit_with_weak_local_chunks_still_triggers_web_retrieval(monke
     monkeypatch.setattr(rag_pipeline, "verify_claims", lambda text, citations, extra_value=None: {"verified": False, "unsupported_claims": []})
 
     asyncio.run(rag_pipeline.run_pipeline(
-        "Food Mamba Catering — TAM/SAM/SOM analysis",
-        framework_tag="tam",
+        "Food Mamba Catering — PESTEL analysis",
+        framework_tag="pestel",
         directory_context=_directory_context_with_one_citation(),
     ))
 
@@ -90,8 +94,8 @@ def test_directory_hit_with_empty_local_chunks_still_triggers_web_retrieval(monk
     monkeypatch.setattr(rag_pipeline, "verify_claims", lambda text, citations, extra_value=None: {"verified": False, "unsupported_claims": []})
 
     asyncio.run(rag_pipeline.run_pipeline(
-        "Food Mamba Catering — TAM/SAM/SOM analysis",
-        framework_tag="tam",
+        "Food Mamba Catering — PESTEL analysis",
+        framework_tag="pestel",
         directory_context=_directory_context_with_one_citation(),
     ))
 
@@ -122,8 +126,8 @@ def test_directory_chunks_still_reach_generation_context(monkeypatch):
     monkeypatch.setattr(rag_pipeline, "verify_claims", lambda text, citations, extra_value=None: {"verified": False, "unsupported_claims": []})
 
     asyncio.run(rag_pipeline.run_pipeline(
-        "Food Mamba Catering — TAM/SAM/SOM analysis",
-        framework_tag="tam",
+        "Food Mamba Catering — PESTEL analysis",
+        framework_tag="pestel",
         directory_context=_directory_context_with_one_citation(),
     ))
 

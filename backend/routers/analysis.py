@@ -184,8 +184,10 @@ async def analyze(req: AnalysisRequest):
     # directory_result -- it was fetched once above, not once per
     # framework.
     pipeline_outputs = await asyncio.gather(
-        *(run_pipeline(build_query(framework), framework_tag=framework, directory_context=directory_result)
-          for framework in allowed)
+        *(run_pipeline(
+            build_query(framework), framework_tag=framework, directory_context=directory_result,
+            idea=req.idea, industry=req.industry, business_name=req.businessName, geography=resolved_geography,
+        ) for framework in allowed)
     )
 
     for framework, pipeline_output in zip(allowed, pipeline_outputs):

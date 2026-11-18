@@ -11,6 +11,7 @@ from agents import config  # noqa: F401  side-effect: loads backend/.env reliabl
 from openai import AsyncOpenAI
 from agents.db import search_similar
 from agents import web_retrieval
+from agents import mississauga_data
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +151,36 @@ def _null_out_unsupported_tam_tiers(market_sizing: dict, context_chunks: list) -
                 tier, citation_index, tier_value,
             )
             validated[tier] = dict(_TIER_NOT_FOUND)
+
+    _strip_citation_from_labeled_estimates(validated)
     return validated
+
+
+def _strip_citation_from_labeled_estimates(validated_market_sizing: dict) -> None:
+    """Mutates sam/som in place: a tier the model labeled as a narrowed/
+    scaled estimate (TAM_STRUCTURED_SUFFIX instructs it to put the word
+    "estimate" in tier_description when doing this, e.g. "Mississauga SAM
+    estimate, scaled from national figure") must never also carry a
+    citation_index -- that would misrepresent a derived number as
+    directly sourced from whatever chunk citation_index points at. This
+    is deterministic and doesn't trust the model's own compliance: it
+    strips citation_index on sight whenever "estimate" appears in the
+    tier's own description, regardless of what citation_index the model
+    actually returned. TAM itself is never touched -- it's the base
+    figure, never a narrowed one.
+    """
+    for tier in ("sam", "som"):
+        tier_value = validated_market_sizing.get(tier)
+        if not isinstance(tier_value, dict):
+            continue
+        description = (tier_value.get("tier_description") or "")
+        if "estimate" in description.lower() and tier_value.get("citation_index") is not None:
+            logger.info(
+                "generate_with_citations: tam tier=%r labeled as an estimate (%r) but had a "
+                "citation_index -- stripping it so it can't look directly sourced.",
+                tier, description,
+            )
+            tier_value["citation_index"] = None
 
 
 def _cap_assumptions_actions(value) -> list[str]:
@@ -257,13 +287,36 @@ populate the market_sizing object:
   one for that specific tier, otherwise null. Do not estimate or infer a
   CAGR that isn't stated -- null is the correct, expected result when the
   source material doesn't give a growth rate for that tier.
-- "tier_description" is a short (3-8 word) phrase describing what this
-  specific tier represents for THIS idea's actual market, e.g. "Global
-  sustainable packaging market" for TAM, drawn from what the CONTEXT
-  actually says about it -- not a generic definition of what TAM/SAM/SOM
-  means in the abstract. Only fill it in if the CONTEXT supports a
-  specific description for that tier; otherwise null. Note whether a
-  figure is a future projection per the rule above.
+- "tier_description" is a short (3-10 word) phrase describing what this
+  specific tier represents for THIS idea's actual market, drawn from what
+  the CONTEXT actually says about it -- not a generic definition of what
+  TAM/SAM/SOM means in the abstract. It MUST state the figure's real
+  geography/scope AND year/period exactly as the CONTEXT gives them, e.g.
+  "Canada catering services market, 2025" or "Global sustainable
+  packaging market, 2024" -- never a vaguer phrase than the source
+  actually supports, and never a geography the source doesn't state.
+  Only fill it in if the CONTEXT supports a specific description for
+  that tier; otherwise null. Note whether a figure is a future
+  projection per the rule above.
+- CRITICAL -- never silently narrow a broader figure down to a smaller
+  geography. If the CONTEXT only gives a national/regional/global dollar
+  figure and you want to note what a narrower, local-geography estimate
+  might be (e.g. scaling a Canada-wide figure down toward Mississauga),
+  that is NOT a sourced tier value: do not put it in sam or som with a
+  citation_index. Instead:
+  (a) leave that tier null (this is the PREFERRED outcome -- an honest
+      gap beats an unlabeled estimate), OR
+  (b) if you do want to surface the estimate, put the SAM/SOM dollar
+      value in the tier as usual but set "citation_index" to null (never
+      attribute a derived/scaled number to the broader source it was
+      scaled from) and make "tier_description" literally include the
+      word "estimate" (e.g. "Mississauga SAM estimate, scaled from
+      national figure"), and add the scaling assumption you used (e.g.
+      the population or revenue share you scaled by) as one of the
+      "assumptions" entries below.
+  A tier narrowed this way must never look identical to a directly
+  sourced one -- the "estimate" label and the null citation_index are
+  both required together, not optional extras.
 """
 
 MARKET_SIZING_SCHEMA = {
@@ -882,7 +935,11 @@ def verify_claims(generated_text: str, citations: list, extra_value=None):
     }
 
 
-async def run_pipeline(query: str, framework_tag: str | None = None, directory_context: dict | None = None):
+async def run_pipeline(
+    query: str, framework_tag: str | None = None, directory_context: dict | None = None,
+    idea: str | None = None, industry: str | None = None, business_name: str | None = None,
+    geography: str | None = None,
+):
     # directory_context (agents/mississauga_data.py's query_directory()
     # result, computed once per /api/analyze request, not once per
     # framework) is purely ADDITIVE context -- appended to the generation
@@ -927,7 +984,28 @@ async def run_pipeline(query: str, framework_tag: str | None = None, directory_c
         # search_and_ingest per framework per analyze() request" without
         # needing separate request-scoped bookkeeping. Don't wrap this in a
         # retry loop without revisiting that invariant.
-        ingested = await web_retrieval.search_and_ingest(query, framework_tag)
+        #
+        # TAM gets dedicated market-size queries instead of the generic
+        # analysis query -- the generic query ("<idea> -- TAM/SAM/SOM
+        # analysis | geography: X") almost never surfaces real market-
+        # size figures via Tavily (confirmed live: a Mississauga catering
+        # idea's generic query returned nothing above the similarity
+        # floor). Market size is its own well-known search-content type
+        # ("<category> market size <country> USD"), capped at 2 Tavily
+        # calls by web_retrieval.search_and_ingest_market_size itself.
+        url_to_query: dict[str, str] = {}
+        if framework_tag == "tam":
+            category = mississauga_data.market_size_category_phrase(business_name, idea, industry)
+            country = mississauga_data.infer_country_from_geography(geography)
+            market_size_result = await web_retrieval.search_and_ingest_market_size(category, country, framework_tag)
+            ingested = market_size_result["total_chunks"]
+            url_to_query = market_size_result["url_to_query"]
+            logger.info(
+                "run_pipeline: TAM market-size queries run=%r, ingested %d chunk(s) total.",
+                market_size_result["queries_run"], ingested,
+            )
+        else:
+            ingested = await web_retrieval.search_and_ingest(query, framework_tag)
         if ingested > 0:
             refreshed = await _search_similar_chunks(embedding, framework_tag=framework_tag)
             # Only replace what we have if the fresh search actually found
@@ -936,6 +1014,16 @@ async def run_pipeline(query: str, framework_tag: str | None = None, directory_c
             # came back empty (e.g. a transient DB hiccup).
             if refreshed:
                 chunks = refreshed
+                if framework_tag == "tam":
+                    # Item 4: log which TAM query's result each chunk that
+                    # actually survived the re-search (and will go on to
+                    # the similarity floor check below) came from.
+                    for c in refreshed:
+                        source = url_to_query.get(c.get("source_url"), "pre-existing corpus / not a market-size web result")
+                        logger.info(
+                            "run_pipeline: TAM candidate chunk source_url=%r similarity=%.4f came from query=%r",
+                            c.get("source_url"), c.get("similarity"), source,
+                        )
         # Otherwise chunks keeps whatever it already had -- empty (falls
         # through to insufficient-data below) or the original weak matches,
         # subject to the hard floor check right below.

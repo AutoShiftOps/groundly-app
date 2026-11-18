@@ -82,7 +82,14 @@ def sanitize_business_name(name: str | None) -> str:
 # this table for a client-side sector label -- single real source of
 # truth for backend open-data querying is this module now.
 _SECTOR_MAP: list[tuple[re.Pattern, list[str]]] = [
-    (re.compile(r"\b(food|cater|restaurant|cafe|coffee|bakery|meal|kitchen|culinary|dining|bistro|hospitality|event)\b", re.I),
+    # cater(?:ing|er|ers)? -- was bare "cater", which (being a whole-word
+    # match) never matched the far more common real-world forms
+    # "catering"/"caterer"/"caterers" (confirmed live: a "pre-portioned
+    # ingredient kits for home caterers" idea fell through to this
+    # group's intended CATER/FOOD/RESTAURANT match only by accident, via
+    # an unrelated "food" word elsewhere in the text). Purely additive;
+    # bare "cater" still matches as before.
+    (re.compile(r"\b(food|cater(?:ing|er|ers)?|restaurant|cafe|coffee|bakery|meal|kitchen|culinary|dining|bistro|hospitality|event)\b", re.I),
      ["CATER", "FOOD", "RESTAURANT"]),
     (re.compile(r"\b(health|physio|clinic|dental|medical|pharma|wellness|therapy|chiro|fitness)\b", re.I),
      ["HEALTH", "CLINIC", "MEDICAL"]),
@@ -118,6 +125,65 @@ def infer_sector_keywords(business_name: str | None, idea: str | None, industry:
             if len(out) >= 3:
                 break
     return out[:4]
+
+
+# Human-readable market-size search phrase per primary sector keyword --
+# "catering services market size Canada USD" reads like a real market-
+# research query; the raw keyword ("CATER") or a NAICS code does not.
+# Only covers the primary keyword of each _SECTOR_MAP entry (the first
+# term in its `terms` list), since infer_sector_keywords always includes
+# the full group together.
+_CATEGORY_PHRASES = {
+    "CATER": "catering services",
+    "HEALTH": "healthcare services",
+    "SOFTWARE": "software",
+    "FREIGHT": "freight and logistics",
+    "RETAIL": "retail",
+    "CONSTRUCT": "construction services",
+}
+
+
+def market_size_category_phrase(business_name: str | None, idea: str | None, industry: str | None) -> str:
+    """A short, human-readable category phrase for a market-size search
+    query (e.g. "catering services"), reusing infer_sector_keywords
+    rather than a separate keyword table. Falls back to the first few
+    real words of idea/industry/business_name when no sector keyword
+    matched anything -- never a generic placeholder like "business"."""
+    keywords = infer_sector_keywords(business_name, idea, industry)
+    if keywords and keywords[0] in _CATEGORY_PHRASES:
+        return _CATEGORY_PHRASES[keywords[0]]
+    combined = " ".join(filter(None, [industry, idea, business_name]))
+    tokens = [w for w in re.sub(r"[^a-zA-Z0-9 ]", " ", combined).split() if len(w) >= 3]
+    tokens = [w for w in tokens if w.upper() not in _STOPWORDS]
+    return " ".join(tokens[:4]).lower() or "business"
+
+
+# Plain substring match against common country names/abbreviations in a
+# geography string -- good enough for "<category> market size <country>
+# USD" search queries; doesn't need to be exhaustive or precise since a
+# wrong-but-plausible country guess still produces a reasonable Tavily
+# query, and the actual geography/scope used ends up labeled in the
+# result's own tier_description (sourced from the search result itself,
+# not from this guess).
+_COUNTRY_PATTERNS: list[tuple[re.Pattern, str]] = [
+    (re.compile(r"\bcanada\b", re.I), "Canada"),
+    (re.compile(r"\b(united states|usa|u\.s\.a?\.?)\b", re.I), "United States"),
+    (re.compile(r"\b(united kingdom|uk)\b", re.I), "United Kingdom"),
+    (re.compile(r"\baustralia\b", re.I), "Australia"),
+]
+
+
+def infer_country_from_geography(geography: str | None) -> str:
+    text = geography or ""
+    for pattern, country in _COUNTRY_PATTERNS:
+        if pattern.search(text):
+            return country
+    # Ontario/Mississauga/GTA-scoped geographies with no explicit country
+    # string default to Canada (consistent with is_mississauga_scope's
+    # own Mississauga/GTA/Ontario gate).
+    if is_mississauga_scope(text):
+        return "Canada"
+    return "United States"
 
 
 def build_naics_priority_plan(business_name: str | None, idea: str | None, industry: str | None,

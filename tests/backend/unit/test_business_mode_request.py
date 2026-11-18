@@ -21,7 +21,8 @@ def _fake_pipeline_output(framework_tag, directory_context=None):
 
 
 def _install_fast_fakes(monkeypatch):
-    async def fake_run_pipeline(query, framework_tag=None, directory_context=None):
+    async def fake_run_pipeline(query, framework_tag=None, directory_context=None, idea=None,
+                                 industry=None, business_name=None, geography=None):
         return _fake_pipeline_output(framework_tag, directory_context)
 
     monkeypatch.setattr(analysis_module, "run_pipeline", fake_run_pipeline)
