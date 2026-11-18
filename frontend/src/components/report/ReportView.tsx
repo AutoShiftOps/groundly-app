@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -13,6 +13,7 @@ import {
   Info,
   LayoutGrid,
   Lightbulb,
+  Printer,
   Share2,
   ShieldAlert,
   ShieldCheck,
@@ -40,6 +41,14 @@ import {
   FRAMEWORK_NAV_ITEMS,
 } from "./frameworkMeta";
 import { MethodologyModal } from "./MethodologyModal";
+import {
+  BrochurePreview,
+  PrintBrochure,
+  claimPrintTip,
+  loadBrochureTheme,
+  saveBrochureTheme,
+  type BrochureTheme,
+} from "./PrintBrochure";
 import { ReportRightRail } from "./ReportRightRail";
 
 type FrameworkSubTab = "summary" | "evidence" | "assumptions" | "actions";
@@ -50,7 +59,7 @@ interface ReportViewProps {
   onStartNewAnalysis: () => void;
 }
 
-const TONE_HEX: Record<VerdictTone, string> = {
+export const TONE_HEX: Record<VerdictTone, string> = {
   teal: "#22f59d",
   amber: "#ffc142",
   red: "#f05252",
@@ -97,7 +106,17 @@ function MiniSparkline({
   );
 }
 
-function ConfidenceRing({ pct, tone }: { pct: number; tone: VerdictTone }) {
+export function ConfidenceRing({
+  pct,
+  tone,
+  verifiedCount,
+  totalFrameworks,
+}: {
+  pct: number;
+  tone: VerdictTone;
+  verifiedCount: number;
+  totalFrameworks: number;
+}) {
   const color = TONE_HEX[tone];
   const size = 132;
   const strokeWidth = 10;
@@ -141,11 +160,11 @@ function ConfidenceRing({ pct, tone }: { pct: number; tone: VerdictTone }) {
         />
       </svg>
       <div className="absolute flex flex-col items-center">
-        <span className="font-display text-2xl font-extrabold text-white tabular-nums">
-          {pct}%
+        <span className="font-display text-xl font-extrabold text-white tabular-nums">
+          {verifiedCount}/{totalFrameworks}
         </span>
         <span className="font-mono text-[10px] uppercase tracking-wider text-slate-400">
-          Confidence
+          Verified
         </span>
       </div>
     </div>
@@ -240,6 +259,55 @@ export default function ReportView({
   }
 
   const [pdfState, setPdfState] = useState<"idle" | "generating" | "error">("idle");
+  const [isPrinting, setIsPrinting] = useState(false);
+  const [showBrochurePreview, setShowBrochurePreview] = useState(false);
+  const [brochureTheme, setBrochureTheme] = useState<BrochureTheme>(loadBrochureTheme);
+  const [showPrintTip, setShowPrintTip] = useState(false);
+
+  function changeBrochureTheme(theme: BrochureTheme) {
+    setBrochureTheme(theme);
+    saveBrochureTheme(theme);
+  }
+  // "Still loading" from this component's own perspective -- it's only
+  // ever mounted once a project/report exists, but a report with no
+  // results yet (e.g. a saved project whose analysis never completed)
+  // has nothing real for the brochure to print.
+  const reportHasData = Object.keys(report.results || {}).length > 0;
+
+  async function handlePrint() {
+    if (!reportHasData || isPrinting) return;
+    setIsPrinting(true);
+    // The dark brochure's page background only prints with the dialog's
+    // "Background graphics" on -- say so once, briefly, then print anyway.
+    const firstTip = brochureTheme === "dark" && claimPrintTip();
+    if (firstTip) setShowPrintTip(true);
+    // Dynamically imported (same convention handleExportPdf already
+    // uses below for @react-pdf/renderer) -- ga4.js reads
+    // import.meta.env at module-evaluation time, which the SSR test
+    // bundler (esbuild, platform=node, no Vite env shim) can't
+    // resolve. A top-level import would crash every *.test.jsx file
+    // that renders ReportView, even though they never click this
+    // button. Deferring it into the handler itself (never invoked
+    // during SSR rendering) avoids that entirely.
+    const { trackEvent } = await import("../../lib/ga4");
+    trackEvent("report_printed");
+    try {
+      await document.fonts?.ready;
+    } catch {
+      // Font loading can reject in some environments -- never block
+      // printing on it.
+    }
+    if (firstTip) await new Promise((resolve) => setTimeout(resolve, 1500));
+    requestAnimationFrame(() => {
+      window.print();
+    });
+  }
+
+  useEffect(() => {
+    const onAfterPrint = () => setIsPrinting(false);
+    window.addEventListener("afterprint", onAfterPrint);
+    return () => window.removeEventListener("afterprint", onAfterPrint);
+  }, []);
 
   async function handleExportPdf() {
     setPdfState("generating");
@@ -380,6 +448,48 @@ export default function ReportView({
 
           <button
             type="button"
+            onClick={() => setShowBrochurePreview((v) => !v)}
+            disabled={!reportHasData}
+            className={`surface-subpanel inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold transition-colors hover:border-[#4a8fff] hover:text-white disabled:cursor-not-allowed disabled:opacity-60 whitespace-nowrap shrink-0 ${
+              showBrochurePreview ? "border-[#4a8fff] text-white" : "text-slate-200"
+            }`}
+          >
+            <FileText className="h-3.5 w-3.5" />
+            {showBrochurePreview ? "Exit Brochure View" : "Brochure View"}
+          </button>
+
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              onClick={handlePrint}
+              disabled={!reportHasData || isPrinting}
+              className="surface-subpanel inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold text-slate-200 transition-colors hover:border-[#4a8fff] hover:text-white disabled:cursor-not-allowed disabled:opacity-60 whitespace-nowrap"
+            >
+              <Printer className="h-3.5 w-3.5" />
+              Print Report
+            </button>
+            {showPrintTip && (
+              <div
+                role="status"
+                className="surface-panel absolute right-0 top-full z-30 mt-2 flex w-64 items-start gap-2 rounded-lg p-3 text-xs leading-relaxed text-slate-200"
+              >
+                <span>
+                  For the dark brochure, turn on 'Background graphics' in the print dialog (More settings).
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowPrintTip(false)}
+                  aria-label="Dismiss tip"
+                  className="shrink-0 text-slate-400 hover:text-white"
+                >
+                  ×
+                </button>
+              </div>
+            )}
+          </div>
+
+          <button
+            type="button"
             onClick={handleExportPdf}
             disabled={pdfState === "generating"}
             className="btn-primary-glow inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-semibold text-white transition-all disabled:cursor-not-allowed disabled:opacity-60 whitespace-nowrap shrink-0"
@@ -394,6 +504,38 @@ export default function ReportView({
         </div>
       </header>
 
+      {showBrochurePreview ? (
+        <div className="no-print">
+          <div className="flex items-center justify-center gap-3">
+            <span className="font-mono text-[10px] uppercase tracking-wider text-slate-400">
+              Print theme
+            </span>
+            <div role="radiogroup" aria-label="Print theme" className="surface-subpanel inline-flex rounded-lg p-0.5">
+              {(
+                [
+                  ["dark", "Dark"],
+                  ["light", "Ink saver"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={brochureTheme === value}
+                  onClick={() => changeBrochureTheme(value)}
+                  className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    brochureTheme === value ? "bg-[#4a8fff] text-white" : "text-slate-300 hover:text-white"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <BrochurePreview report={report} idea={idea} title={title} date={dateLabel} theme={brochureTheme} />
+        </div>
+      ) : (
+      <>
       {/* 3-Column Report Workspace: Left Framework Rail + Center Canvas + Right Utility Rail */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         {/* Left Framework Segments Rail */}
@@ -547,6 +689,8 @@ export default function ReportView({
                     <ConfidenceRing
                       pct={stats.confidencePct}
                       tone={stats.tone}
+                      verifiedCount={stats.verifiedCount}
+                      totalFrameworks={stats.totalFrameworks}
                     />
                     <div className="flex items-center gap-3">
                       <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#4a8fff]/35 bg-[#0f1d3e] text-[#60a5fa]">
@@ -1059,6 +1203,8 @@ export default function ReportView({
           />
         </div>
       </div>
+      </>
+      )}
 
       {methodologyFw && (
         <MethodologyModal
@@ -1074,6 +1220,8 @@ export default function ReportView({
           onClose={() => setShowCompare(false)}
         />
       )}
+
+      <PrintBrochure report={report} idea={idea} title={title} date={dateLabel} theme={brochureTheme} />
     </div>
   );
 }
