@@ -186,11 +186,13 @@ async def search_and_ingest_gemini_grounding(query: str, framework_tag: str, max
     invariant documented in agents/rag_pipeline.py's run_pipeline().
     Never raises -- degrades to {"total_chunks": 0, "urls_ingested": []}
     on any failure, same philosophy as the Tavily path."""
-    if config.LLM_PROVIDER != "gemini" or not config.GEMINI_API_KEY:
+    if not llm_provider.gemini_available():
         return {"total_chunks": 0, "urls_ingested": []}
 
     try:
         urls = await llm_provider.google_search_grounding_urls(query, max_results)
+    except llm_provider.GeminiUnavailable:
+        return {"total_chunks": 0, "urls_ingested": []}
     except Exception:
         logger.exception(
             "web_retrieval: Gemini Google Search grounding call failed framework=%r query=%r.",

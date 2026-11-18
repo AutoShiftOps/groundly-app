@@ -4,6 +4,17 @@
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _reset_gemini_breaker():
+    """The Gemini circuit breaker is process-local state -- reset it around
+    every test so one test's open breaker never leaks into the next."""
+    from agents import llm_provider
+
+    llm_provider.reset_breaker()
+    yield
+    llm_provider.reset_breaker()
+
+
 @pytest.fixture
 def api_client():
     """A FastAPI TestClient against the real app -- used by both the fast

@@ -35,6 +35,12 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 # Falls back to GEMINI_MODEL when not set separately -- most deployments
 # don't need a different model just for claim verification/repair.
 GEMINI_VERIFIER_MODEL = os.getenv("GEMINI_VERIFIER_MODEL", GEMINI_MODEL)
+# Per-call Gemini timeout; a timeout is a failure like any other and goes
+# to the normal retry -> OpenAI path.
+GEMINI_TIMEOUT_SECONDS = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "20"))
+# How long the circuit breaker skips Gemini entirely after an auth/key/
+# model error or 3 consecutive failures.
+GEMINI_COOLDOWN_SECONDS = float(os.getenv("GEMINI_COOLDOWN_SECONDS", "600"))
 
 if LLM_PROVIDER not in ("gemini", "openai"):
     raise RuntimeError(f"LLM_PROVIDER must be 'gemini' or 'openai', got {LLM_PROVIDER!r}.")
