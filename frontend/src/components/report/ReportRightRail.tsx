@@ -294,7 +294,7 @@ export function ReportRightRail({
           </h3>
         </div>
         <p className="mt-1.5 text-xs text-slate-400">
-          Diff confidence, TAM/SAM/SOM sizing, and framework verification across
+          Diff verified frameworks, citations and TAM/SAM/SOM sizing across
           saved analyses.
         </p>
         <button

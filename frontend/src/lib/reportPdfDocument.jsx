@@ -573,7 +573,7 @@ function AnsoffPage({ result, verification, idea }) {
   );
 }
 
-function ConfidenceRing({ pct, tone, size = 76 }) {
+function VerifiedRing({ pct, tone, size = 76 }) {
   const r = size / 2 - 6;
   const cx = size / 2, cy = size / 2;
   const circumference = 2 * Math.PI * r;
@@ -635,7 +635,7 @@ function ExecutiveSummaryPage({ report, stats, idea }) {
           <Text style={{ fontSize: 15, fontWeight: 700, color: verdictColor, marginBottom: 4 }}>{stats.verdict}</Text>
           <Text style={{ fontSize: 8, color: COLOR.textSecondary }}>{stats.verdictSub}</Text>
         </View>
-        <ConfidenceRing pct={stats.totalFrameworks ? Math.round((stats.verifiedCount / stats.totalFrameworks) * 100) : 0} tone={stats.tone} />
+        <VerifiedRing pct={stats.totalFrameworks ? Math.round((stats.verifiedCount / stats.totalFrameworks) * 100) : 0} tone={stats.tone} />
       </View>
 
       <View style={[s.row, { gap: 8, marginBottom: 14 }]}>
