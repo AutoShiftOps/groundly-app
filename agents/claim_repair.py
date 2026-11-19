@@ -148,6 +148,7 @@ async def _call_repair_llm(failing_claims: list[dict], context_chunks: list) -> 
         schema_name="claim_repair",
         schema=_REPAIR_SCHEMA,
         temperature=0,
+        task="checking",
     )
     results: dict[int, dict] = {}
     for item in parsed.get("repairs", []):

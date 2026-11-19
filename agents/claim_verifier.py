@@ -337,6 +337,7 @@ async def _call_verifier_llm(claims: list[dict], context_chunks: list) -> tuple[
         schema_name="claim_verification",
         schema=_VERIFIER_SCHEMA,
         temperature=0,
+        task="checking",
     )
     results: dict[int, dict] = {}
     for item in parsed.get("claims", []):

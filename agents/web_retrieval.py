@@ -212,7 +212,7 @@ async def search_and_ingest_gemini_grounding(query: str, framework_tag: str, max
     invariant documented in agents/rag_pipeline.py's run_pipeline().
     Never raises -- degrades to {"total_chunks": 0, "urls_ingested": []}
     on any failure, same philosophy as the Tavily path."""
-    if not llm_provider.gemini_available():
+    if not llm_provider.gemini_available("writing"):
         return {"total_chunks": 0, "urls_ingested": []}
 
     try:

@@ -948,6 +948,7 @@ async def _classify_tam_market_category(idea: str | None, industry: str | None,
             schema_name="market_category",
             schema=_MARKET_CATEGORY_SCHEMA,
             temperature=0,
+            task="writing",
         )
         return {
             "specific_category": parsed.get("specific_category") or None,
@@ -1057,7 +1058,7 @@ async def generate_with_citations(query: str, context_chunks: list, framework_ta
         try:
             parsed, provider_used = await llm_provider.structured_completion(
                 model=CHAT_MODEL, system_prompt=system_prompt, user_content=user_content,
-                schema_name=schema_name, schema=schema, temperature=0.2,
+                schema_name=schema_name, schema=schema, temperature=0.2, task="writing",
             )
             text = parsed["narrative"]
             extra_value = parsed[field_name]
@@ -1092,6 +1093,7 @@ async def generate_with_citations(query: str, context_chunks: list, framework_ta
     try:
         text, provider_used = await llm_provider.text_completion(
             model=CHAT_MODEL, system_prompt=GROUNDING_SYSTEM_PROMPT, user_content=user_content, temperature=0.2,
+            task="writing",
         )
     except Exception:
         logger.exception("generate_with_citations: plain %r generation call failed.", framework_tag)
@@ -1224,7 +1226,7 @@ async def run_pipeline(
         # the generic analysis query otherwise) rather than inventing
         # a third query construction.
         gemini_grounding_query = market_size_result["queries_run"][0] if framework_tag == "tam" and market_size_result["queries_run"] else (query if framework_tag != "tam" else None)
-        if gemini_grounding_query and config.LLM_PROVIDER == "gemini":
+        if gemini_grounding_query and llm_provider.provider_for("writing") == "gemini":
             grounding_result = await web_retrieval.search_and_ingest_gemini_grounding(gemini_grounding_query, framework_tag)
             if grounding_result["total_chunks"] > 0:
                 logger.info(

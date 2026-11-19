@@ -45,6 +45,15 @@ GEMINI_COOLDOWN_SECONDS = float(os.getenv("GEMINI_COOLDOWN_SECONDS", "600"))
 if LLM_PROVIDER not in ("gemini", "openai"):
     raise RuntimeError(f"LLM_PROVIDER must be 'gemini' or 'openai', got {LLM_PROVIDER!r}.")
 
+# Per-task overrides (agents/llm_provider.py provider_for). Unset means
+# "use LLM_PROVIDER". WRITING: framework generation, category
+# classification, synthesis, Ask AI. CHECKING: claim verifier and repair.
+LLM_PROVIDER_WRITING = (os.getenv("LLM_PROVIDER_WRITING") or "").strip().lower() or None
+LLM_PROVIDER_CHECKING = (os.getenv("LLM_PROVIDER_CHECKING") or "").strip().lower() or None
+for _name, _value in (("LLM_PROVIDER_WRITING", LLM_PROVIDER_WRITING), ("LLM_PROVIDER_CHECKING", LLM_PROVIDER_CHECKING)):
+    if _value not in (None, "gemini", "openai"):
+        raise RuntimeError(f"{_name} must be 'gemini', 'openai' or unset, got {_value!r}.")
+
 # Deliberately NOT a hard RuntimeError when LLM_PROVIDER=gemini (the
 # default) but GEMINI_API_KEY is missing -- agents/llm_provider.py
 # treats a missing key the same as any other Gemini-call failure: it

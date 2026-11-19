@@ -31,7 +31,7 @@ def _invalid_key_error():
 def _structured():
     return llm_provider.structured_completion(
         model="gpt-4o-mini", system_prompt="sys", user_content="hi",
-        schema_name="s", schema={"type": "object", "properties": {}}, temperature=0,
+        schema_name="s", schema={"type": "object", "properties": {}}, temperature=0, task="writing",
     )
 
 
@@ -54,7 +54,7 @@ def test_gemini_is_tried_first_when_configured(monkeypatch):
 
     parsed, provider = asyncio.run(llm_provider.structured_completion(
         model="gpt-4o-mini", system_prompt="sys", user_content="hi",
-        schema_name="s", schema={"type": "object", "properties": {}}, temperature=0,
+        schema_name="s", schema={"type": "object", "properties": {}}, temperature=0, task="writing",
     ))
 
     assert provider == "gemini"
@@ -72,7 +72,7 @@ def test_openai_only_configured_never_tries_gemini(monkeypatch):
 
     parsed, provider = asyncio.run(llm_provider.structured_completion(
         model="gpt-4o-mini", system_prompt="sys", user_content="hi",
-        schema_name="s", schema={"type": "object", "properties": {}}, temperature=0,
+        schema_name="s", schema={"type": "object", "properties": {}}, temperature=0, task="writing",
     ))
 
     assert provider == "openai"
@@ -246,7 +246,7 @@ def test_both_providers_failing_raises_never_fakes_a_success(monkeypatch):
     try:
         asyncio.run(llm_provider.structured_completion(
             model="gpt-4o-mini", system_prompt="sys", user_content="hi",
-            schema_name="s", schema={"type": "object", "properties": {}}, temperature=0,
+            schema_name="s", schema={"type": "object", "properties": {}}, temperature=0, task="writing",
         ))
         assert False, "expected an exception, not a fabricated success"
     except RuntimeError:
@@ -259,7 +259,7 @@ def test_text_completion_falls_back_the_same_way(monkeypatch):
     monkeypatch.setattr(llm_provider, "_openai_text_call", AsyncMock(return_value="plain text answer"))
 
     text, provider = asyncio.run(llm_provider.text_completion(
-        model="gpt-4o-mini", system_prompt="sys", user_content="hi", temperature=0.2,
+        model="gpt-4o-mini", system_prompt="sys", user_content="hi", temperature=0.2, task="writing",
     ))
 
     assert provider == "openai"
