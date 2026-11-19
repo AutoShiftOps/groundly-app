@@ -10,10 +10,14 @@ import {
 } from "./lib/reportLink";
 import { hydrateReport } from "./lib/hydrate";
 import { trackEvent } from "./lib/ga4";
+import { formatIdeaTitle } from "./lib/reportStats";
+import { runAnalysis, type ProgressMode } from "./lib/analyzeStream";
 import {
-  formatIdeaTitle,
-  stageIndexFromProgress,
-} from "./lib/reportStats";
+  applyStreamEvent,
+  initialLiveProgress,
+  runningStageView,
+  type LiveProgress,
+} from "./lib/liveProgress";
 import { FRAMEWORKS, type GroundlyReport, type SavedProject } from "./types/groundly";
 import ReportView from "./components/report/ReportView";
 import { AnalyzeScreen } from "./components/workspace/AnalyzeScreen";
@@ -45,9 +49,12 @@ export default function App() {
   const [isRunning, setIsRunning] = useState(false);
   const [progress, setProgress] = useState(0);
   const [reportArrived, setReportArrived] = useState(false);
+  const [progressMode, setProgressMode] = useState<ProgressMode>("live");
+  const [liveProgress, setLiveProgress] = useState<LiveProgress>(initialLiveProgress);
   const [error, setError] = useState<string | null>(null);
 
   const runTokenRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
 
   // Restore a shared report from the URL hash (see lib/reportLink.js --
   // same genuine gzip-in-the-hash mechanism main already shipped for
@@ -91,26 +98,37 @@ export default function App() {
     setError(null);
     setReportArrived(false);
     setIsRunning(true);
-    setProgress(8);
+    setProgressMode("live");
+    setLiveProgress(initialLiveProgress());
+    setProgress(0);
 
-    // Simulated progress heuristic (same role as main's previous 5-stage
-    // timer) -- the backend returns the full report in one response, so
-    // this is purely a "still working" indicator, never a claim about
-    // real retrieval counts. See AnalyzeScreen.tsx for the honest status
-    // strip that replaced this UI's previous fabricated telemetry.
-    const stageInterval = window.setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 92) return prev;
-        const step = prev < 45 ? 2.8 : prev < 75 ? 1.8 : 0.9;
-        return Math.min(92, prev + step);
-      });
-    }, STAGE_INTERVAL_MS);
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    // Fallback-only simulated progress (the backend's /api/analyze returns
+    // the full report in one response): it moves stages to "passed", never
+    // to done. It only starts if streaming real progress isn't possible.
+    let stageInterval: number | undefined;
+    const startTimerFallback = () => {
+      if (runTokenRef.current !== token) return;
+      // Never mix: drop any real-event state before the timer takes over.
+      setLiveProgress(initialLiveProgress());
+      setProgressMode("timer");
+      setProgress(8);
+      stageInterval = window.setInterval(() => {
+        setProgress((prev) => {
+          if (prev >= 92) return prev;
+          const step = prev < 45 ? 2.8 : prev < 75 ? 1.8 : 0.9;
+          return Math.min(92, prev + step);
+        });
+      }, STAGE_INTERVAL_MS);
+    };
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/analyze`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const { report: data } = await runAnalysis({
+        apiBase: API_BASE_URL,
+        body: {
           idea: idea.trim() || trimmed,
           mode,
           businessName: businessName.trim() || undefined,
@@ -119,14 +137,16 @@ export default function App() {
           dataSourceUrl: dataSourceUrl.trim() || undefined,
           frameworks: [...FRAMEWORKS],
           tier: "free",
-        }),
+        },
+        signal: controller.signal,
+        onEvent: (event) => {
+          if (runTokenRef.current === token) setLiveProgress((prev) => applyStreamEvent(prev, event));
+        },
+        onFallback: (reason) => {
+          trackEvent("analysis_stream_fallback", { reason });
+          startTimerFallback();
+        },
       });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(
-          data.error || "Analysis service could not complete this request.",
-        );
-      }
       const report = hydrateReport(data) as GroundlyReport;
 
       if (runTokenRef.current !== token) return;
@@ -159,6 +179,7 @@ export default function App() {
       setIsRunning(false);
       setProgress(0);
       setReportArrived(false);
+      setLiveProgress(initialLiveProgress());
       const message =
         err instanceof Error
           ? err.message
@@ -170,6 +191,7 @@ export default function App() {
 
   function handleStartNewAnalysis() {
     runTokenRef.current += 1;
+    abortRef.current?.abort();
     clearSharedHash();
     setIsRunning(false);
     setProgress(0);
@@ -191,7 +213,12 @@ export default function App() {
     }
   }
 
-  const activeStageIndex = stageIndexFromProgress(progress);
+  const stageView = runningStageView({
+    mode: progressMode,
+    live: liveProgress,
+    timerProgress: progress,
+    reportArrived,
+  });
 
   return (
     <div
@@ -225,9 +252,10 @@ export default function App() {
           geography={geography}
           setGeography={setGeography}
           isRunning={isRunning}
-          progress={progress}
-          activeStageIndex={activeStageIndex}
-          reportArrived={reportArrived}
+          progress={stageView.progress}
+          activeStageIndex={stageView.activeStageIndex}
+          stageStatuses={stageView.stageStatuses}
+          stageLabels={stageView.stageLabels}
           error={error}
           onLaunch={handleLaunchAnalysis}
         />

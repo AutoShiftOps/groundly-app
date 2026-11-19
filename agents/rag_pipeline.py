@@ -5,6 +5,7 @@ RAG grounding pipeline: retrieve -> generate with citations -> verify claims -> 
 import asyncio
 import logging
 import re
+from typing import Callable
 
 from agents import config  # noqa: F401  side-effect: loads backend/.env reliably
 from openai import AsyncOpenAI
@@ -1103,11 +1104,30 @@ async def generate_with_citations(query: str, context_chunks: list, framework_ta
     return {"text": text, "citations": filtered_citations, "assumptions": [], "actions": [], "provider_used": provider_used}
 
 
+async def classify_market_category(idea, industry, business_name) -> dict:
+    """Public entry point for TAM's market-category classification, so a
+    caller can start it before the framework pipelines and report it as
+    its own step. Same never-raises contract as the private helper."""
+    return await _classify_tam_market_category(idea, industry, business_name)
+
+
 async def run_pipeline(
     query: str, framework_tag: str | None = None, directory_context: dict | None = None,
     idea: str | None = None, industry: str | None = None, business_name: str | None = None,
-    geography: str | None = None,
+    geography: str | None = None, market_category: dict | None = None,
+    on_progress: Callable[[str], None] | None = None,
 ):
+    # on_progress(step) is called exactly once per step this framework
+    # actually finished -- "searching" (retrieval done), "writing"
+    # (generation done), "checking" (verification + repair done) -- even
+    # when the step's result is a failure (e.g. insufficient data); the
+    # returned result carries that real state. An exception skips every
+    # later call. market_category: a classify_market_category() result
+    # computed by the caller (tam only); classified here when omitted.
+    def report(step: str) -> None:
+        if on_progress:
+            on_progress(step)
+
     # directory_context (agents/mississauga_data.py's query_directory()
     # result, computed once per /api/analyze request, not once per
     # framework) is purely ADDITIVE context -- appended to the generation
@@ -1141,7 +1161,7 @@ async def run_pipeline(
     parent_category: str | None = None
     providers_used: list[str] = []
     if framework_tag == "tam":
-        category_result = await _classify_tam_market_category(idea, industry, business_name)
+        category_result = market_category or await _classify_tam_market_category(idea, industry, business_name)
         specific_category = category_result["specific_category"]
         parent_category = category_result["parent_category"]
         if category_result.get("provider_used"):
@@ -1327,10 +1347,13 @@ async def run_pipeline(
                 )
             chunks = [c for c in chunks if c["similarity"] >= MIN_CONTEXT_SIMILARITY]
 
+    report("searching")
+
     result = await generate_with_citations(
         query, chunks, framework_tag=framework_tag, extra_context_chunks=directory_chunks,
         specific_category=specific_category, parent_category=parent_category,
     )
+    report("writing")
     field_name = STRUCTURED_FRAMEWORKS[framework_tag][1] if framework_tag in STRUCTURED_FRAMEWORKS else None
     extra_value = result.get(field_name) if field_name else None
     generation_provider = result.pop("provider_used", None)
@@ -1391,4 +1414,5 @@ async def run_pipeline(
     # same provider, "mixed" if a fallback happened partway through.
     verification["provider_used"] = llm_provider.overall_provider(providers_used)
 
+    report("checking")
     return {**result, "verification": verification}
