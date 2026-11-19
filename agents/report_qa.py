@@ -85,6 +85,7 @@ async def answer_report_question(idea: str, results: dict, allowed: list[str], q
         parsed, _provider_used = await llm_provider.structured_completion(
             model=CHAT_MODEL, system_prompt=ASK_SYSTEM_PROMPT, user_content=user_content,
             schema_name="report_qa_answer", schema=_ask_schema(frameworks_needed), temperature=0.2,
+            task="writing",
         )
     except Exception:
         # Never let this turn into a 500 -- degrade to an honest

@@ -125,6 +125,7 @@ async def synthesize_business_metrics(idea: str, results: dict, allowed: list[st
         parsed, _provider_used = await llm_provider.structured_completion(
             model=CHAT_MODEL, system_prompt=SYNTHESIS_SYSTEM_PROMPT, user_content=user_content,
             schema_name="business_metrics", schema=BUSINESS_METRICS_SCHEMA, temperature=0.2,
+            task="writing",
         )
     except Exception:
         # Never let a synthesis failure break the whole /analyze response --

@@ -7,8 +7,11 @@ directly and are untouched by this module -- every stored pgvector
 embedding must keep coming from the same model, so provider choice
 never applies to them.)
 
-config.LLM_PROVIDER ("gemini" by default, or "openai") picks which
-provider is tried FIRST. Every Gemini call is bounded by
+Each call names its task: "writing" (framework generation, category
+classification, synthesis, Ask AI) or "checking" (claim verifier and
+repair). LLM_PROVIDER_WRITING / LLM_PROVIDER_CHECKING pick that task's
+provider ("gemini" or "openai"); unset, a task uses config.LLM_PROVIDER
+("gemini" by default). That provider is tried FIRST. Every Gemini call is bounded by
 GEMINI_TIMEOUT_SECONDS. A 429, 5xx, timeout or network error gets one
 retry on Gemini; any other error (invalid/missing key, 400/401/403/404/
 409) goes straight to OpenAI. A circuit breaker skips Gemini entirely
@@ -17,8 +20,8 @@ for GEMINI_COOLDOWN_SECONDS after an auth/key/model-not-found error or
 both providers fail, the exception propagates and the caller's own
 existing "never default to a false success" handling takes over
 (verified=False, a null framework result, etc.), exactly as it already
-does for an OpenAI-only failure today. When LLM_PROVIDER is explicitly
-"openai", Gemini is never attempted at all.
+does for an OpenAI-only failure today. A task routed to "openai" never
+attempts Gemini at all.
 
 Every call returns (result, provider_used) where provider_used is
 "gemini" or "openai" for THAT call -- never "mixed"; a per-request
@@ -89,6 +92,29 @@ def _classify(exc: BaseException) -> str:
     return "permanent"
 
 
+# --- Per-task routing --------------------------------------------------------
+# "writing": framework generation, market-category classification,
+#            synthesis, Ask AI.  "checking": claim verifier and repair.
+# Each task uses LLM_PROVIDER_WRITING / LLM_PROVIDER_CHECKING when set,
+# otherwise LLM_PROVIDER. Both share one breaker: it tracks the Gemini key.
+
+TASKS = ("writing", "checking")
+
+
+def provider_for(task: str) -> str:
+    if task == "writing":
+        override = config.LLM_PROVIDER_WRITING
+    elif task == "checking":
+        override = config.LLM_PROVIDER_CHECKING
+    else:
+        raise ValueError(f"unknown LLM task {task!r}; expected one of {TASKS}")
+    return override or config.LLM_PROVIDER
+
+
+def _gemini_model_for(task: str) -> str:
+    return config.GEMINI_VERIFIER_MODEL if task == "checking" else config.GEMINI_MODEL
+
+
 # --- Circuit breaker (process-local) ---------------------------------------
 
 _now = time.monotonic
@@ -135,9 +161,10 @@ def _record_failure(exc: BaseException, kind: str) -> None:
         _open_breaker(f"{_consecutive_failures} consecutive failures, last: {type(exc).__name__}: {exc}")
 
 
-def gemini_available() -> bool:
-    """True when Gemini is configured and the circuit breaker is closed."""
-    return config.LLM_PROVIDER == "gemini" and bool(config.GEMINI_API_KEY) and _gemini_allowed()
+def gemini_available(task: str) -> bool:
+    """True when `task` is routed to Gemini, a key is set and the circuit
+    breaker is closed."""
+    return provider_for(task) == "gemini" and bool(config.GEMINI_API_KEY) and _gemini_allowed()
 
 
 def reset_breaker() -> None:
@@ -147,14 +174,24 @@ def reset_breaker() -> None:
 
 
 def provider_status() -> dict:
-    """For /health: what's configured, what calls are actually using right
-    now, and whether the breaker is open (with seconds left)."""
+    """For /health: the configured provider per task, what each task's
+    calls are actually using right now, and whether the breaker is open
+    (with seconds left)."""
     remaining = max(0.0, _breaker_open_until - _now()) if _breaker_open_until else 0.0
     breaker_open = remaining > 0
-    gemini_usable = config.LLM_PROVIDER == "gemini" and bool(config.GEMINI_API_KEY) and not breaker_open
+    gemini_usable = bool(config.GEMINI_API_KEY) and not breaker_open
+
+    def active(task):
+        return "gemini" if provider_for(task) == "gemini" and gemini_usable else "openai"
+
+    writing_active, checking_active = active("writing"), active("checking")
     return {
         "llm_provider_configured": config.LLM_PROVIDER,
-        "llm_provider_active": "gemini" if gemini_usable else "openai",
+        "llm_provider_active": overall_provider([writing_active, checking_active]),
+        "llm_provider_writing": provider_for("writing"),
+        "llm_provider_writing_active": writing_active,
+        "llm_provider_checking": provider_for("checking"),
+        "llm_provider_checking_active": checking_active,
         "gemini_breaker_open": breaker_open,
         "gemini_breaker_seconds_remaining": round(remaining),
     }
@@ -246,11 +283,11 @@ def json_schema_to_gemini(schema):
     return result
 
 
-async def _gemini_structured_call(system_prompt, user_content, schema, temperature):
+async def _gemini_structured_call(system_prompt, user_content, schema, temperature, model=None):
     from google.genai import types
     client = _get_genai_client()
     response = await client.aio.models.generate_content(
-        model=config.GEMINI_MODEL,
+        model=model or config.GEMINI_MODEL,
         contents=user_content,
         config=types.GenerateContentConfig(
             system_instruction=system_prompt,
@@ -262,10 +299,10 @@ async def _gemini_structured_call(system_prompt, user_content, schema, temperatu
     return json.loads(response.text)
 
 
-async def _gemini_text_call(system_prompt, user_content, temperature):
+async def _gemini_text_call(system_prompt, user_content, temperature, model=None):
     client = _get_genai_client()
     response = await client.aio.models.generate_content(
-        model=config.GEMINI_MODEL,
+        model=model or config.GEMINI_MODEL,
         contents=user_content,
         config={"system_instruction": system_prompt, "temperature": temperature},
     )
@@ -302,24 +339,27 @@ async def _openai_text_call(model, system_prompt, user_content, temperature):
 
 async def structured_completion(
     model: str, system_prompt: str, user_content: str, schema_name: str, schema: dict,
-    temperature: float = 0,
+    temperature: float = 0, *, task: str,
 ) -> tuple[dict, str]:
     """Runs one structured-JSON call and returns (parsed_dict,
-    provider_used). `model` is the OpenAI model name used only when
-    the OpenAI path actually runs (first choice, or fallback) --
-    Gemini always uses config.GEMINI_MODEL, never this argument, so
-    Gemini's model name stays env-configurable independent of what
-    any given caller historically hardcoded for OpenAI.
+    provider_used). `task` ("writing" or "checking") picks the provider
+    -- see provider_for(). `model` is the OpenAI model name used only
+    when the OpenAI path actually runs (first choice, or fallback) --
+    Gemini uses the task's env-configured Gemini model, never this
+    argument, so Gemini's model name stays independent of what any
+    given caller historically hardcoded for OpenAI.
 
     Raises only if every attempt across both providers fails -- the
     caller's existing failure handling (verified=False, a null
     framework result, etc.) takes over from there, exactly as it did
     when this module only ever called OpenAI."""
-    if config.LLM_PROVIDER == "gemini":
+    if provider_for(task) == "gemini":
         try:
             parsed = await _run_gemini(
-                "structured",
-                lambda: _gemini_structured_call(system_prompt, user_content, schema, temperature),
+                f"{task} structured",
+                lambda: _gemini_structured_call(
+                    system_prompt, user_content, schema, temperature, model=_gemini_model_for(task),
+                ),
             )
             return parsed, "gemini"
         except Exception as exc:
@@ -330,14 +370,15 @@ async def structured_completion(
 
 
 async def text_completion(
-    model: str, system_prompt: str, user_content: str, temperature: float = 0.2,
+    model: str, system_prompt: str, user_content: str, temperature: float = 0.2, *, task: str,
 ) -> tuple[str, str]:
     """Same provider selection/fallback as structured_completion, for a
     plain (non-schema) text completion. Returns (text, provider_used)."""
-    if config.LLM_PROVIDER == "gemini":
+    if provider_for(task) == "gemini":
         try:
             text = await _run_gemini(
-                "text", lambda: _gemini_text_call(system_prompt, user_content, temperature),
+                f"{task} text",
+                lambda: _gemini_text_call(system_prompt, user_content, temperature, model=_gemini_model_for(task)),
             )
             return text, "gemini"
         except Exception as exc:
