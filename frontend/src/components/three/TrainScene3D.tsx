@@ -40,6 +40,7 @@ export type CameraPreset = "overview" | "active" | "lowTrack";
 interface TrainScene3DProps {
   activeStageIndex: number; // -1 = showcase (Car 4 Testing active matching mockup), 0..4 = running stage
   progress?: number; // 0..100 live progress when running
+  reportArrived?: boolean; // true only once the backend response is in -- the only time cars show done
   isRunning?: boolean;
   selectedStageIndex?: number | null;
   onSelectStage?: (index: number) => void;
@@ -103,6 +104,7 @@ function detectSoftwareWebGL(): boolean {
 export default function TrainScene3D({
   activeStageIndex,
   progress = 0,
+  reportArrived = false,
   isRunning = false,
   selectedStageIndex = null,
   onSelectStage,
@@ -130,6 +132,7 @@ export default function TrainScene3D({
   const stateRef = useRef({
     activeStageIndex,
     progress,
+    reportArrived,
     isRunning,
     selectedStageIndex,
     cameraPreset: "overview" as CameraPreset,
@@ -152,6 +155,7 @@ export default function TrainScene3D({
 
   stateRef.current.activeStageIndex = activeStageIndex;
   stateRef.current.progress = progress;
+  stateRef.current.reportArrived = reportArrived;
   stateRef.current.isRunning = isRunning;
   stateRef.current.selectedStageIndex = selectedStageIndex;
   stateRef.current.paused = paused;
@@ -165,7 +169,7 @@ export default function TrainScene3D({
       stateRef.current.userTransitioning = true;
     }
     syncRenderRef.current?.();
-  }, [activeStageIndex, selectedStageIndex, wireframeMode, adjustments]);
+  }, [activeStageIndex, reportArrived, selectedStageIndex, wireframeMode, adjustments]);
 
   const setPresetWithTransition = (preset: CameraPreset) => {
     setCameraPreset(preset);
@@ -608,8 +612,7 @@ export default function TrainScene3D({
     function syncStatuses() {
       const activeIdx = resolveActiveIndex();
       const selIdx = stateRef.current.selectedStageIndex;
-      const isComplete =
-        stateRef.current.isRunning && stateRef.current.progress >= 99;
+      const isComplete = stateRef.current.isRunning && stateRef.current.reportArrived;
       const wf = stateRef.current.wireframeMode;
       const statusDirty =
         activeIdx !== lastAppliedStage ||
@@ -622,9 +625,7 @@ export default function TrainScene3D({
         lastAppliedStage = activeIdx;
         lastSelected = selIdx;
         cars.forEach((car, i) => {
-          const status = isComplete
-            ? "done"
-            : stageStatusForIndex(i, activeIdx);
+          const status = stageStatusForIndex(i, activeIdx, isComplete);
           updateCarStatusVisuals(car, status, selIdx === i);
         });
       }
@@ -1076,7 +1077,11 @@ export default function TrainScene3D({
     (activeStageIndex >= 0 ? activeStageIndex : 3);
   const displayStage = STAGE_DEFINITIONS[resolvedStageIdx];
   const showcaseActiveIdx = activeStageIndex < 0 ? 3 : activeStageIndex;
-  const displayStatus = stageStatusForIndex(resolvedStageIdx, showcaseActiveIdx);
+  const displayStatus = stageStatusForIndex(
+    resolvedStageIdx,
+    showcaseActiveIdx,
+    isRunning && reportArrived,
+  );
 
   return (
     <div

@@ -8,36 +8,33 @@ import type {
   StageStatus,
 } from "../types/groundly";
 
+// What the backend pipeline actually does, in order. Five stages so the
+// train geometry (one car per stage) is unchanged.
 export const STAGE_DEFINITIONS: StageDefinition[] = [
   {
-    id: "ideating",
-    label: "Ideating",
-    subtitle: "Extracting target buyer, wedge, and domain parameters",
-    fact: "A tight one-sentence wedge predicts early founder distribution efficiency.",
+    id: "reading",
+    label: "Reading idea",
+    subtitle: "Understanding the idea, market category and geography",
   },
   {
-    id: "researching",
-    label: "Researching",
-    subtitle: "Retrieving market sizing, macro trends, and competitor filings",
-    fact: "Cross-referencing bottom-up unit economics prevents inflated TAM claims.",
+    id: "searching",
+    label: "Searching sources",
+    subtitle: "Mississauga Open Data, the research library and the web",
   },
   {
-    id: "prototyping",
-    label: "Prototyping",
-    subtitle: "Mapping evidence across all 10 strategic frameworks",
-    fact: "Porter's Five Forces and Value Chain expose margin traps early.",
+    id: "writing",
+    label: "Writing analysis",
+    subtitle: "Drafting all 10 frameworks from the sources found",
   },
   {
-    id: "testing",
-    label: "Testing",
-    subtitle: "Verifying every factual claim against source citations",
-    fact: "Unsupported assertions are flagged rather than filled with guesses.",
+    id: "checking",
+    label: "Checking claims",
+    subtitle: "Verifying every fact against its cited source",
   },
   {
-    id: "finalizing",
-    label: "Finalizing",
-    subtitle: "Compiling verdict, confidence index, and executive brief",
-    fact: "Structured frameworks accelerate seed-stage decision clarity.",
+    id: "building",
+    label: "Building report",
+    subtitle: "Scores, summary and sources list",
   },
 ];
 
@@ -91,12 +88,18 @@ export interface ProjectComparison {
   }[];
 }
 
+// The backend returns the whole report in one response, so the stage index
+// while waiting comes from a timer, not real progress. Stages behind the
+// timer are only "passed"; every stage becomes "done" together, and only
+// once the report has actually arrived.
 export function stageStatusForIndex(
   index: number,
   activeStageIndex: number,
+  reportArrived = false,
 ): StageStatus {
+  if (reportArrived) return "done";
   if (activeStageIndex < 0) return "pending";
-  if (index < activeStageIndex) return "done";
+  if (index < activeStageIndex) return "passed";
   if (index === activeStageIndex) return "active";
   return "pending";
 }

@@ -13,20 +13,16 @@ export const FRAMEWORKS = [
 
 export type FrameworkKey = (typeof FRAMEWORKS)[number];
 
-export type StageId =
-  | "ideating"
-  | "researching"
-  | "prototyping"
-  | "testing"
-  | "finalizing";
+export type StageId = "reading" | "searching" | "writing" | "checking" | "building";
 
-export type StageStatus = "done" | "active" | "pending";
+// "passed" = the loading timer has moved beyond this stage. Only "done"
+// claims the work finished, and that requires the report to have arrived.
+export type StageStatus = "done" | "passed" | "active" | "pending";
 
 export interface StageDefinition {
   id: StageId;
   label: string;
   subtitle: string;
-  fact: string;
 }
 
 export interface GroundlyCitation {
