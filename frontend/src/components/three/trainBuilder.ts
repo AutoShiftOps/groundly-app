@@ -1410,7 +1410,7 @@ export function updateCarStatusVisuals(
     car.couplerMat.opacity = status === "active" ? 0.98 : status === "done" ? 0.92 : 0.64;
   }
 
-  const nextBadgeKey = `${status}:${isSelected}`;
+  const nextBadgeKey = `${status}:${isSelected}:${car.label}`;
   if (car.renderedBadgeKey !== nextBadgeKey) {
     car.renderedBadgeKey = nextBadgeKey;
     drawCarBadgeCanvas(car.faceCanvas, car.label, status, car.variant);

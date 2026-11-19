@@ -1,8 +1,10 @@
 import asyncio
+import json
+import logging
 import sys
 from pathlib import Path
 from fastapi import APIRouter
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 # Allow importing the sibling top-level 'agents' package (repo_root/agents)
@@ -11,11 +13,14 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from agents.rag_pipeline import run_pipeline, STRUCTURED_FRAMEWORKS  # noqa: E402
+from agents.rag_pipeline import run_pipeline, classify_market_category, STRUCTURED_FRAMEWORKS  # noqa: E402
 from agents.synthesis import synthesize_business_metrics  # noqa: E402
 from agents.report_qa import answer_report_question  # noqa: E402
 from agents import mississauga_data  # noqa: E402
 from agents import llm_provider  # noqa: E402
+from routers.progress import StageProgress  # noqa: E402
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -141,14 +146,14 @@ class AnalysisResponse(BaseModel):
     provider_used: str | None = None
 
 
-@router.post("/analyze", response_model=AnalysisResponse)
-async def analyze(req: AnalysisRequest):
+def _allowed_frameworks(req: AnalysisRequest) -> list[str]:
     # Enforce free-tier framework gating server-side (never trust frontend toggles alone)
     if req.tier == "free":
-        allowed = [f for f in req.frameworks if f in FREE_FRAMEWORKS]
-    else:
-        allowed = req.frameworks
+        return [f for f in req.frameworks if f in FREE_FRAMEWORKS]
+    return req.frameworks
 
+
+def _validation_error(req: AnalysisRequest) -> JSONResponse | None:
     if req.dataSourceUrl:
         try:
             mississauga_data.validate_data_source_url(req.dataSourceUrl)
@@ -160,10 +165,34 @@ async def analyze(req: AnalysisRequest):
             # surface the real message instead of falling back to a
             # generic one.
             return JSONResponse(status_code=400, content={"error": str(exc)})
+    return None
 
+
+async def _run_analysis(
+    req: AnalysisRequest, allowed: list[str], progress: StageProgress | None = None,
+) -> AnalysisResponse:
+    """The whole analysis, shared by /analyze and /analyze/stream so both
+    produce the identical report. `progress`, when given, is told about
+    each step only once that step has really finished."""
     # server.ts's own default when the frontend sends no geography at all.
     geography_defaulted = not (req.geography and req.geography.strip())
     resolved_geography = req.geography.strip() if not geography_defaulted else "Mississauga, ON, Canada"
+
+    # TAM's market-category classification starts right away, alongside
+    # the directory lookup and the other frameworks' retrieval -- only
+    # TAM's own pipeline waits for it. "reading" is done once it is.
+    category_task = (
+        asyncio.create_task(classify_market_category(req.idea, req.industry, req.businessName))
+        if "tam" in allowed else None
+    )
+
+    async def finish_reading():
+        if category_task:
+            await category_task
+        if progress:
+            progress.stage_done("reading")
+
+    reading_task = asyncio.create_task(finish_reading())
 
     # Step 1 (matches the AI Studio source this was ported from): check
     # the real Mississauga Business Directory BEFORE any web-retrieval
@@ -184,19 +213,24 @@ async def analyze(req: AnalysisRequest):
     results = {}
     verification = {}
 
-    def build_query(framework: str) -> str:
-        return build_analysis_query(req.idea, framework, req.industry, resolved_geography)
-
-    # Run every requested framework's pipeline concurrently instead of
-    # blocking on 4 serial OpenAI calls. Every framework gets the same
-    # directory_result -- it was fetched once above, not once per
-    # framework.
-    pipeline_outputs = await asyncio.gather(
-        *(run_pipeline(
-            build_query(framework), framework_tag=framework, directory_context=directory_result,
+    async def run_framework(framework: str):
+        kwargs = {}
+        if framework == "tam" and category_task:
+            kwargs["market_category"] = await category_task
+        if progress:
+            kwargs["on_progress"] = progress.step_done
+        return await run_pipeline(
+            build_analysis_query(req.idea, framework, req.industry, resolved_geography),
+            framework_tag=framework, directory_context=directory_result,
             idea=req.idea, industry=req.industry, business_name=req.businessName, geography=resolved_geography,
-        ) for framework in allowed)
-    )
+            **kwargs,
+        )
+
+    # Run every requested framework's pipeline concurrently. Every
+    # framework gets the same directory_result -- it was fetched once
+    # above, not once per framework.
+    pipeline_outputs = await asyncio.gather(*(run_framework(framework) for framework in allowed))
+    await reading_task
 
     for framework, pipeline_output in zip(allowed, pipeline_outputs):
         results[framework] = {
@@ -228,7 +262,7 @@ async def analyze(req: AnalysisRequest):
     providers_used = [verification[fw]["provider_used"] for fw in allowed if verification[fw].get("provider_used")]
     overall_provider_used = llm_provider.overall_provider(providers_used) if providers_used else None
 
-    return AnalysisResponse(
+    response = AnalysisResponse(
         stage="finalizing",
         frameworks_requested=req.frameworks,
         frameworks_allowed=allowed,
@@ -243,6 +277,74 @@ async def analyze(req: AnalysisRequest):
         geography=resolved_geography,
         geography_defaulted=geography_defaulted,
         provider_used=overall_provider_used,
+    )
+    if progress:
+        progress.stage_done("building")
+    return response
+
+
+@router.post("/analyze", response_model=AnalysisResponse)
+async def analyze(req: AnalysisRequest):
+    error = _validation_error(req)
+    if error:
+        return error
+    return await _run_analysis(req, _allowed_frameworks(req))
+
+
+# Seconds between keep-alive lines while the pipeline is quiet, so idle
+# proxies don't drop the connection.
+STREAM_KEEPALIVE_SECONDS = 10.0
+_STREAM_END = object()
+
+
+@router.post("/analyze/stream")
+async def analyze_stream(req: AnalysisRequest):
+    """Same body and same final report as /analyze, streamed as
+    newline-delimited JSON: stage events in pipeline order as each step
+    really finishes, then {"type": "result", "report": ...} (or
+    {"type": "error", "error": ...}). A rejected request is a plain 400,
+    same as /analyze, before any streaming starts."""
+    error = _validation_error(req)
+    if error:
+        return error
+    allowed = _allowed_frameworks(req)
+    queue: asyncio.Queue = asyncio.Queue()
+    progress = StageProgress(total=len(allowed), emit=queue.put_nowait)
+
+    async def run():
+        try:
+            response = await _run_analysis(req, allowed, progress)
+            queue.put_nowait({"type": "result", "report": response.model_dump(mode="json")})
+        except Exception:
+            logger.exception("analyze_stream: analysis failed")
+            queue.put_nowait({"type": "error", "error": "Analysis service could not complete this request."})
+        finally:
+            queue.put_nowait(_STREAM_END)
+
+    async def lines():
+        task = asyncio.create_task(run())
+        try:
+            while True:
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=STREAM_KEEPALIVE_SECONDS)
+                except asyncio.TimeoutError:
+                    yield '{"type":"keepalive"}\n'
+                    continue
+                if item is _STREAM_END:
+                    break
+                yield json.dumps(item) + "\n"
+        finally:
+            # Client went away mid-run: stop the pipeline instead of
+            # finishing work nobody will read.
+            if not task.done():
+                task.cancel()
+
+    return StreamingResponse(
+        lines(),
+        media_type="application/x-ndjson",
+        # no-transform / X-Accel-Buffering: ask any proxy in front (nginx,
+        # Render's edge, CDNs) to pass lines through instead of buffering.
+        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
     )
 
 

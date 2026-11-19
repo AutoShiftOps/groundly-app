@@ -12,6 +12,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { STAGE_DEFINITIONS } from "../../lib/reportStats";
+import type { StageStatus } from "../../types/groundly";
 import TrainScene3D from "../three/TrainScene3D";
 
 interface AnalyzeScreenProps {
@@ -30,7 +31,9 @@ interface AnalyzeScreenProps {
   isRunning: boolean;
   progress: number;
   activeStageIndex: number;
-  reportArrived: boolean;
+  // One entry per stage, from real stream events (or the timer fallback).
+  stageStatuses: StageStatus[];
+  stageLabels: string[];
   error: string | null;
   onLaunch: () => void;
 }
@@ -69,7 +72,8 @@ export function AnalyzeScreen({
   isRunning,
   progress,
   activeStageIndex,
-  reportArrived,
+  stageStatuses,
+  stageLabels,
   error,
   onLaunch,
 }: AnalyzeScreenProps) {
@@ -94,8 +98,9 @@ export function AnalyzeScreen({
   const pct = Math.min(100, Math.round(progress));
 
   if (isRunning) {
-    const activeStage =
-      STAGE_DEFINITIONS[Math.max(0, Math.min(4, activeStageIndex))];
+    const activeIdx = Math.max(0, Math.min(4, activeStageIndex));
+    const activeStage = STAGE_DEFINITIONS[activeIdx];
+    const activeLabel = stageLabels[activeIdx] ?? activeStage?.label;
 
     return (
       <div className="mx-auto w-full max-w-[1440px] px-4 py-2.5 sm:px-6 lg:px-8">
@@ -124,7 +129,7 @@ export function AnalyzeScreen({
             <p className="mt-0.5 text-xs sm:text-sm text-slate-400">
               Our AI is working its magic ·{" "}
               <span className="text-slate-300">
-                0{activeStageIndex + 1} {activeStage?.label}:
+                0{activeIdx + 1} {activeLabel}:
               </span>{" "}
               {activeStage?.subtitle}
             </p>
@@ -155,7 +160,8 @@ export function AnalyzeScreen({
         <TrainScene3D
           activeStageIndex={activeStageIndex}
           progress={progress}
-          reportArrived={reportArrived}
+          stageStatuses={stageStatuses}
+          stageLabels={stageLabels}
           isRunning
           selectedStageIndex={selectedStage}
           onSelectStage={setSelectedStage}
@@ -206,7 +212,7 @@ export function AnalyzeScreen({
               </div>
               <div>
                 <p className="font-display text-sm font-extrabold leading-snug text-white">
-                  {activeStage?.label}
+                  {activeLabel}
                 </p>
                 <p className="mt-0.5 text-xs font-medium text-slate-300">
                   {activeStage?.subtitle}
