@@ -107,17 +107,17 @@ export function CompareModal({
         {/* Key Metric Diff Row */}
         <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <div className="rounded-xl border border-slate-800 bg-[#080f1f] p-3">
-            <p className="text-[11px] text-slate-400">Confidence</p>
+            <p className="text-[11px] text-slate-400">Verified</p>
             <p className="mt-1 font-mono text-base font-bold text-white tabular-nums">
-              {statsB.confidencePct}% → {statsA.confidencePct}%
+              {statsB.verifiedCount}/{statsB.totalFrameworks} → {statsA.verifiedCount}/{statsA.totalFrameworks}
             </p>
             <p
               className={`mt-0.5 font-mono text-[11px] tabular-nums ${
-                cmp.confidenceDelta >= 0 ? "text-[#14d8a3]" : "text-[#f5b041]"
+                cmp.verifiedDelta >= 0 ? "text-[#14d8a3]" : "text-[#f5b041]"
               }`}
             >
-              {cmp.confidenceDelta >= 0 ? "+" : ""}
-              {cmp.confidenceDelta}% delta
+              {cmp.verifiedDelta >= 0 ? "+" : ""}
+              {cmp.verifiedDelta} {Math.abs(cmp.verifiedDelta) === 1 ? "framework" : "frameworks"}
             </p>
           </div>
           <div className="rounded-xl border border-slate-800 bg-[#080f1f] p-3">

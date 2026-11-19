@@ -71,12 +71,12 @@ function makeSampleReport(verifiedKeys: string[]): GroundlyReport {
   };
 }
 
-test("computeReportStats calculates confidence, verdict, and deduplicated citations", () => {
+test("computeReportStats calculates the verified share, verdict, and deduplicated citations", () => {
   const full = makeSampleReport(["pestel", "porter", "swot", "tam"]);
   const stats = computeReportStats(full);
   assert.equal(stats.verifiedCount, 4);
   assert.equal(stats.totalFrameworks, 4);
-  assert.equal(stats.confidencePct, 100);
+  assert.equal(stats.verifiedPct, 100);
   assert.equal(stats.verdictShort, "GO");
   assert.equal(stats.tone, "teal");
   assert.equal(stats.totalCitations, 8);
@@ -84,13 +84,13 @@ test("computeReportStats calculates confidence, verdict, and deduplicated citati
 
   const partial = makeSampleReport(["pestel", "porter"]);
   const partialStats = computeReportStats(partial);
-  assert.equal(partialStats.confidencePct, 50);
+  assert.equal(partialStats.verifiedPct, 50);
   assert.equal(partialStats.verdictShort, "REWORK");
   assert.equal(partialStats.tone, "amber");
 
   const emptyVerified = makeSampleReport([]);
   const holdStats = computeReportStats(emptyVerified);
-  assert.equal(holdStats.confidencePct, 0);
+  assert.equal(holdStats.verifiedPct, 0);
   assert.equal(holdStats.verdictShort, "HOLD");
   assert.equal(holdStats.tone, "red");
 });
@@ -221,8 +221,8 @@ test("computeProjectComparison produces accurate deltas between versions", () =>
     report: makeSampleReport(["pestel", "porter", "swot", "tam"]),
   };
   const cmp = computeProjectComparison(p1, p2);
-  assert.equal(cmp.confidenceDelta, 50);
-  assert.equal(cmp.verifiedDelta, 2);
+  assert.equal(cmp.verifiedDelta, 2); // frameworks, not percentage points
+  assert.equal("confidenceDelta" in cmp, false);
   assert.equal(cmp.tamA, "$18.6B");
   assert.equal(cmp.frameworkDiffs.length, 4);
 });
