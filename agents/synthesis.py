@@ -20,15 +20,12 @@ is derived deterministically from Phase 1's market_sizing.tam instead of
 re-asking the LLM for a number we already have as real structured data.
 """
 
-import json
 import logging
 
 from agents import config  # noqa: F401  side-effect: loads backend/.env reliably
-from openai import AsyncOpenAI
+from agents import llm_provider
 
 logger = logging.getLogger(__name__)
-
-client = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
 
 CHAT_MODEL = "gpt-4o-mini"
 
@@ -125,19 +122,10 @@ async def synthesize_business_metrics(idea: str, results: dict, allowed: list[st
     user_content = f"IDEA: {idea}\n\n" + "\n\n".join(sections)
 
     try:
-        completion = await client.chat.completions.create(
-            model=CHAT_MODEL,
-            messages=[
-                {"role": "system", "content": SYNTHESIS_SYSTEM_PROMPT},
-                {"role": "user", "content": user_content},
-            ],
-            response_format={
-                "type": "json_schema",
-                "json_schema": {"name": "business_metrics", "strict": True, "schema": BUSINESS_METRICS_SCHEMA},
-            },
-            temperature=0.2,
+        parsed, _provider_used = await llm_provider.structured_completion(
+            model=CHAT_MODEL, system_prompt=SYNTHESIS_SYSTEM_PROMPT, user_content=user_content,
+            schema_name="business_metrics", schema=BUSINESS_METRICS_SCHEMA, temperature=0.2,
         )
-        parsed = json.loads(completion.choices[0].message.content)
     except Exception:
         # Never let a synthesis failure break the whole /analyze response --
         # degrade to "not enough data" for every synthesized card, same as

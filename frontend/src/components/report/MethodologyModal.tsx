@@ -15,12 +15,20 @@ export const FRAMEWORK_NOTES: Record<string, string> = {
   balanced_scorecard: "Scorecard KPIs pair verified baseline metrics with realistic operational targets.",
 };
 
+const PROVIDER_LABELS: Record<string, string> = {
+  gemini: "Generated with Gemini",
+  openai: "Generated with OpenAI",
+  mixed: "Generated with Gemini and OpenAI (mixed)",
+};
+
 export function MethodologyModal({
   frameworkKey,
   onClose,
+  providerUsed,
 }: {
   frameworkKey: string;
   onClose: () => void;
+  providerUsed?: "gemini" | "openai" | "mixed" | null;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -111,6 +119,12 @@ export function MethodologyModal({
                 {note}
               </p>
             </div>
+          )}
+
+          {providerUsed && PROVIDER_LABELS[providerUsed] && (
+            <p className="text-center text-[11px] text-slate-500">
+              {PROVIDER_LABELS[providerUsed]}
+            </p>
           )}
         </div>
       </div>

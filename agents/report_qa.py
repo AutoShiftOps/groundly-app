@@ -14,15 +14,12 @@ the question, the response says so explicitly (grounded: false) rather
 than guessing.
 """
 
-import json
 import logging
 
 from agents import config  # noqa: F401  side-effect: loads backend/.env reliably
-from openai import AsyncOpenAI
+from agents import llm_provider
 
 logger = logging.getLogger(__name__)
-
-client = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
 
 CHAT_MODEL = "gpt-4o-mini"
 
@@ -85,19 +82,10 @@ async def answer_report_question(idea: str, results: dict, allowed: list[str], q
     user_content = f"IDEA: {idea}\n\n" + "\n\n".join(sections) + f"\n\nQUESTION:\n{question}"
 
     try:
-        completion = await client.chat.completions.create(
-            model=CHAT_MODEL,
-            messages=[
-                {"role": "system", "content": ASK_SYSTEM_PROMPT},
-                {"role": "user", "content": user_content},
-            ],
-            response_format={
-                "type": "json_schema",
-                "json_schema": {"name": "report_qa_answer", "strict": True, "schema": _ask_schema(frameworks_needed)},
-            },
-            temperature=0.2,
+        parsed, _provider_used = await llm_provider.structured_completion(
+            model=CHAT_MODEL, system_prompt=ASK_SYSTEM_PROMPT, user_content=user_content,
+            schema_name="report_qa_answer", schema=_ask_schema(frameworks_needed), temperature=0.2,
         )
-        parsed = json.loads(completion.choices[0].message.content)
     except Exception:
         # Never let this turn into a 500 -- degrade to an honest
         # "couldn't answer" rather than raising, same defensive pattern

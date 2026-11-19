@@ -15,7 +15,8 @@ app.include_router(analysis.router, prefix="/api")
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    # routers.analysis puts the repo root on sys.path; reuse its import.
+    return {"status": "ok", **analysis.llm_provider.provider_status()}
 
 # Run locally: uvicorn main:app --reload
 # Render runs this via: uvicorn main:app --host 0.0.0.0 --port $PORT

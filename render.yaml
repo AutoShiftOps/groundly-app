@@ -14,6 +14,12 @@ services:
         sync: false   # paste your Supabase session-pooler connection string here in the Render dashboard
       - key: TAVILY_API_KEY
         sync: false   # optional -- live web-retrieval fallback; paste your Tavily key here in the Render dashboard
+      - key: GEMINI_API_KEY
+        sync: false   # Gemini is the default text-generation provider (agents/llm_provider.py) -- paste your key here in the Render dashboard, same as TAVILY_API_KEY above. Missing key degrades every call to the OpenAI fallback instead of failing.
+      - key: LLM_PROVIDER
+        value: gemini   # "gemini" (default) or "openai" -- set to "openai" to disable the Gemini path entirely
+      - key: GEMINI_MODEL
+        value: gemini-3.8-flash
       - key: ALLOWED_ORIGIN
         value: https://your-app.vercel.app
 

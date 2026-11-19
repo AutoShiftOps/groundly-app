@@ -27,7 +27,7 @@
 
 ## Auto-Deploy
 - Every push to `main` triggers an automatic redeploy.
-- Render provides a live URL like `https://groundly-api.onrender.com` — use this as `VITE_API_BASE_URL` in Vercel.
+- Render provides a live URL like `https://groundly-api.onrender.com` by default; production now serves from a custom domain, `https://api.groundly.autoshiftops.com`, pointed at the Render service (Render dashboard -> Service -> Settings -> Custom Domains) — use whichever one actually fronts your deploy as `VITE_API_BASE_URL` in Vercel.
 
 ## Verify
-- Visit `https://groundly-api.onrender.com/health` -> should return `{"status": "ok"}`.
+- Visit `https://api.groundly.autoshiftops.com/health` (or `https://groundly-api.onrender.com/health` before a custom domain is attached) -> should return `{"status": "ok"}`.

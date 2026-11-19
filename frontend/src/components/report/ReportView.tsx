@@ -1210,6 +1210,7 @@ export default function ReportView({
         <MethodologyModal
           frameworkKey={methodologyFw}
           onClose={() => setMethodologyFw(null)}
+          providerUsed={report.provider_used}
         />
       )}
 

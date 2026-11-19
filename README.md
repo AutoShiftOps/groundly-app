@@ -6,7 +6,7 @@ Grounded, multi-framework business analysis reports (PESTEL, Porter's Five Force
 - Frontend: React + Vite + Framer Motion (train progress UI, dashboard)
 - Backend: Python + FastAPI on AWS Lambda (via API Gateway)
 - Retrieval: PostgreSQL + pgvector (RAG store)
-- LLM: OpenAI / AWS Bedrock (pluggable)
+- LLM: Gemini (default) with an automatic OpenAI fallback (`agents/llm_provider.py`, `LLM_PROVIDER` env var) -- embeddings always stay on OpenAI for pgvector compatibility
 - Deploy: Vercel (frontend), AWS SAM/CDK (backend)
 - Analytics: Google Analytics 4
 
@@ -31,8 +31,11 @@ npm run dev
 cd backend
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
+cp .env.example .env   # fill in OPENAI_API_KEY, DATABASE_URL, and (optional) GEMINI_API_KEY/TAVILY_API_KEY
 uvicorn main:app --reload
 ```
+
+`LLM_PROVIDER` (in `backend/.env`) picks the default text-generation provider: `gemini` (default) or `openai`. A missing `GEMINI_API_KEY` degrades every call to the OpenAI fallback rather than failing -- see `backend/.env.example` for the full list of variables.
 
 ## Deployment
 See `docs/deploy-vercel.md` and `docs/deploy-ga4.md`.
