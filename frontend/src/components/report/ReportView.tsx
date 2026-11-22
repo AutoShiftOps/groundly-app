@@ -106,7 +106,7 @@ function MiniSparkline({
   );
 }
 
-export function ConfidenceRing({
+export function VerifiedRing({
   pct,
   tone,
   verifiedCount,
@@ -686,8 +686,8 @@ export default function ReportView({
                   </div>
 
                   <div className="flex items-center gap-5 self-start md:self-center">
-                    <ConfidenceRing
-                      pct={stats.confidencePct}
+                    <VerifiedRing
+                      pct={stats.verifiedPct}
                       tone={stats.tone}
                       verifiedCount={stats.verifiedCount}
                       totalFrameworks={stats.totalFrameworks}

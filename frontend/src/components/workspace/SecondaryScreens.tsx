@@ -27,7 +27,16 @@ const TONE_HEX: Record<VerdictTone, string> = {
   red: "#f05252",
 };
 
-function MiniConfidenceArc({ pct, color }: { pct: number; color: string }) {
+function MiniVerifiedArc({
+  verified,
+  total,
+  color,
+}: {
+  verified: number;
+  total: number;
+  color: string;
+}) {
+  const pct = total ? (verified / total) * 100 : 0;
   const size = 46;
   const stroke = 4.5;
   const r = (size - stroke) / 2;
@@ -60,7 +69,7 @@ function MiniConfidenceArc({ pct, color }: { pct: number; color: string }) {
         />
       </svg>
       <span className="absolute font-mono text-[10px] font-bold text-white tabular-nums">
-        {pct}%
+        {verified}/{total}
       </span>
     </div>
   );
@@ -77,14 +86,17 @@ export function ProjectsScreen({
   onDeleteProject: (projectId: string) => void;
   onNewAnalysis: () => void;
 }) {
-  const avgConfidence = projects.length
-    ? Math.round(
-        projects.reduce(
-          (sum, p) => sum + computeReportStats(p.report).confidencePct,
-          0,
-        ) / projects.length,
+  // Verified frameworks out of 10, averaged across projects (each
+  // project's verified/total share scaled to 10), e.g. "6.5/10".
+  const avgVerifiedOf10 = projects.length
+    ? Number(
+        (
+          projects.reduce((sum, p) => sum + computeReportStats(p.report).verifiedPct, 0) /
+          projects.length /
+          10
+        ).toFixed(1),
       )
-    : 0;
+    : null;
   const totalCitations = projects.reduce(
     (sum, p) => sum + computeReportStats(p.report).totalCitations,
     0,
@@ -133,9 +145,9 @@ export function ProjectsScreen({
               <TrendingUp className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-xs text-slate-400">Portfolio Avg Confidence</p>
+              <p className="text-xs text-slate-400">Avg verified</p>
               <p className="font-display text-2xl font-extrabold text-[#22f59d] tabular-nums">
-                {avgConfidence}%
+                {avgVerifiedOf10 === null ? "—" : `${avgVerifiedOf10}/10`}
               </p>
             </div>
           </div>
@@ -185,8 +197,9 @@ export function ProjectsScreen({
                 <div>
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-start gap-3">
-                      <MiniConfidenceArc
-                        pct={stats.confidencePct}
+                      <MiniVerifiedArc
+                        verified={stats.verifiedCount}
+                        total={stats.totalFrameworks}
                         color={color}
                       />
                       <div className="min-w-0">
@@ -434,8 +447,9 @@ export function InsightsScreen({
               <section key={p.id} className="surface-panel rounded-2xl p-5">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3.5">
                   <div className="flex items-center gap-3.5">
-                    <MiniConfidenceArc
-                      pct={stats.confidencePct}
+                    <MiniVerifiedArc
+                      verified={stats.verifiedCount}
+                      total={stats.totalFrameworks}
                       color={toneColor}
                     />
                     <div>
@@ -446,7 +460,7 @@ export function InsightsScreen({
                         <span style={{ color: toneColor }} className="font-semibold">
                           {stats.verdict}
                         </span>{" "}
-                        · {stats.confidencePct}% confidence · {stats.totalCitations} citations
+                        · {stats.verifiedCount}/{stats.totalFrameworks} verified · {stats.totalCitations} citations
                       </p>
                     </div>
                   </div>

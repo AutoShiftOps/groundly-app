@@ -49,7 +49,8 @@ export interface ReportStats {
   // score at all) -- "0% match" would misrepresent that as a bad score
   // rather than "not applicable."
   avgSimilarity: number | null;
-  confidencePct: number;
+  // Share of frameworks verified (verifiedCount / totalFrameworks), 0-100.
+  verifiedPct: number;
   unverifiedCount: number;
   verdict: string;
   verdictShort: "GO" | "REWORK" | "HOLD";
@@ -69,7 +70,6 @@ export interface CitedItemWithFramework extends GroundlyCitation {
 }
 
 export interface ProjectComparison {
-  confidenceDelta: number;
   citationDelta: number;
   similarityDelta: number;
   verifiedDelta: number;
@@ -178,7 +178,7 @@ export function computeReportStats(
   const avgSimilarity = similarityCount
     ? Math.round((similaritySum / similarityCount) * 100)
     : null;
-  const confidencePct = totalFrameworks
+  const verifiedPct = totalFrameworks
     ? Math.round((verifiedCount / totalFrameworks) * 100)
     : 0;
   const unverifiedCount = totalFrameworks - verifiedCount;
@@ -211,7 +211,7 @@ export function computeReportStats(
     totalFrameworks,
     totalCitations,
     avgSimilarity,
-    confidencePct,
+    verifiedPct,
     unverifiedCount,
     verdict,
     verdictShort,
@@ -314,9 +314,9 @@ export function computeProjectComparison(
   const tamSizingB = projectB.report.results?.tam?.market_sizing;
 
   return {
-    confidenceDelta: statsB.confidencePct - statsA.confidencePct,
     citationDelta: statsB.totalCitations - statsA.totalCitations,
     similarityDelta: (statsB.avgSimilarity ?? 0) - (statsA.avgSimilarity ?? 0),
+    // Change in the number of verified frameworks (B minus A).
     verifiedDelta: statsB.verifiedCount - statsA.verifiedCount,
     tamA: tamSizingA?.tam?.label || "—",
     tamB: tamSizingB?.tam?.label || "—",

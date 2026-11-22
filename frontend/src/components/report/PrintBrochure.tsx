@@ -7,13 +7,13 @@
 // print and preview can never show different content. Reuses the real
 // report components and data -- TamConcentricDiagram,
 // FrameworkDiagramBody, renderTextWithInlineCitations, CitationChip,
-// FRAMEWORK_NAV_ITEMS order, reportStats, ConfidenceRing -- so nothing
+// FRAMEWORK_NAV_ITEMS order, reportStats, VerifiedRing -- so nothing
 // here can drift from what the on-screen report itself shows. A
 // framework with no grounding prints its real empty state, never a
 // placeholder; nothing here is sample/invented content.
 import { createPortal } from "react-dom";
 import { CheckCircle2, ShieldAlert } from "lucide-react";
-import { ConfidenceRing, TONE_HEX } from "./ReportView";
+import { TONE_HEX, VerifiedRing } from "./ReportView";
 import {
   CitationChip,
   FrameworkDiagramBody,
@@ -292,8 +292,8 @@ function CoverAndSummarySpread({ report, idea, title, date }: PrintBrochureProps
         <SpreadHeader kicker="SUMMARY" title="Evidence Verdict" />
 
         <div className="print-summary-top">
-          <ConfidenceRing
-            pct={stats.confidencePct}
+          <VerifiedRing
+            pct={stats.verifiedPct}
             tone={stats.tone}
             verifiedCount={stats.verifiedCount}
             totalFrameworks={stats.totalFrameworks}
