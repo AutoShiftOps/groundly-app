@@ -43,18 +43,17 @@ def test_refuses_when_url_contains_marker():
 
 def test_allows_real_looking_title_and_url_through_the_guard(monkeypatch):
     # Doesn't actually reach the network: stub out embed_batch/insert_source
-    # so this only proves the guard itself doesn't false-positive on
-    # legitimate data (e.g. the seeded demo corpus's real example.com URLs
-    # with real, descriptive titles) -- not a real-API test.
+    # so this only proves the guards don't false-positive on a real,
+    # public source -- not a real-API test.
     import agents.ingest as ingest_module
 
     monkeypatch.setattr(ingest_module, "embed_batch", lambda texts: [[0.0] * 3 for _ in texts])
     monkeypatch.setattr(ingest_module, "insert_source", lambda **kwargs: 1)
 
     count = ingest_content(
-        text="Real market sizing data for the demo corpus.",
-        title="TAM: EV Charging Market",
-        url="https://example.com/pestel-source",
+        text="Ontario had 1.2 million registered EVs in 2025.",
+        title="Electric vehicle registrations in Ontario",
+        url="https://www.ontario.ca/page/electric-vehicles",
         framework_tag="tam",
     )
     assert count > 0

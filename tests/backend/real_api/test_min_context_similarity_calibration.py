@@ -14,16 +14,19 @@ import logging
 
 import pytest
 
+from agents.source_urls import is_public_source_url
+
 pytestmark = pytest.mark.real_api
 
 
 def test_ev_charging_regression_all_four_frameworks_still_ground(api_client):
     # The regression check that matters most (spec's own words): it's easy
     # to fix the dead-zone bug and accidentally break the thing that was
-    # already working. The EV-charging seed corpus is real, pre-existing
-    # data (BMC/PESTEL/SWOT/TAM: EV Charging Market/Startup) -- this must
-    # keep producing real grounded content with real citations across all
-    # four frameworks.
+    # already working. The EV-charging idea must keep producing grounded
+    # content with real citations across all four frameworks -- from real,
+    # retrievable web sources. (The hand-written example.com "EV Charging
+    # Market/Startup" seed corpus this test once relied on was removed on
+    # 2026-11-22: docs/removed-seed-corpus-2026-11-22.json.)
     resp = api_client.post(
         "/api/analyze",
         json={"idea": "an EV charging network startup", "frameworks": ["pestel", "swot", "tam", "bmc"], "tier": "free"},
@@ -42,6 +45,7 @@ def test_ev_charging_regression_all_four_frameworks_still_ground(api_client):
         for citation in result["citations"]:
             assert citation["similarity"] is not None
             assert 0.0 <= citation["similarity"] <= 1.0
+            assert is_public_source_url(citation["source_url"]), citation["source_url"]
 
 
 def test_off_corpus_idea_never_bails_without_a_real_attempt(api_client, caplog):

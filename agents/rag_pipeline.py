@@ -16,6 +16,7 @@ from agents import market_scope
 from agents import claim_repair
 from agents import llm_provider
 from agents import claim_verifier
+from agents.source_urls import is_public_source_url
 from agents.claim_verifier import verify_claims  # noqa: F401  module-level name, monkeypatchable on this module
 
 logger = logging.getLogger(__name__)
@@ -974,7 +975,18 @@ async def _search_similar_chunks(embedding, top_k: int = 8, framework_tag: str |
     # search_similar() is a blocking psycopg2 call; run it off the event
     # loop so concurrent run_pipeline() calls (one per framework) don't
     # serialize behind it.
-    return await asyncio.to_thread(search_similar, embedding, top_k=top_k, framework_tag=framework_tag)
+    chunks = await asyncio.to_thread(search_similar, embedding, top_k=top_k, framework_tag=framework_tag)
+    # Ingest refuses placeholder/non-public URLs, but a row stored before
+    # that check (or by any other path) must still never reach generation
+    # as a citation nobody can open.
+    usable = [c for c in chunks if is_public_source_url(c.get("source_url"))]
+    if len(usable) != len(chunks):
+        logger.warning(
+            "retrieval: dropped %d chunk(s) with placeholder/non-public source URLs for framework=%r: %s",
+            len(chunks) - len(usable), framework_tag,
+            sorted({c.get("source_url") for c in chunks if c not in usable}, key=str),
+        )
+    return usable
 
 
 async def retrieve(query: str, top_k: int = 8, framework_tag: str | None = None):

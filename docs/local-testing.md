@@ -32,12 +32,18 @@ pip install -r requirements.txt
 
 ## 4. Ingest a Test Document
 
-Create a sample file `data/raw/test_market.txt` with a real paragraph of market data
-(e.g. copy a snippet from a Statista or industry report on your idea's market).
+Save a real paragraph of market data to a local text file, e.g. `test_market.txt`
+(copied from a Statista or industry report on your idea's market), and note the
+public URL of the page it came from.
+
+Never ingest hand-written or sample text: every stored chunk becomes a citation
+in real reports. The CLI requires `--url` and refuses placeholder hosts
+(example.com etc.), localhost/private addresses, reserved test TLDs and empty
+URLs (`agents/source_urls.py`).
 
 ```bash
 cd ..   # back to repo root, so 'agents' package resolves correctly
-python -m agents.ingest --file backend/../data/raw/test_market.txt \\
+python -m agents.ingest --file test_market.txt \\
     --title "REPLACE-WITH-REAL-SOURCE-TITLE" \\
     --url "REPLACE-WITH-REAL-SOURCE-URL" \\
     --framework tam
