@@ -4,7 +4,7 @@ in the pgvector `sources` table.
 
 Run from the REPO ROOT (not from inside backend/ or agents/), e.g.:
 
-  python -m agents.ingest --file data/raw/your_source.txt \\
+  python -m agents.ingest --file path/to/your_source.txt \\
       --title "REPLACE-WITH-REAL-SOURCE-TITLE" \\
       --url "REPLACE-WITH-REAL-SOURCE-URL" \\
       --framework tam
@@ -18,6 +18,11 @@ that gave no indication it was a placeholder. ingest_content() below now
 refuses to ingest anything whose title/url still contains "REPLACE-WITH"
 so that specific mistake can't happen silently again.)
 
+--url must be the real, public http(s) page the text came from: every
+stored chunk becomes a citation a reader can open. ingest_content()
+refuses placeholder hosts (example.com etc.), local/private addresses,
+reserved test TLDs and empty URLs (agents/source_urls.py).
+
 Requires backend/.env to contain OPENAI_API_KEY and DATABASE_URL
 (copy from backend/.env.example if you haven't already).
 """
@@ -29,6 +34,7 @@ from datetime import date
 from agents import config  # noqa: F401  side-effect: loads backend/.env reliably
 from openai import OpenAI
 from agents.db import insert_source
+from agents.source_urls import placeholder_reason
 
 client = OpenAI(api_key=config.OPENAI_API_KEY)
 EMBEDDING_MODEL = "text-embedding-3-small"
@@ -61,10 +67,7 @@ def embed_batch(texts: list[str]):
 
 
 # docs/PHASE_4_SPEC.md A2 process guard: matches this module's docstring
-# template above. Deliberately narrow (not a general "example.com" check --
-# the legitimately-seeded EV-charging demo corpus uses example.com URLs on
-# purpose with real, descriptive titles) so it can't false-positive on real
-# data, only on someone running the documented example verbatim.
+# template above, for the title (the URL is covered by the public-URL check).
 _PLACEHOLDER_MARKER = "REPLACE-WITH"
 
 
@@ -86,6 +89,13 @@ def ingest_content(text: str, title: str, url: str, framework_tag: str,
             f"placeholder marker ({_PLACEHOLDER_MARKER!r}). Replace --title/--url with "
             f"the source's real title/URL before running -- see agents/ingest.py's "
             f"module docstring (docs/PHASE_4_SPEC.md A2)."
+        )
+    reason = placeholder_reason(url)
+    if reason:
+        raise ValueError(
+            f"Refusing to ingest {url!r}: {reason}. A source must be a real, public "
+            f"http(s) page -- placeholder hosts, local/private addresses and empty URLs "
+            f"would become citations nobody can open."
         )
 
     chunks = chunk_text(text)
@@ -140,7 +150,8 @@ def main():
     parser.add_argument("--file", type=str, help="Path to a local .txt file to ingest.")
     parser.add_argument("--text", type=str, help="Raw text to ingest directly.")
     parser.add_argument("--title", type=str, default=None, help="Source title.")
-    parser.add_argument("--url", type=str, default=None, help="Source URL, if applicable.")
+    parser.add_argument("--url", type=str, required=True,
+                         help="Public http(s) URL of the page the text came from (required).")
     parser.add_argument("--framework", type=str, default="general",
                          help="Framework tag: tam, swot, pestel, bmc, general, etc.")
     parser.add_argument("--confidence", type=float, default=0.8,
